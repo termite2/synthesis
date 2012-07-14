@@ -134,7 +134,7 @@ a subset of initial states
 
 \begin_layout Itemize
 a controllable transition relation 
-\begin_inset Formula $\delta_{c}\subseteq S\times L\times S$
+\begin_inset Formula $\delta_{c}:S\times L\mapsto2^{S}$
 \end_inset
 
 , 
@@ -142,11 +142,10 @@ a controllable transition relation
 
 \begin_layout Itemize
 an uncontrollable transition relation 
-\begin_inset Formula $\delta_{u}\subseteq S\times S$
+\begin_inset Formula $\delta_{u}:S\mapsto2^{S}$
 \end_inset
 
 .
- 
 \end_layout
 
 \begin_layout Standard
@@ -274,7 +273,7 @@ a set of abstract actions
 \end_layout
 
 \begin_layout Standard
-\begin_inset Note Note
+\begin_inset Note Comment
 status collapsed
 
 \begin_layout Plain Layout
@@ -349,7 +348,7 @@ We define relations
 \begin_inset Formula $\lambda^{m},\lambda^{M}:\Sigma\mapsto2^{\Lambda}$
 \end_inset
 
- between abstract states and abstract actions available in these states:
+ between abstract states and abstract actions compatible with these states:
 \end_layout
 
 \begin_layout Standard
@@ -371,46 +370,20 @@ We define relations
 
 \end_inset
 
-Functions
-\begin_inset Formula $\alpha^{m},\alpha^{M}:\Lambda\mapsto2^{\Sigma}$
-\end_inset
-
-relate abstract actions to states where the system can be taken by the action:
-\end_layout
-
-\begin_layout Standard
-\begin_inset Formula 
-\[
-\alpha^{m}(a)=\{v'\in\Sigma\mid\exists(s,l)\in a.\exists s'\in v'.\,(s,l,s')\in\delta_{c}\}
-\]
-
-\end_inset
-
-
-\end_layout
-
-\begin_layout Standard
-\begin_inset Formula 
-\[
-\alpha^{M}(a)=\{v'\in\Sigma\mid\forall(s,l)\in a.\exists s'\in v'.\,(s,l,s')\in\delta_{c}\}
-\]
-
-\end_inset
-
 We define may and must versions of abstract transition relations:
 \end_layout
 
 \begin_layout Itemize
-\begin_inset Formula $\Delta_{c}^{m},\delta_{c}^{M}\subseteq\Sigma\times\Lambda\times\Sigma$
+\begin_inset Formula $\Delta_{c}^{m},\Delta_{c}^{M}:\Lambda\mapsto2^{\Sigma}$
 \end_inset
 
- is the may version of the controllable transition relation
+ are the may and must versions of the controllable transition relation
 \end_layout
 
 \begin_layout Standard
 \begin_inset Formula 
 \[
-\Delta_{c}^{m}=\lambda^{m}\circ\alpha^{M}
+\Delta_{c}^{m}(a)=\{v'\in\Sigma\mid\exists(s,l)\in a.\,\delta_{c}(s,l)\cap v'\neq\emptyset\}
 \]
 
 \end_inset
@@ -421,25 +394,7 @@ We define may and must versions of abstract transition relations:
 \begin_layout Standard
 \begin_inset Formula 
 \[
-\Delta_{c}^{M}=\lambda^{M}\circ\alpha^{m}
-\]
-
-\end_inset
-
-
-\end_layout
-
-\begin_layout Itemize
-\begin_inset Formula $\Delta_{u}^{m}\subseteq\Sigma\times\Sigma$
-\end_inset
-
- is the may version of the uncontrollable transition relation
-\end_layout
-
-\begin_layout Standard
-\begin_inset Formula 
-\[
-\Delta_{u}^{m}=\{(v,v')\mid\exists s\in v,s'\in v'.\,(s,s')\in\delta_{u}\}
+\Delta_{c}^{M}(a)=\{v'\in\Sigma\mid\forall(s,l)\in a.\,\delta_{c}(s,l)\cap v'\neq\emptyset\}
 \]
 
 \end_inset
@@ -448,16 +403,27 @@ We define may and must versions of abstract transition relations:
 \end_layout
 
 \begin_layout Itemize
-\begin_inset Formula $\Delta_{u}^{M}\subseteq\Sigma\times\Sigma$
+\begin_inset Formula $\Delta_{u}^{m},\Delta_{u}^{M}:\Sigma\mapsto2^{\Sigma}$
 \end_inset
 
- is the must version of the uncontrollable transition relation
+ are the may and must versions of the uncontrollable transition relation
 \end_layout
 
 \begin_layout Standard
 \begin_inset Formula 
 \[
-\Delta_{u}^{M}=\{(v,v')\mid\forall s\in v,\exists s'\in v'.\,(s,s')\in\delta_{u}\}
+\Delta_{u}^{m}(v)=\{v'\in\Sigma\mid\exists s\in v.\,\delta_{u}(s)\cap v'\neq\emptyset\}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\Delta_{u}^{M}(v)=\{v'\in\Sigma\mid\forall s\in v,\,\delta_{u}(s)\cap v'\neq\emptyset\}
 \]
 
 \end_inset
@@ -466,7 +432,25 @@ We define may and must versions of abstract transition relations:
 \end_layout
 
 \begin_layout Itemize
-\begin_inset Note Note
+\begin_inset Formula $Avl^{M}\subseteq\Lambda$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+Avl^{M}=\{a\in\Lambda\mid\forall(s,l)\in a.\,\delta_{c}(s,l)\neq\emptyset\}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Note Comment
 status collapsed
 
 \begin_layout Itemize
@@ -526,7 +510,7 @@ Using these abstract transition relations, we can define an over-approximation
 \begin_layout Standard
 \begin_inset Formula 
 \[
-Cpre^{m+}(U)=Cpre_{c}^{m+}(U)\,\cup\, Cpre_{u}^{m+}(U)
+Cpre^{m}(U)=Cpre_{c}^{m}(U)\,\cup\, Cpre_{u}^{m}(U)
 \]
 
 \end_inset
@@ -537,7 +521,7 @@ Cpre^{m+}(U)=Cpre_{c}^{m+}(U)\,\cup\, Cpre_{u}^{m+}(U)
 \begin_layout Standard
 \begin_inset Formula 
 \[
-Cpre^{M-}(U)=Cpre_{c}^{M-}(U)\,\cup\, Cpre_{u}^{M-}(U)
+Cpre^{M}(U)=Cpre_{c}^{M}(U)\,\cup\, Cpre_{u}^{M}(U)
 \]
 
 \end_inset
@@ -547,9 +531,9 @@ where
 
 \begin_layout Standard
 \begin_inset Formula 
-\[
-Cpre_{c}^{m+}(U)=\{v\in\Sigma\mid\exists a\in\Lambda.\,\forall v'\in(\Delta_{u}^{M})^{*}(v).\,(v'\in Avl^{m}(a)\,\land\,\Delta_{c}^{m}(v',a)\subseteq U)\}
-\]
+\begin{equation}
+Cpre_{c}^{m}(U)=\{v\in\Sigma\mid\exists a\in\Lambda.(\forall v'\in(\Delta_{u}^{M})^{*}(v).\, a\in\lambda^{m}(v'))\,\land\,(\Delta_{c}^{M}(a)\subseteq U)\,\land\,(\Delta_{c}^{m}(a)\cap U\neq\emptyset)\}\label{eq:cprecm}
+\end{equation}
 
 \end_inset
 
@@ -559,7 +543,7 @@ Cpre_{c}^{m+}(U)=\{v\in\Sigma\mid\exists a\in\Lambda.\,\forall v'\in(\Delta_{u}^
 \begin_layout Standard
 \begin_inset Formula 
 \[
-Cpre_{u}^{m+}(U)=\{v\in\Sigma\mid\Delta_{u}^{M}(v)\subseteq U\}
+Cpre_{u}^{m}(U)=\{v\in\Sigma\mid\Delta_{u}^{M}(v)\subseteq U\}
 \]
 
 \end_inset
@@ -569,9 +553,9 @@ Cpre_{u}^{m+}(U)=\{v\in\Sigma\mid\Delta_{u}^{M}(v)\subseteq U\}
 
 \begin_layout Standard
 \begin_inset Formula 
-\[
-Cpre_{c}^{M-}(U)=\{v\in\Sigma\mid\exists a\in\Lambda.\,\forall v'\in(\Delta_{u}^{m})^{*}(v).\,(v'\in Avl^{M}(a)\,\land\,\Delta_{c}^{M}(v',a)\subseteq U)\}
-\]
+\begin{equation}
+Cpre_{c}^{M}(U)=\{v\in\Sigma\mid\exists a\in Avl^{M}.\forall v'\in(\Delta_{u}^{m})^{*}(v).\,(a\in\lambda^{M}(v'))\land(\Delta_{c}^{m}(a)\subseteq U)\}\label{eq:cprecM}
+\end{equation}
 
 \end_inset
 
@@ -581,7 +565,7 @@ Cpre_{c}^{M-}(U)=\{v\in\Sigma\mid\exists a\in\Lambda.\,\forall v'\in(\Delta_{u}^
 \begin_layout Standard
 \begin_inset Formula 
 \[
-Cpre_{u}^{M+}(U)=\{v\in\Sigma\mid\Delta_{u}^{m}(v)\subseteq U\}
+Cpre_{u}^{M}(U)=\{v\in\Sigma\mid\Delta_{u}^{m}(v)\subseteq U\}
 \]
 
 \end_inset
@@ -591,6 +575,329 @@ Cpre_{u}^{M+}(U)=\{v\in\Sigma\mid\Delta_{u}^{m}(v)\subseteq U\}
 
 \begin_layout Section
 Abstraction refinement
+\end_layout
+
+\begin_layout Standard
+In case there exists a may-winning strategy, but no must-winning strategy,
+ we refine an abstract state on the may-must boundary.
+ Such a state must satisfy one of two conditions:
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $v\in(W^{m}\setminus W^{M})\,\cap\, Cpre_{c}^{m}(W^{M})$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $v\in(W^{m}\setminus W^{M})\,\cap\, Cpre_{u}^{m}(W^{M})$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Consider the first case.
+ We have 
+\begin_inset Formula $v\in Cpre_{c}^{m}(W^{M})$
+\end_inset
+
+ and 
+\begin_inset Formula $v\notin Cpre_{c}^{M}(W^{M})$
+\end_inset
+
+.
+ According to 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:cprecm"
+
+\end_inset
+
+, we can select a may-winning action 
+\begin_inset Formula $a\in\Lambda$
+\end_inset
+
+ in state 
+\begin_inset Formula $v$
+\end_inset
+
+ such that 
+\begin_inset Formula $\forall v'\in(\Delta_{u}^{M})^{*}(v).\, a\in\lambda^{m}(v')$
+\end_inset
+
+ and 
+\begin_inset Formula $\Delta_{c}^{M}(a)\subseteq W^{M}$
+\end_inset
+
+ and 
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+
+\begin_inset Formula $\Delta_{c}^{m}(a)\cap W^{M}\neq\emptyset$
+\end_inset
+
+.
+ According to 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:cprecM"
+
+\end_inset
+
+, one of the following conditions must hold for 
+\begin_inset Formula $a$
+\end_inset
+
+:
+\end_layout
+
+\begin_layout Enumerate
+
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+\begin_inset Formula $a\notin Avl^{M}$
+\end_inset
+
+ 
+\end_layout
+
+\begin_layout Enumerate
+
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+\begin_inset Formula $\exists v'\in(\Delta_{u}^{m})^{*}(v).\,(a\notin\lambda^{M}(v'))$
+\end_inset
+
+ 
+\end_layout
+
+\begin_layout Enumerate
+
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+\begin_inset Formula $\Delta_{c}^{m}(a)\nsubseteq W^{M}$
+\end_inset
+
+ 
+\end_layout
+
+\begin_layout Standard
+If condition 1 holds, then we need to refine abstract action 
+\begin_inset Formula $a$
+\end_inset
+
+ by partitioning it into actions 
+\begin_inset Formula $\hat{a}$
+\end_inset
+
+and 
+\begin_inset Formula $\check{a}$
+\end_inset
+
+ such that 
+\begin_inset Formula $\hat{a}\cup\check{a}=a$
+\end_inset
+
+, 
+\begin_inset Formula $\hat{a}\cap\check{a}=\emptyset$
+\end_inset
+
+, and 
+\begin_inset Formula $\forall(s,l)\in\hat{a}.\,\delta_{c}(s,l)\neq\emptyset$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+If condition 2 holds, then we consider two further cases:
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $v'\in(\Delta_{u}^{M})^{*}(v)$
+\end_inset
+
+ and 
+\begin_inset Formula $a\in\lambda^{m}(v')\setminus\lambda^{M}(v')$
+\end_inset
+
+.
+ In this case we need to partition the abstract state 
+\begin_inset Formula $v'$
+\end_inset
+
+ into 
+\begin_inset Formula $\hat{v}'$
+\end_inset
+
+and 
+\begin_inset Formula $\check{v}'$
+\end_inset
+
+ such that 
+\begin_inset Formula $\hat{v}'\cup\check{v}'=v$
+\end_inset
+
+,
+\begin_inset Formula $\hat{v}'\cap\check{v}'=\emptyset$
+\end_inset
+
+, and 
+\begin_inset Formula $\forall s\in\hat{v}'.\exists l\in L.\,(s,l)\in a$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $v'\notin(\Delta_{u}^{M})^{*}(v)$
+\end_inset
+
+.
+ In this case there exists abstract state 
+\begin_inset Formula $w\in(\Delta_{u}^{M})^{*}(v)$
+\end_inset
+
+ such that 
+\begin_inset Formula $v'\in\Delta_{u}^{m}(w)$
+\end_inset
+
+ (Figure
+\begin_inset space ~
+\end_inset
+
+
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:maymust"
+
+\end_inset
+
+).
+ We partition 
+\begin_inset Formula $w$
+\end_inset
+
+ into 
+\begin_inset Formula $\hat{w}$
+\end_inset
+
+ and 
+\begin_inset Formula $\check{w}$
+\end_inset
+
+ such that 
+\begin_inset Formula $\forall s\in\hat{w}.\exists s'\in v'.\,(s,s')\in\delta_{u}$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename maymust.eps
+
+\end_inset
+
+
+\begin_inset Caption
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:maymust"
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+If condition 3 holds, then we pick state 
+\begin_inset Formula $u\in\Delta_{c}^{m}(a)\setminus W^{M}$
+\end_inset
+
+.
+ We partition 
+\begin_inset Formula $a$
+\end_inset
+
+ into actions 
+\begin_inset Formula $\hat{a}$
+\end_inset
+
+and 
+\begin_inset Formula $\check{a}$
+\end_inset
+
+ such that 
+\begin_inset Formula $\hat{a}\cup\check{a}=a$
+\end_inset
+
+, 
+\begin_inset Formula $\hat{a}\cap\check{a}=\emptyset$
+\end_inset
+
+, and 
+\begin_inset Formula $\forall(s,l)\in\hat{a}.\,\delta_{c}(s,l)\cap u\neq\emptyset$
+\end_inset
+
+.
 \end_layout
 
 \begin_layout Section
