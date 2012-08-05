@@ -40,7 +40,7 @@
      inkscape:pageshadow="2"
      inkscape:zoom="2.56"
      inkscape:cx="145.79293"
-     inkscape:cy="841.64203"
+     inkscape:cy="830.52286"
      inkscape:document-units="px"
      inkscape:current-layer="layer1"
      showgrid="false"
@@ -57,7 +57,7 @@
         <dc:format>image/svg+xml</dc:format>
         <dc:type
            rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title></dc:title>
+        <dc:title />
       </cc:Work>
     </rdf:RDF>
   </metadata>
@@ -222,7 +222,7 @@
          id="tspan4959-3"
          x="95.129494"
          y="178.23167"
-         style="font-size:16px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;text-align:start;line-height:125%;writing-mode:lr-tb;text-anchor:start;font-family:LMRomanUnsl10;-inkscape-font-specification:LMRomanUnsl10">w</tspan></text>
+         style="font-size:16px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;text-align:start;line-height:125%;writing-mode:lr-tb;text-anchor:start;font-family:LMRomanUnsl10;-inkscape-font-specification:LMRomanUnsl10">b</tspan></text>
     <text
        xml:space="preserve"
        style="font-size:20px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;text-align:start;line-height:125%;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;fill:#000000;fill-opacity:1;stroke:none;font-family:LMRomanUnsl10;-inkscape-font-specification:LMRomanUnsl10"
@@ -234,7 +234,7 @@
          id="tspan4959-3-3"
          x="55.496685"
          y="239.60692"
-         style="font-size:16px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;text-align:start;line-height:125%;writing-mode:lr-tb;text-anchor:start;font-family:LMRomanUnsl10;-inkscape-font-specification:LMRomanUnsl10">v</tspan></text>
+         style="font-size:16px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;text-align:start;line-height:125%;writing-mode:lr-tb;text-anchor:start;font-family:LMRomanUnsl10;-inkscape-font-specification:LMRomanUnsl10">a</tspan></text>
     <text
        xml:space="preserve"
        style="font-size:20px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;text-align:start;line-height:125%;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;fill:#000000;fill-opacity:1;stroke:none;font-family:LMRomanUnsl10;-inkscape-font-specification:LMRomanUnsl10"
@@ -246,7 +246,7 @@
          id="tspan4959-3-0"
          x="181.88248"
          y="179.50284"
-         style="font-size:16px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;text-align:start;line-height:125%;writing-mode:lr-tb;text-anchor:start;font-family:LMRomanUnsl10;-inkscape-font-specification:LMRomanUnsl10">v'</tspan></text>
+         style="font-size:16px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;text-align:start;line-height:125%;writing-mode:lr-tb;text-anchor:start;font-family:LMRomanUnsl10;-inkscape-font-specification:LMRomanUnsl10">a'</tspan></text>
     <text
        xml:space="preserve"
        style="font-size:40px;font-style:normal;font-weight:normal;line-height:125%;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;font-family:Bitstream Vera Sans"
@@ -259,14 +259,14 @@
          x="49.941635"
          y="153.8315"
          style="font-size:20px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;text-align:start;line-height:125%;writing-mode:lr-tb;text-anchor:start;font-family:LMRomanUnsl10;-inkscape-font-specification:LMRomanUnsl10"
-         dy="0 0 2.0203052 -10.101526 8.5862951 0 8.0812206"
-         dx="0 0 -1.0101527 -15.152289 -0.50507861 0 -2.0203049"><tspan
+         dy="0 0 2.0203052 -10.101526 0 8.5862951 0 8.0812206"
+         dx="0 0 -1.0101527 -15.152289 0 -0.50507861 0 -2.0203049"><tspan
            style="font-size:18px"
-           id="tspan5059">(Δ</tspan><tspan
+           id="tspan5059">(ɣ</tspan><tspan
            style="font-size:10px"
            id="tspan5055"
            dx="1.6234592e-08 -6.5659919"
-           dy="1.5152287 -10.606603">uM</tspan><tspan
+           dy="1.5152287 -10.606603">uM-</tspan><tspan
            style="font-size:18px"
            id="tspan5061">)</tspan><tspan
            style="font-size:10px"
@@ -274,7 +274,7 @@
            dx="-3.0304573"
            dy="-8.0812206">*</tspan><tspan
            style="font-size:18px"
-           id="tspan5063">(v)</tspan></tspan></text>
+           id="tspan5063">(a)</tspan></tspan></text>
     <text
        xml:space="preserve"
        style="font-size:40px;font-style:normal;font-weight:normal;line-height:125%;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;font-family:Bitstream Vera Sans"
@@ -287,14 +287,14 @@
          x="88.469055"
          y="115.56641"
          style="font-size:20px;font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;text-align:start;line-height:125%;writing-mode:lr-tb;text-anchor:start;font-family:LMRomanUnsl10;-inkscape-font-specification:LMRomanUnsl10"
-         dy="0 0 2.0203052 0 8.5862951 0 8.0812206"
-         dx="0 0 -1.0101527 0 -0.50507861 0 -2.0203049"><tspan
+         dy="0 0 2.0203052 0 0 8.5862951 0 8.0812206"
+         dx="0 0 -1.0101527 0 0 -0.50507861 0 -2.0203049"><tspan
            style="font-size:18px"
-           id="tspan5059-7">(Δ</tspan><tspan
+           id="tspan5059-7">(ɣ</tspan><tspan
            style="font-size:10px"
            id="tspan5055-3"
            dx="1.6234592e-08 -6.5659919"
-           dy="1.5152287 -10.101525">um</tspan><tspan
+           dy="1.5152287 -10.101525">um+</tspan><tspan
            style="font-size:18px"
            id="tspan5061-6"
            dx="1.029747e-07">)</tspan><tspan
@@ -303,7 +303,7 @@
            dx="-3.0304573"
            dy="-8.0812206">*</tspan><tspan
            style="font-size:18px"
-           id="tspan5063-8">(v)</tspan></tspan></text>
+           id="tspan5063-8">(a)</tspan></tspan></text>
     <path
        style="fill:none;stroke:#000000;stroke-width:0.99999994px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:0.47031962"
        d="m 35.596764,124.24249 -0.476165,184.2634 170.691571,0 0,-183.22248 z"
