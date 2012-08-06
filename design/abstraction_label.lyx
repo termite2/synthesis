@@ -204,6 +204,13 @@ Cpre_{u}(X)=\{s\in S\mid\delta_{u}(s)\neq\emptyset\land\delta_{u}(s)\subseteq X\
 
 \begin_layout Subsection
 Abstractions of games
+\begin_inset CommandInset label
+LatexCommand label
+name "sub:Abstractions-of-games"
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Standard
@@ -375,33 +382,6 @@ Avl(v)=\{\alpha\subseteq\Lambda\mid\forall s\in\|v\|.\exists l\in L,a\in\alpha.\
 \begin_layout Standard
 When using predicate abstraction, we further over and under-approximate
  these relations in order to be able to compute them efficiently:
-\end_layout
-
-\begin_layout Itemize
-\begin_inset Note Comment
-status collapsed
-
-\begin_layout Itemize
-\begin_inset Formula $\Lambda^{+}\subseteq\Lambda\cup\emptyset$
-\end_inset
-
-,
-\begin_inset Formula $\Lambda^{+}\supseteq\Lambda$
-\end_inset
-
-
-\end_layout
-
-\begin_layout Itemize
-\begin_inset Formula $\Lambda^{-}\subseteq\Lambda$
-\end_inset
-
-
-\end_layout
-
-\end_inset
-
-
 \end_layout
 
 \begin_layout Itemize
@@ -1236,7 +1216,7 @@ A
 symbolic game structure
 \emph default
  
-\begin_inset Formula $SG=\langle X,Y_{c},Y_{u},T,init,ctran,utran\rangle$
+\begin_inset Formula $SG=\langle X,Y,T,init,ctran,utran\rangle$
 \end_inset
 
  consist of 
@@ -1264,20 +1244,12 @@ next-state variables
 \end_layout
 
 \begin_layout Itemize
-Finite sets of 
+Finite set of 
 \emph on
 controllable label variables
 \emph default
  
-\begin_inset Formula $Y_{c}$
-\end_inset
-
- and 
-\emph on
-uncontrollable label variables
-\emph default
- 
-\begin_inset Formula $Y_{u}$
+\begin_inset Formula $Y$
 \end_inset
 
 .
@@ -1309,7 +1281,7 @@ A set of
 controllable syntactic transitions
 \emph default
  
-\begin_inset Formula $ctran\subset Tran(X,Y_{c},T)$
+\begin_inset Formula $ctran\subset Tran(X,Y,T)$
 \end_inset
 
  and a set of 
@@ -1317,12 +1289,30 @@ controllable syntactic transitions
 uncontrollable syntactic transitions
 \emph default
  
-\begin_inset Formula $utran\in Tran(X,Y_{u},T)$
+\begin_inset Formula $utran\subset Tran(X,\emptyset,T)$
 \end_inset
 
 .
- A syntactic transition is a loop-free structured constructed out of assignments
- and assume statements combined into sequential and or-blocks: 
+ 
+\begin_inset Formula $Tran(X,Y,T)$
+\end_inset
+
+ is the set of syntactic transitions over state variables 
+\begin_inset Formula $X$
+\end_inset
+
+, controllable lable variables 
+\begin_inset Formula $Y$
+\end_inset
+
+, and temporary variables 
+\begin_inset Formula $T$
+\end_inset
+
+.
+ A syntactic transition is a loop-free structured program constructed out
+ of assignments and assume statements combined into sequential and or-blocks:
+ 
 \begin_inset Formula 
 \[
 tran:\,\,(x:=e)\mid assume(p)\mid or(tran*)\mid seq(tran*)
@@ -1446,7 +1436,7 @@ temporary variables
 
 \begin_layout Standard
 Given a symbolic game structure 
-\begin_inset Formula $SG=\langle X,Y_{c},Y_{u},T,init,ctran,utran\rangle$
+\begin_inset Formula $SG=\langle X,Y,T,init,ctran,utran\rangle$
 \end_inset
 
  we define the corresponding game structure 
@@ -1493,12 +1483,12 @@ where
 \end_layout
 
 \begin_layout Itemize
-\begin_inset Formula $\|.\|_{u}:Tran(X,Y,T)\rightarrow(D(X)\rightarrow2^{D(X)})$
+\begin_inset Formula $\|.\|_{u}:Tran(X,\emptyset,T)\rightarrow(D(X)\rightarrow2^{D(X)})$
 \end_inset
 
 .
  
-\begin_inset Formula $\|t\|_{u}(s)=\{s'\in D(X')\mid\exists t\in D(T),l\in D(Y).\,(s,l,t,s')\models P(t)\}$
+\begin_inset Formula $\|t\|_{u}(s)=\{s'\in D(X')\mid\exists t\in D(T).\,(s,t,s')\models P(t)\}$
 \end_inset
 
 
@@ -1524,7 +1514,7 @@ Abstraction
 
 \begin_layout Standard
 Given a symbolic game structure 
-\begin_inset Formula $SG=\langle X,Y_{c},Y_{u},T,init,ctran,utran\rangle$
+\begin_inset Formula $SG=\langle X,Y,T,init,ctran,utran\rangle$
 \end_inset
 
 , we define abstraction 
@@ -1541,7 +1531,7 @@ Given a symbolic game structure
 \begin_layout Itemize
 
 \emph on
-State predicates
+state predicates
 \emph default
  
 \begin_inset Formula $\Pi=\{\pi_{1},\ldots,\pi_{k}\}$
@@ -1557,14 +1547,14 @@ State predicates
 \begin_layout Itemize
 
 \emph on
-Label predicates
+label predicates
 \emph default
  
 \begin_inset Formula $\Theta=\{\theta_{1},\ldots,\theta_{m}\}$
 \end_inset
 
 , 
-\begin_inset Formula $\theta_{i}\in Rel(X\cup Y_{c})$
+\begin_inset Formula $\theta_{i}\in Rel(X\cup Y)$
 \end_inset
 
 
@@ -1575,7 +1565,15 @@ as follows:
 \begin_inset Formula $\Gamma(SG,\Pi,\Theta)=\langle\mathbb{B}^{k},\mathbb{B}^{k+m}\rangle$
 \end_inset
 
-, with
+, where 
+\begin_inset Formula $\mathbb{B}^{k}$
+\end_inset
+
+ is the set of abstract states, and 
+\begin_inset Formula $\mathbb{B}^{k+m}$
+\end_inset
+
+ is the set of extended abstract states, with
 \end_layout
 
 \begin_layout Itemize
@@ -1593,11 +1591,94 @@ as follows:
 \end_layout
 
 \begin_layout Standard
-Identifying transition segments.
+Given an abstraction of a game structure induced by a set of predicates,
+ one can in principle compute may and must relations defined in Section
+ 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "sub:Abstractions-of-games"
+
+\end_inset
+
+ (
+\begin_inset Formula $\Delta_{c}^{m}$
+\end_inset
+
+, 
+\begin_inset Formula $\Delta_{c}^{M}$
+\end_inset
+
+, 
+\begin_inset Formula $\Delta_{u}^{m}$
+\end_inset
+
+, 
+\begin_inset Formula $\Delta_{u}^{M}$
+\end_inset
+
+, 
+\begin_inset Formula $\gamma_{u}^{m}$
+\end_inset
+
+, 
+\begin_inset Formula $\gamma_{c}^{M}$
+\end_inset
+
+, 
+\begin_inset Formula $Avl$
+\end_inset
+
+); however doing so may be computationally hard for complex specifications
+ and for a large number of predicates.
+ Therefore, we compute and refine approximate versions of these relations
+ instead.
+ We introduce two sources of imprecision.
+ First, we decompose complex syntactic transitions into simpler ones that
+ are abstracted and refined individually.
+ The granularity of decomposition can vary and will be selected experimentally.
+ Some possible choices include abstracting away individual statements, basic
+ blocks, groups of basic blocks, etc.
+ We introduce additional 
+\emph on
+temporary predicates.
 \end_layout
 
 \begin_layout Standard
-Non-blocking assignments?
+Computing initial abstraction
+\end_layout
+
+\begin_layout Itemize
+Given a syntactic transition 
+\begin_inset Formula $tran\in Tran(Z,V,W)$
+\end_inset
+
+, which can be part of another transition, Abstraction of a transition wrt
+ pre- and post-predicates
+\end_layout
+
+\begin_layout Itemize
+Adding spurious/missing transition
+\end_layout
+
+\begin_layout Itemize
+Adding pre-/post-predicate
+\end_layout
+
+\begin_layout Standard
+\begin_inset Note Note
+status collapsed
+
+\begin_layout Plain Layout
+Identifying transition segments.
+\end_layout
+
+\begin_layout Plain Layout
+Non-blocking assignments
+\end_layout
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Subsection
