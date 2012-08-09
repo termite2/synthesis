@@ -179,7 +179,7 @@ where
 \begin_layout Standard
 \begin_inset Formula 
 \[
-Cpre_{c}(X)=\{s\in S\mid\exists l\in L.\forall s'\in\delta_{u}^{*}(s).\,\delta_{c}(s',l)\cap X\neq\emptyset\},
+Cpre_{c}(X)=\{s\in S\mid\exists l\in L.\forall s'\in\delta_{u}^{*}(s).\,\delta_{c}(s',l)\cap X\neq\emptyset\}
 \]
 
 \end_inset
@@ -530,6 +530,13 @@ Cpre_{u}^{M}(U)=\{v\in\Sigma\mid\Delta_{u}^{m+}(v)\neq\emptyset\land\Delta_{u}^{
 
 \begin_layout Section
 Abstraction refinement
+\begin_inset CommandInset label
+LatexCommand label
+name "sec:Abstraction-refinement"
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Standard
@@ -796,7 +803,7 @@ reference "fig:maymust"
 \end_inset
 
  such that 
-\begin_inset Formula $\|\hat{b}\|=\{(s,l)\in\|w\|\mid\exists s'\in\delta_{u}(s).\,(s',l)\in\|a'\|\}$
+\begin_inset Formula $\|\hat{b}\|=\{(s,l)\in\|b\|\mid\exists s'\in\delta_{u}(s).\,(s',l)\in\|a'\|\}$
 \end_inset
 
  and 
@@ -886,7 +893,7 @@ Case 1.2.2.2:
 
 \begin_deeper
 \begin_layout Itemize
-If 
+Case 1.2.2.2.1: If 
 \begin_inset Formula $\hat{a}'=\emptyset$
 \end_inset
 
@@ -902,7 +909,7 @@ If
 \end_layout
 
 \begin_layout Itemize
-If 
+Case 1.2.2.2.2: If 
 \begin_inset Formula $\check{a}'=\emptyset$
 \end_inset
 
@@ -918,7 +925,7 @@ If
 \end_layout
 
 \begin_layout Itemize
-Otherwise, we replace extended abstract state 
+Case 1.2.2.2.3: Otherwise, we replace extended abstract state 
 \begin_inset Formula $a'$
 \end_inset
 
@@ -979,7 +986,7 @@ Consider case 2.
 \end_inset
 
  and 
-\begin_inset Formula $v\notin Cpre_{c}^{M}(W^{M})$
+\begin_inset Formula $v\notin Cpre_{u}^{M}(W^{M})$
 \end_inset
 
 .
@@ -1404,49 +1411,42 @@ A syntactic transition may only assign a subset of state variables.
 \end_inset
 
 .
+ In the sequel, we assume that syntactic transitions are in the extended
+ form.
 \end_layout
 
 \begin_layout Standard
 A syntactic transition can be converted to an equivalent propositional formula
  using function 
-\begin_inset Formula $P:Tran(X,Y,T)\rightarrow Prop(X\cup Y\cup T\cup X')$
+\begin_inset Formula $\delta:Tran(X,Y,T)\rightarrow Prop(X\cup Y\cup T\cup X')$
 \end_inset
 
-.
- 
-\begin_inset Formula $P=P'\circ Ext$
-\end_inset
-
- , where 
-\begin_inset Formula $P'$
-\end_inset
-
- is defined as follows:
+ defined as follows:
 \end_layout
 
 \begin_layout Itemize
-\begin_inset Formula $P'((x:=e))=(x=e)$
+\begin_inset Formula $\delta((x:=e))=(x=e)$
 \end_inset
 
 
 \end_layout
 
 \begin_layout Itemize
-\begin_inset Formula $P'(assume(p))=p$
+\begin_inset Formula $\delta(assume(p))=p$
 \end_inset
 
 
 \end_layout
 
 \begin_layout Itemize
-\begin_inset Formula $P'(seq(s_{1},\ldots,s_{k}))=\bigwedge_{1\leq i\leq k}P'(s_{i})$
+\begin_inset Formula $\delta(seq(s_{1},\ldots,s_{k}))=\bigwedge_{1\leq i\leq k}\delta(s_{i})$
 \end_inset
 
 
 \end_layout
 
 \begin_layout Itemize
-\begin_inset Formula $P'(or(s_{1},\ldots,s_{k}))=\bigvee_{1\leq i\leq k}P'(s_{i})$
+\begin_inset Formula $\delta(or(s_{1},\ldots,s_{k}))=\bigvee_{1\leq i\leq k}\delta(s_{i})$
 \end_inset
 
 
@@ -1513,7 +1513,7 @@ where
 
 .
  
-\begin_inset Formula $\|tran\|_{c}(s,l)=\{s'\in D(X')\mid\exists t\in D(T).\,(s,l,t,s')\models P(tran)\}$
+\begin_inset Formula $\|tran\|_{c}(s,l)=\{s'\in D(X')\mid\exists t\in D(T).\,(s,l,t,s')\models\delta(tran)\}$
 \end_inset
 
 
@@ -1525,7 +1525,7 @@ where
 
 .
  
-\begin_inset Formula $\|t\|_{u}(s)=\{s'\in D(X')\mid\exists t\in D(T).\,(s,t,s')\models P(t)\}$
+\begin_inset Formula $\|t\|_{u}(s)=\{s'\in D(X')\mid\exists t\in D(T).\,(s,t,s')\models\delta(t)\}$
 \end_inset
 
 
@@ -1659,7 +1659,11 @@ as follows:
 
 \begin_layout Standard
 Given an abstraction of a game structure induced by a set of predicates,
- one can compute may and must relations defined in Section 
+ one can compute may and must relations defined in Section
+\begin_inset space ~
+\end_inset
+
+
 \begin_inset CommandInset ref
 LatexCommand ref
 reference "sub:Abstractions-of-games"
@@ -1782,7 +1786,7 @@ We label each node in the syntax tree with two (potentially overlapping)
 \end_inset
 
 , where 
-\begin_inset Formula $pre,post\subseteq P_{S}\cup P_{L}\cup P_{T}$
+\begin_inset Formula $pre,post\in(P_{S}\cup P_{L}\cup P_{T})^{*}$
 \end_inset
 
  for a transition 
@@ -1835,18 +1839,35 @@ Abstracting atomic transitions
 
 \begin_layout Standard
 Given an atomic transition 
-\begin_inset Formula $t\in Trans(X,Y,T)$
+\begin_inset Formula $t$
 \end_inset
 
 , a set of pre-predicates 
-\begin_inset Formula $P_{pre}=\{\pi_{1},\ldots,\pi_{p}\}$
+\begin_inset Formula $pre=\{\pi_{1},\ldots,\pi_{p}\}$
 \end_inset
 
 , and a set of post-predicates 
-\begin_inset Formula $P_{post}=\{\nu_{1},\ldots,\nu_{q}\}$
+\begin_inset Formula $post=\{\nu_{1},\ldots,\nu_{q}\}$
 \end_inset
 
-, precise may and must abstractions of 
+, we denote 
+\begin_inset Formula $V(pre)$
+\end_inset
+
+ the set of variables involved in predicates in 
+\begin_inset Formula $pre$
+\end_inset
+
+, and 
+\begin_inset Formula $V(post)$
+\end_inset
+
+ the set of variables involved in predicates in 
+\begin_inset Formula $post$
+\end_inset
+
+ .
+ Precise may and must abstractions of 
 \begin_inset Formula $t$
 \end_inset
 
@@ -1858,13 +1879,13 @@ Given an atomic transition
 \begin_inset Formula $post$
 \end_inset
 
- can be computed as follows.
+ can be computed as follows:
 \end_layout
 
 \begin_layout Standard
 \begin_inset Formula 
 \[
-\rho^{m}(pre,t,post)=\{(\bar{b},\bar{c})\in\mathbb{B}^{p}\times\mathbb{B}^{q}\mid\exists X,Y,T.\, P(t)\land(\bar{\pi}=\bar{b})\land(\bar{\nu}=\bar{c})\}
+\rho^{m}(pre,t,post)=\{(b,c)\in\mathbb{B}^{p}\times\mathbb{B}^{q}\mid\exists V(pre),V(post).\,\delta(t)\land(\bar{\pi}=b)\land(\bar{\nu}=c)\}
 \]
 
 \end_inset
@@ -1875,7 +1896,7 @@ Given an atomic transition
 \begin_layout Standard
 \begin_inset Formula 
 \[
-\rho^{M}(pre,t,post)=\{(\bar{b},\bar{c})\in\mathbb{B}^{p}\times\mathbb{B}^{q}\mid\forall X.\,(\bar{\pi}=\bar{b})\implies\exists Y,T.\, P(t)\land(\bar{\nu}=\bar{c})\}
+\rho^{M}(pre,t,post)=\{(b,c)\in\mathbb{B}^{p}\times\mathbb{B}^{q}\mid\forall V(pre).\,(\bar{\pi}=b)\implies\exists V(post)\setminus V(pre).\,\delta(t)\land(\bar{\nu}=c)\}
 \]
 
 \end_inset
@@ -1894,7 +1915,7 @@ We extend
 \begin_layout Standard
 \begin_inset Formula 
 \[
-\rho^{m}(pre,seq(pre^{i}:t^{i}:post^{i},i=1\ldots n),post)=\{(\bar{b^{1}},\bar{b^{n}})\mid\exists b^{2}\ldots b^{n-1}.\,\bigwedge_{i=1\ldots n}(\bar{b^{i}},\bar{b^{i+1}})\in\rho^{m}(pre^{i},t^{i},post^{i})\}
+\rho^{m}(pre,seq(pre^{i}:t^{i}:post^{i},i=1\ldots n),post)=\{(b^{1},b^{n})\mid\exists b^{2}\ldots b^{n-1}.\,\bigwedge_{i=1\ldots n}(b^{i},b^{i+1})\in\rho^{m}(pre^{i},t^{i},post^{i})\}
 \]
 
 \end_inset
@@ -1905,11 +1926,37 @@ We extend
 \begin_layout Standard
 \begin_inset Formula 
 \[
-\rho^{M}(pre,seq(pre^{i}:t^{i}:post^{i},i=1\ldots n),post)=\{(\bar{b^{1}},\bar{b^{n}})\mid\exists b^{2}\ldots b^{n-1}.\,\bigwedge_{i=1\ldots n}(\bar{b^{i}},\bar{b^{i+1}})\in\rho^{M}(pre^{i},t^{i},post^{i})\}
+\rho^{M}(pre,seq(pre^{i}:t^{i}:post^{i},i=1\ldots n),post)=\{(b^{1},b^{n})\mid\exists b^{2}\ldots b^{n-1}.\,\bigwedge_{i=1\ldots n}(b^{i},b^{i+1})\in\rho^{M}(pre^{i},t^{i},post^{i})\}
 \]
 
 \end_inset
 
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\rho^{m}(pre,or(pre^{i}:t^{i}:post,i=1\ldots n),post)=\bigcup_{i=1\ldots n}\rho^{m}(pre^{i},t^{i},post)
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\rho^{M}(pre,or(pre^{i}:t^{i}:post,i=1\ldots n),post)=\bigcup_{i=1\ldots n}\rho^{M}(pre^{i},t^{i},post)
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
 In practice, it may be easier to compute approximate versions of these transitio
 n relations 
 \begin_inset Formula $\rho^{m+}(pre,t,post)\supseteq\rho^{m}(pre,t,post)$
@@ -1924,6 +1971,13 @@ n relations
 
 \begin_layout Subsubsection
 Computing initial abstraction
+\begin_inset CommandInset label
+LatexCommand label
+name "sub:Computing-initial-abstraction"
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Standard
@@ -1974,6 +2028,10 @@ Transitions in
  are decomposed into atomic transitions and annotated with initial predicates.
  The initial set of predicates can be computed for instance using syntactic
  program analysis
+\begin_inset space ~
+\end_inset
+
+
 \begin_inset CommandInset citation
 LatexCommand cite
 key "Namjoshi_K_00"
@@ -1996,7 +2054,7 @@ For a controllable transition
 
 , i.e., the set of pre-predicates of the transition must include all state
  and label predicates, and the set of post-predicates of the transition
- must include all primed versions state predicates.
+ must include all primed versions of state predicates.
 \end_layout
 
 \begin_layout Itemize
@@ -2014,7 +2072,238 @@ For an uncontrollable transition
 
 \end_deeper
 \begin_layout Standard
-\begin_inset Note Note
+We can now compute initial abstract transition relations:
+\begin_inset Formula 
+\[
+\Delta_{c}^{m+}=\bigcup_{t\in ctran'}\rho^{m+}(P_{S}\cup P_{L},t,P_{S}')
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\Delta_{c}^{M-}=\bigcup_{t\in ctran'}\rho^{M-}(P_{S}\cup P_{L},t,P_{S}')
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\gamma_{u}^{m+}=\bigcup_{t\in utran'}\rho^{m+}(P_{S}\cup P_{L},t,P_{S}'\cup P_{L}')
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\gamma_{u}^{M-}=\bigcup_{t\in utran'}\rho^{M-}(P_{S}\cup P_{L},t,P_{S}'\cup P_{L}')
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\Delta_{u}^{m+}=\{(b,b')\in\mathbb{B}^{k}\times\mathbb{B}^{k}\mid\exists c,c'\in\mathbb{B}^{m}.\,((b,c),(b',c'))\in\gamma_{u}^{m+}\}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+\Delta_{u}^{M-}=\{(b,b')\in\mathbb{B}^{k}\times\mathbb{B}^{k}\mid\exists c,c'\in\mathbb{B}^{m}.\,((b,c),(b',c'))\in\gamma_{u}^{M-}\}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Next, we need to compute the 
+\begin_inset Formula $Avl$
+\end_inset
+
+ relation that consists of sets of extended abstract states.
+ Arbitrary sets of extended abstract states cannot be efficiently represented
+ symbolically.
+ Therefore, we only consider cubes of the form 
+\begin_inset Formula $Cube(d_{1},\ldots,d_{k},en_{1},\ldots,en_{m},f_{1},\ldots,f_{m})=\{(b_{1},\ldots,b_{k},c_{1},\ldots,c_{m})\mid\bigwedge_{i=1\ldots k}(b_{i}=d_{i})\land\bigwedge_{i=1\ldots m}en_{i}\implies(c_{i}=f_{i})\}$
+\end_inset
+
+.
+ A cube describes a set of extended abstract states where a subset of label
+ predicates are assigned fixed values.
+ The 
+\begin_inset Formula $en_{i}\in\mathbb{B}$
+\end_inset
+
+ parameters indicate which label predicates are fixed in the cube; 
+\begin_inset Formula $f_{i}\in\mathbb{B}$
+\end_inset
+
+ specify values of these predicates.
+ A set of cubes can be symbolically represented using 
+\begin_inset Formula $m$
+\end_inset
+
+ extra variables that store 
+\begin_inset Formula $en_{i}$
+\end_inset
+
+ values.
+\end_layout
+
+\begin_layout Standard
+Initial abstraction of the game includes sets of cubes 
+\begin_inset Formula $Avl^{+}$
+\end_inset
+
+ and 
+\begin_inset Formula $Avl^{-}$
+\end_inset
+
+ that approximate the 
+\begin_inset Formula $Avl$
+\end_inset
+
+ relation such that 
+\begin_inset Formula $Avl^{-}\subseteq Avl$
+\end_inset
+
+, 
+\begin_inset Formula $Avl^{-}\subseteq Avl^{+}$
+\end_inset
+
+, and 
+\begin_inset Formula $\forall\alpha\in Avl.\exists\beta\in Avl^{+},\alpha\subseteq\beta$
+\end_inset
+
+.
+ 
+\begin_inset Note Comment
+status open
+
+\begin_layout Plain Layout
+
+\series bold
+TODO
+\series default
+: give an example of how 
+\begin_inset Formula $Avl^{+/-}$
+\end_inset
+
+ can be computed.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Formulas
+\begin_inset space ~
+\end_inset
+
+
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:cprecm"
+
+\end_inset
+
+ and 
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "eq:cprecM"
+
+\end_inset
+
+ for computing 
+\begin_inset Formula $Cpre_{c}^{m}$
+\end_inset
+
+ and 
+\begin_inset Formula $Cpre_{c}^{M}$
+\end_inset
+
+ contain quantifiers over set variable 
+\begin_inset Formula $\alpha$
+\end_inset
+
+.
+ Given a symbolic representation of 
+\begin_inset Formula $Avl^{+/-}$
+\end_inset
+
+ as sets of cubes, this operation can be performed symbolically using modified
+ versions of 
+\begin_inset Formula $Cpre$
+\end_inset
+
+ operator 
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+Cpre_{c}^{m}(U)=\{v\in\Sigma\mid\exists\alpha\in Avl^{+}(v).\exists a\in\Lambda.in(\alpha,a)\land\forall a'\in(\gamma_{u}^{M-})^{*}(a).\Delta_{c}^{m+}(a')\cap U\neq\emptyset\}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+Cpre_{c}^{M}(U)=\{v\in\Sigma\mid\exists\alpha\in Avl^{-}(v).\forall a\in\Lambda.\, in(\alpha,a)\implies\forall a'\in(\gamma_{u}^{m+})^{*}(a).\Delta_{c}^{M-}(a')\cap U\neq\emptyset\}
+\]
+
+\end_inset
+
+where the set membership check 
+\begin_inset Formula $a\in\alpha$
+\end_inset
+
+ is replaced with the 
+\begin_inset Formula $in(a,\alpha)$
+\end_inset
+
+ function, 
+\begin_inset Formula $in:\mathbb{B}^{k+2m}\times\mathbb{B}^{k+m}\rightarrow\mathbb{B}$
+\end_inset
+
+, defined as follows: 
+\begin_inset Formula $in((d_{1},\ldots,d_{k},en_{1},\ldots,en_{m},f_{1},\ldots,f_{m}),(b_{1},\ldots,b_{k},c_{1},\ldots,c_{m}))=(\bigwedge_{i=1\ldots k}d_{i}=b_{i})\land(\bigwedge_{i=1\ldots m}en_{i}\implies(f_{i}=c_{i}))$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+\begin_inset Note Comment
 status collapsed
 
 \begin_layout Plain Layout
@@ -2031,7 +2320,7 @@ Adding pre-/post-predicate
 \end_layout
 
 \begin_layout Standard
-\begin_inset Note Note
+\begin_inset Note Comment
 status collapsed
 
 \begin_layout Plain Layout
@@ -2049,6 +2338,557 @@ Non-blocking assignments
 
 \begin_layout Subsection
 Refinement
+\end_layout
+
+\begin_layout Standard
+The abstraction refinement algorithm described in Section
+\begin_inset space ~
+\end_inset
+
+
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "sec:Abstraction-refinement"
+
+\end_inset
+
+ involves a number of checks and partitioning operations.
+ We describe how these operations can be efficiently performed for symbolic
+ abstract games.
+\end_layout
+
+\begin_layout Itemize
+Cases 1.1.1/1.1.2 require checking that 
+\begin_inset Formula $\alpha\in Avl(v)$
+\end_inset
+
+, where 
+\begin_inset Formula $v=(d_{1},\ldots,d_{k})$
+\end_inset
+
+, 
+\begin_inset Formula $\alpha=Cube(d_{1},\ldots,d_{k},en_{1},\ldots,en_{m},f_{1},\ldots,f_{m})$
+\end_inset
+
+.
+ While we do not compute the precise set 
+\begin_inset Formula $Avl(v)$
+\end_inset
+
+, the membership check can be performed by using an SMT solver to check
+ satisfiability of the formula
+\begin_inset Formula $\forall s\in\|v\|_{\Sigma}.\exists a\in\Lambda,l\in L.(in(\alpha,a)\land(s,l)\in\|a\|_{\Lambda})$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Itemize
+Case 1.2 computes
+\begin_inset Formula $\hat{\alpha}=\{a\in\alpha|\forall a'\in(\gamma_{u}^{M-})^{*}(a).\Delta_{c}^{m+}(a')\cap W^{M}\neq\emptyset\}$
+\end_inset
+
+.
+ This computation can be carried out symbolically by using the 
+\begin_inset Formula $in$
+\end_inset
+
+ function to perform the set membership check:
+\begin_inset Formula $\hat{\alpha}=\{a\in\Lambda|in(\alpha,a)\forall a'\in(\gamma_{u}^{M-})^{*}(a).\Delta_{c}^{m+}(a')\cap W^{M}\neq\emptyset\}$
+\end_inset
+
+.
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+Case 1.2.1: Refine 
+\begin_inset Formula $v$
+\end_inset
+
+ by partitioning it into 2 or more states 
+\begin_inset Formula $\{v_{1},\ldots,v_{k}\}$
+\end_inset
+
+ such that 
+\begin_inset Formula $\exists\alpha'\in Avl(v_{1}).\,\alpha'\subseteq\hat{\alpha}$
+\end_inset
+
+.
+ At this point 
+\begin_inset Formula $\hat{\alpha}$
+\end_inset
+
+ is symbolically represented as a set of extended abstract states.
+ Since we cannot handle arbitrary sets, we find a maximal cube 
+\begin_inset Formula $\alpha'\subseteq\alpha$
+\end_inset
+
+, 
+\begin_inset Formula $\alpha'=Cube(d_{1},\ldots,d_{k},en_{1},\ldots,en_{m},f_{1},\ldots,f_{m})$
+\end_inset
+
+ 
+\begin_inset Note Comment
+status collapsed
+
+\begin_layout Plain Layout
+(does it make sense to find all maximal cubes and pick the best one using
+ some criterion?)
+\end_layout
+
+\end_inset
+
+ and compute the set of concrete states 
+\begin_inset Formula $\varphi(X)=\{s\in D(X)\mid\bigwedge_{i=1\ldots k}\sigma_{i}(s)=d_{i}\land\exists l\in L.(s,l).\bigwedge_{i.en_{i}=1}(\lambda_{i}(s,l)=f_{i})\}$
+\end_inset
+
+.
+ This computation relies on a 
+\emph on
+quantifier elimination
+\emph default
+ procedure and returns a formula over concrete state variables 
+\begin_inset Formula $X$
+\end_inset
+
+.
+ We refine the set of state predicates 
+\begin_inset Formula $P_{S}$
+\end_inset
+
+ using new predicates in 
+\begin_inset Formula $\varphi$
+\end_inset
+
+: 
+\begin_inset Formula $P_{S}:=massage(P_{S},\varphi)$
+\end_inset
+
+, where the 
+\begin_inset Formula $massage$
+\end_inset
+
+ operation simplifies 
+\begin_inset Formula $\varphi$
+\end_inset
+
+ and extracts new predicates that are not implied by predicates already
+ in 
+\begin_inset Formula $P_{S}$
+\end_inset
+
+ and returns the updates set of predicates.
+ Abstract transition relations of the game are then recomputed with the
+ new set of predicates.
+\end_layout
+
+\begin_layout Itemize
+Case 1.2.2: 
+\begin_inset Formula $\check{\alpha}=\emptyset$
+\end_inset
+
+, i.e., all extended abstract states in 
+\begin_inset Formula $\alpha$
+\end_inset
+
+ are may-winning; however 
+\begin_inset Formula $\alpha$
+\end_inset
+
+ is not must-winning, i.e., 
+\begin_inset Formula $\exists a\in\alpha.\exists a'\in(\gamma_{u}^{m+})^{*}(a).\Delta_{c}^{M-}(a')\cap W^{M}=\emptyset$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Itemize
+Cases 1.2.2.1 and 1.2.2.2 are similar and can be handled analogously.
+ In all cases we have a may-plus transition between two abstract states
+ but no must-minus transition between the same states, and we need to refine
+ the transition relations and, possibly, the abstract states to reduce the
+ gap between may and must transition relations.
+ 
+\end_layout
+
+\begin_deeper
+\begin_layout Standard
+Assume that the abstract states in question are 
+\begin_inset Formula $a$
+\end_inset
+
+ and 
+\begin_inset Formula $a'$
+\end_inset
+
+, defined over predicates 
+\begin_inset Formula $pre=\{\pi_{1},\ldots,\pi_{n}\}\in Pred(Z)^{n}$
+\end_inset
+
+ and 
+\begin_inset Formula $post=\{\nu_{1},\ldots,\nu_{l})\}\in Pred(Q)^{l}$
+\end_inset
+
+ respectively, the abstract transition relations are 
+\begin_inset Formula $\Delta^{m+},\Delta^{M-}\subseteq\mathbb{B}^{n}\times\mathbb{B}^{l}$
+\end_inset
+
+, 
+\begin_inset Formula $(a,a')\in\Delta^{m+}$
+\end_inset
+
+ and 
+\begin_inset Formula $(a,a')\notin\Delta^{M-}$
+\end_inset
+
+.
+ Since 
+\begin_inset Formula $\Delta^{m+}$
+\end_inset
+
+ is computed as a uninon of abstract (controllable or uncontrollable) transition
+ relations for individual syntactic transitions (Section
+\begin_inset space ~
+\end_inset
+
+
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "sub:Computing-initial-abstraction"
+
+\end_inset
+
+), there exists a syntactic transiton 
+\begin_inset Formula $t$
+\end_inset
+
+ such that 
+\begin_inset Formula $(a,a')\in\rho^{m+}(pre,t,post)$
+\end_inset
+
+, 
+\begin_inset Formula $(a,a')\notin\rho^{M-}(pre,t,post)$
+\end_inset
+
+.
+ The transition relation 
+\begin_inset Formula $\rho^{m+}(pre,t,post)$
+\end_inset
+
+ is, in turn, composed of atomic syntactic transition relations.
+ We can find at least one sequence of atomic may-transitions connecting
+ 
+\begin_inset Formula $a$
+\end_inset
+
+ and 
+\begin_inset Formula $a'$
+\end_inset
+
+ through a chain of intermediate abstract states 
+\begin_inset Formula $(a_{1}=a),a_{2},\ldots,(a_{j}=a')$
+\end_inset
+
+ as shown in Figure
+\begin_inset space ~
+\end_inset
+
+
+\begin_inset CommandInset ref
+LatexCommand ref
+reference "fig:Refining-a-spurious"
+
+\end_inset
+
+.
+ We refine this sequence of transitions and intermediate states as follows.
+ 
+\end_layout
+
+\begin_layout Itemize
+First, we check the feasibility of each transition 
+\begin_inset Formula $(a_{i},a_{i+1})$
+\end_inset
+
+ in the path, i.e.
+ 
+\begin_inset Formula $(a_{i},a_{i+1})\in\rho^{m}(P_{i},t_{i},P_{i+1})$
+\end_inset
+
+ for all 
+\begin_inset Formula $i=1\ldots(j-1)$
+\end_inset
+
+.
+ To this end, we check the satisfiability of the formula
+\begin_inset Formula $\delta(t_{i})\land(V(P_{i})\in\|a_{i}\|)\land(V(P_{i+1})\in\|a_{i+1}\|)$
+\end_inset
+
+.
+ If we discover that one of the transitions is not feasible, we refine 
+\begin_inset Formula $\rho^{m+}(P_{i},t_{i},P_{i+1}):=\rho^{m+}(P_{i},t_{i},P_{i+1})\setminus\{(a_{i},a_{i+1})\}$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Itemize
+Otherwise, we check whether the entire path 
+\begin_inset Formula $a_{1},a_{2},\ldots,a_{j}$
+\end_inset
+
+ is a feasible, i.e., whether there exists a transition 
+\begin_inset Formula $(a,a')\in\Delta^{m}$
+\end_inset
+
+ through intermediate states 
+\begin_inset Formula $a_{i}$
+\end_inset
+
+.
+ To this end, we check the satisfiability of the formula 
+\begin_inset Formula $\bigwedge_{i=1\ldots(j-1)}\delta(t_{i})\land\bigwedge_{i=1\ldots j}(V(P_{i})\in\|a_{i}\|)$
+\end_inset
+
+.
+ In case the formula is unsatisfiable, then we generate 
+\begin_inset Formula $j-1$
+\end_inset
+
+ partitionings of the formula into a prefix formula 
+\begin_inset Formula $Pref_{q}=\bigwedge_{i=1\ldots(q-1)}\delta(t_{i})\land\bigwedge_{i=1\ldots q}(V(P_{i})\in\|a_{i}\|)$
+\end_inset
+
+ and suffix formula 
+\begin_inset Formula $Suf_{q}=\bigwedge_{i=q\ldots(j-1)}\delta(t_{i})\land\bigwedge_{i=(q+1)\ldots j}(V(P_{i})\in\|a_{i}\|)$
+\end_inset
+
+, for 
+\begin_inset Formula $q=1\ldots(j-1)$
+\end_inset
+
+.
+ We compute a Craig interpolant of each pair 
+\begin_inset Formula $Pref_{q}$
+\end_inset
+
+, 
+\begin_inset Formula $Suf_{q}$
+\end_inset
+
+ and extract a set of new predicates from the interpolant.
+ These predicates are relevant to proving the infeasibility of the transition
+ 
+\begin_inset Formula $(a,a')$
+\end_inset
+
+ at location 
+\begin_inset Formula $q$
+\end_inset
+
+ in the path.
+ We update the labelling of the syntax tree of transition 
+\begin_inset Formula $t$
+\end_inset
+
+ adding the new predicates at relevant locations.
+\end_layout
+
+\begin_layout Itemize
+Otherwise (i.e., the path 
+\begin_inset Formula $a_{1},a_{2},\ldots,a_{j}$
+\end_inset
+
+ is feasible), for each transition 
+\begin_inset Formula $(a_{i},a_{i+1})\in\rho^{m+}(P_{i},t_{i},P_{i+1})$
+\end_inset
+
+ in the path, such that 
+\begin_inset Formula $(a_{i},a_{i+1})\notin\rho^{M-}(P_{i},t_{i},P_{i+1})$
+\end_inset
+
+ we check whether 
+\begin_inset Formula $(a_{i},a_{i+1})\in\rho^{M}(P_{i},t_{i},P_{i+1})$
+\end_inset
+
+ 
+\begin_inset Note Note
+status open
+
+\begin_layout Plain Layout
+
+\series bold
+TODO:
+\series default
+ Optimisation: do the check for all 
+\begin_inset Formula $a\in\alpha$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+.
+ If so, we refine 
+\begin_inset Formula $\rho^{M-}(P_{i},t_{i},P_{i+1}):=\rho^{M-}(P_{i},t_{i},P_{i+1})\cup\{(a_{i},a_{i+1})\}$
+\end_inset
+
+.
+ If all transitions in the chain can be upgraded to must-transitions in
+ this way, then 
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+
+\begin_inset Formula $(a,a')\in\rho^{M-}(pre,t,post)$
+\end_inset
+
+ will hold for the new top-level transition relation.
+\end_layout
+
+\begin_layout Itemize
+If none of the previous special cases helped to refine the transition, we
+ explore the path 
+\begin_inset Formula $a_{1},a_{2},\ldots,a_{j}$
+\end_inset
+
+ backwards, computing the precise must-predecessor on each step.
+ Denote 
+\begin_inset Formula $a_{i}^{M}$
+\end_inset
+
+ the subset of states in 
+\begin_inset Formula $\|a_{i}\|$
+\end_inset
+
+ from which there exists a concrete transition to 
+\begin_inset Formula $\|a_{j}\|$
+\end_inset
+
+.
+ Then 
+\begin_inset Formula $a_{j}^{M}=\|a_{j}\|$
+\end_inset
+
+.
+ For 
+\begin_inset Formula $i<j$
+\end_inset
+
+, 
+\begin_inset Formula $a_{i}^{M}$
+\end_inset
+
+ can be computed as 
+\begin_inset Formula $a_{i}^{M}=wp(a_{i+1}^{M},t_{i})\cap\|a_{i}\|$
+\end_inset
+
+, where 
+\begin_inset Formula $wp(a_{i+1}^{M},t_{i})$
+\end_inset
+
+ is the weakest precondition of 
+\begin_inset Formula $a_{i+1}^{M}$
+\end_inset
+
+ with respect to atomic transition 
+\begin_inset Formula $t_{i}$
+\end_inset
+
+.
+ Weakest precondition can be computed syntactically.
+ We iteratively compute 
+\begin_inset Formula $a_{i}^{M}$
+\end_inset
+
+ for decreasing values of 
+\begin_inset Formula $i$
+\end_inset
+
+ until 
+\begin_inset Formula $i=1$
+\end_inset
+
+ or 
+\begin_inset Formula $a_{i}^{M}$
+\end_inset
+
+ becomes unsatisfiable.
+ For each satisfiable 
+\begin_inset Formula $a_{i}^{M}$
+\end_inset
+
+, we refine the set of predicates in the corresponding location: 
+\begin_inset Formula $P_{i}:=massage(P_{i},a_{i}^{M})$
+\end_inset
+
+.
+\end_layout
+
+\end_deeper
+\end_deeper
+\begin_layout Standard
+\begin_inset Float figure
+wide false
+sideways false
+status open
+
+\begin_layout Plain Layout
+\align center
+\begin_inset Graphics
+	filename refine.eps
+	scale 50
+
+\end_inset
+
+
+\begin_inset Caption
+
+\begin_layout Plain Layout
+\begin_inset CommandInset label
+LatexCommand label
+name "fig:Refining-a-spurious"
+
+\end_inset
+
+Refining a spurious may-transition
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Note Note
+status open
+
+\begin_layout Plain Layout
+
+\series bold
+TODO:
+\series default
+ Recomputing abstraction with new state predicates.
+\end_layout
+
+\end_inset
+
+
 \end_layout
 
 \begin_layout Standard
