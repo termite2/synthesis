@@ -97,7 +97,79 @@ Leonid Ryzhyk
 \end_layout
 
 \begin_layout Date
-09/08/12
+10/08/12
+\end_layout
+
+\begin_layout Section
+Introduction
+\end_layout
+
+\begin_layout Standard
+We adapt the three-valued abstraction refinement algorithm of de Alfaro
+ and Roy 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "deAlfaro_Roy_07"
+
+\end_inset
+
+ for use in the Termite driver synthesis tool.
+ Specifically, we make the following improvements:
+\end_layout
+
+\begin_layout Itemize
+The algorithm in 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "deAlfaro_Roy_07"
+
+\end_inset
+
+ assumes a turn-based game where the state space of the game can be partitioned
+ into controllable and uncontrollable states.
+ This is not the case in driver synthesis where controllable and uncontrollable
+ moves can be simultaneously available in each state with controllable transitio
+ns being potentially delayed by uncontrollable transitions.
+ We adapt the three-valued abstraction refinement algorithm to these settings.
+\end_layout
+
+\begin_layout Itemize
+The version of the abstraction refinement algorithm of 
+\begin_inset CommandInset citation
+LatexCommand cite
+key "deAlfaro_Roy_07"
+
+\end_inset
+
+ for approximately computed may and must transition relations refines abstract
+ states by partitioning them arbitrarily.
+ While this algorithm is guaranteed to terminate for a class of problems,
+ arbitrary partitioning can be inefficient in practice.
+ In contrast our algorithm analyses the cause of imprecision and refines
+ state and transition relations accordingly.
+ It guarantees that evert refinement eliminates a source of imprecision
+ and thus terminates faster in practice.
+\end_layout
+
+\begin_layout Itemize
+We present a symbolic version of the three-valued abstraction refinement
+ algorithm based on predicate abstraction.
+ 
+\begin_inset Note Note
+status collapsed
+
+\begin_layout Plain Layout
+If we actually implement this, we can probably claim the first practical
+ implementation of predicate-based abstraction refinement for games as well
+ as the first implementation of predicate-based three-values abstraction
+ refinement.
+\end_layout
+
+\end_inset
+
+ The abstraction step is performed with the help of a modern theorem prover
+ such as Z3, while the model checking step is performed purely symbolically,
+ e.g., using BDD representation of abstract may- and must- transition relations.
 \end_layout
 
 \begin_layout Section
@@ -3153,16 +3225,6 @@ TODO:
 \series default
  Recomputing abstraction with new state predicates.
 \end_layout
-
-\end_inset
-
-
-\end_layout
-
-\begin_layout Standard
-\begin_inset CommandInset citation
-LatexCommand cite
-key "deAlfaro_Roy_07"
 
 \end_inset
 
