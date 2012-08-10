@@ -2706,8 +2706,8 @@ If the previous step did not refine the transition, then we partition
 \begin_inset Formula $s$
 \end_inset
 
- cab be found by solving the equation 
-\begin_inset Formula $s\in\|a\|\land s\in wp(\ldots wp(wp(a',t_{j-1}),t_{j-2})\ldots,t_{1})$
+ can be found by solving the equation 
+\begin_inset Formula $s\in wp(\ldots wp(wp(\|a_{j}\|,t_{j-1})\cap\|a_{j-1}\|,t_{j-2})\cap\|a_{j-2}\|\ldots,t_{1})\cap\|a_{1}\|$
 \end_inset
 
 , where the second conjunct is the weakest precondition of the abstract
