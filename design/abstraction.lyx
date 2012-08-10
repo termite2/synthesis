@@ -183,10 +183,10 @@ Games
 \begin_layout Standard
 A 
 \emph on
-game structure
+game 
 \emph default
- 
-\begin_inset Formula $G=\langle S,L,I,\delta_{c},\delta_{u}\rangle$
+
+\begin_inset Formula $G=\langle S,L,I,O,\delta_{c},\delta_{u}\rangle$
 \end_inset
 
  consists of:
@@ -221,11 +221,31 @@ a subset of initial states
 \end_layout
 
 \begin_layout Itemize
+a subset of goal states 
+\begin_inset Formula $O\subseteq S$
+\end_inset
+
+,
+\end_layout
+
+\begin_layout Itemize
 a controllable transition relation 
 \begin_inset Formula $\delta_{c}:S\times L\rightarrow2^{S}$
 \end_inset
 
-,
+; we assume that this transition relation is deterministic, i.e., 
+\begin_inset Formula $\delta_{c}(s,l)$
+\end_inset
+
+ consists of at most one state for any 
+\begin_inset Formula $s$
+\end_inset
+
+ and 
+\begin_inset Formula $l$
+\end_inset
+
+.
 \end_layout
 
 \begin_layout Itemize
@@ -237,7 +257,17 @@ an uncontrollable transition relation
 \end_layout
 
 \begin_layout Standard
-The 
+We consider reachability games with perfect information, where we need to
+ find a strategy to reach a state in 
+\begin_inset Formula $O$
+\end_inset
+
+ from any state in 
+\begin_inset Formula $I$
+\end_inset
+
+.
+ Such games can be solved by computing the least fixed point of the 
 \emph on
 controllable predecessor
 \emph default
@@ -245,8 +275,16 @@ controllable predecessor
 \begin_inset Formula $Cpre:\,2^{S}\rightarrow2^{S}$
 \end_inset
 
- returns the set of states from which the system can force the game into
- a given region of the state space in one step:
+.
+ 
+\begin_inset Formula $Cpre$
+\end_inset
+
+ computes the set of states from which the system can force the game into
+ a given region of the state space in one step.
+ This includes all states from which any uncontrollable transition takes
+ the game to the goal region as well as states from which there exists a
+ controllable transition to the goal region:
 \end_layout
 
 \begin_layout Standard
@@ -263,7 +301,7 @@ where
 \begin_layout Standard
 \begin_inset Formula 
 \[
-Cpre_{c}(X)=\{s\in S\mid\exists l\in L.\forall s'\in\delta_{u}^{*}(s).\,\delta_{c}(s',l)\cap X\neq\emptyset\}
+Cpre_{u}(X)=\{s\in S\mid\delta_{u}(s)\neq\emptyset\land\delta_{u}(s)\subseteq X\}
 \]
 
 \end_inset
@@ -274,12 +312,32 @@ Cpre_{c}(X)=\{s\in S\mid\exists l\in L.\forall s'\in\delta_{u}^{*}(s).\,\delta_{
 \begin_layout Standard
 \begin_inset Formula 
 \[
-Cpre_{u}(X)=\{s\in S\mid\delta_{u}(s)\neq\emptyset\land\delta_{u}(s)\subseteq X\}
+Cpre_{c}(X)=\{s\in S\mid\exists l\in L.\forall s'\in\delta_{u}^{*}(s).\,\delta_{c}(s',l)\cap X\neq\emptyset\}
 \]
 
 \end_inset
 
 
+\end_layout
+
+\begin_layout Standard
+The formula for 
+\begin_inset Formula $Cpre_{c}$
+\end_inset
+
+ reflects the nature of scheduling of controllable and uncontrollable transition
+s in real-world settings: after the driver selects a controllable action
+ to perform and before the corresponding controllable transition is taken,
+ the environment may perform one or more uncontrollable transitions; hence
+ a controllable action is only winning in state 
+\begin_inset Formula $s$
+\end_inset
+
+ if it is also winning in any state reachable from 
+\begin_inset Formula $s$
+\end_inset
+
+ via a finite sequence of uncontrollable transitions.
 \end_layout
 
 \begin_layout Subsection
@@ -446,9 +504,6 @@ We define may and must versions of abstract transition relations:
 \end_inset
 
 
-\end_layout
-
-\begin_layout Standard
 \begin_inset Formula 
 \[
 Avl(v)=\{\alpha\subseteq\Lambda\mid\forall s\in\|v\|.\exists l\in L,a\in\alpha.\,(s,l)\in\|a\|\}
@@ -1316,10 +1371,10 @@ values of non-primed variables.
 \begin_layout Standard
 A 
 \emph on
-symbolic game structure
+symbolic game 
 \emph default
- 
-\begin_inset Formula $SG=\langle X,Y,T,init,ctran,utran\rangle$
+
+\begin_inset Formula $SG=\langle X,Y,T,init,goal,ctran,utran\rangle$
 \end_inset
 
  consist of 
@@ -1367,7 +1422,15 @@ Initial state constraint
 \begin_inset Formula $init\in Prop(X)$
 \end_inset
 
-.
+
+\end_layout
+
+\begin_layout Itemize
+Goal constraint 
+\begin_inset Formula $goal\in Prop(X)$
+\end_inset
+
+
 \end_layout
 
 \begin_layout Itemize
@@ -1560,18 +1623,18 @@ temporary variables
 \end_layout
 
 \begin_layout Standard
-Given a symbolic game structure 
+Given a symbolic game 
 \begin_inset Formula $SG=\langle X,Y,T,init,ctran,utran\rangle$
 \end_inset
 
- we define the corresponding game structure 
+ we define the corresponding game 
 \begin_inset Formula $G(SG)$
 \end_inset
 
  as follows 
 \begin_inset Formula 
 \[
-G(SG)=\langle D(X),D(Y),\|init\|_{p},\bigcup_{t\in ctran}\|t\|_{c},\bigcup_{t\in utran}\|t\|_{u}\rangle
+G(SG)=\langle D(X),D(Y),\|init\|_{p},\|goal\|_{p},\bigcup_{t\in ctran}\|t\|_{c},\bigcup_{t\in utran}\|t\|_{u}\rangle
 \]
 
 \end_inset
@@ -1664,7 +1727,7 @@ Let
 \end_layout
 
 \begin_layout Standard
-Given a symbolic game structure 
+Given a symbolic game 
 \begin_inset Formula $SG=\langle X,Y,T,init,ctran,utran\rangle$
 \end_inset
 
@@ -1742,8 +1805,8 @@ as follows:
 \end_layout
 
 \begin_layout Standard
-Given an abstraction of a game structure induced by a set of predicates,
- one can compute may and must relations defined in Section
+Given an abstract game induced by a set of predicates, one can compute may
+ and must relations defined in Section
 \begin_inset space ~
 \end_inset
 
@@ -2065,7 +2128,7 @@ name "sub:Computing-initial-abstraction"
 \end_layout
 
 \begin_layout Standard
-Before computing initial abstraction of game structure 
+Before computing initial abstraction of game 
 \begin_inset Formula $SG=\langle X,Y,T,init,ctran,utran\rangle$
 \end_inset
 
