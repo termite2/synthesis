@@ -2347,8 +2347,8 @@ Initial abstraction of the game includes sets of cubes
 
 .
  
-\begin_inset Note Comment
-status open
+\begin_inset Note Note
+status collapsed
 
 \begin_layout Plain Layout
 
@@ -2575,7 +2575,7 @@ Case 1.2.1: Refine
 \end_inset
 
  
-\begin_inset Note Comment
+\begin_inset Note Note
 status collapsed
 
 \begin_layout Plain Layout
@@ -2770,9 +2770,31 @@ reference "fig:Refining-a-spurious"
  We refine this sequence of transitions and intermediate states as follows.
 \end_layout
 
+\begin_layout Standard
+\begin_inset Note Comment
+status collapsed
+
 \begin_layout Itemize
 First, we check each individual atomic transition 
 \begin_inset Formula $(a_{i},a_{i+1})\in\rho^{m+}(P_{i},t_{i},P_{i+1})$
+\end_inset
+
+
+\begin_inset Note Note
+status collapsed
+
+\begin_layout Plain Layout
+
+\series bold
+TODO:
+\series default
+ Optimisation: do the check for all 
+\begin_inset Formula $a\in\alpha$
+\end_inset
+
+
+\end_layout
+
 \end_inset
 
 .
@@ -2990,6 +3012,267 @@ If a state
 .
 \end_layout
 
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+First, we check each individual atomic transition 
+\begin_inset Formula $(a_{i},a_{i+1})\in\rho^{m+}(P_{i},t_{i},P_{i+1})$
+\end_inset
+
+
+\begin_inset Note Note
+status collapsed
+
+\begin_layout Plain Layout
+
+\series bold
+TODO:
+\series default
+ Optimisation: do the check for all 
+\begin_inset Formula $a\in\alpha$
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+.
+ If the transition is a spurious may-transition, i.e., 
+\begin_inset Formula $(a_{i},a_{i+1})\in\rho^{m}(P_{i},t_{i},P_{i+1})$
+\end_inset
+
+ then we refine 
+\begin_inset Formula $\rho^{m+}(P_{i},t_{i},P_{i+1}):=\rho^{m+}(P_{i},t_{i},P_{i+1})\setminus\{(a_{i},a_{i+1})\}$
+\end_inset
+
+.
+ If 
+\begin_inset Formula $(a,a')$
+\end_inset
+
+ is also a valid must-transition, i.e., 
+\begin_inset Formula $(a_{i},a_{i+1})\in\rho^{M}(P_{i},t_{i},P_{i+1})$
+\end_inset
+
+, but 
+\begin_inset Formula $(a_{i},a_{i+1})\notin\rho^{M-}(P_{i},t_{i},P_{i+1})$
+\end_inset
+
+, then we refine 
+\begin_inset Formula $\rho^{M-}(P_{i},t_{i},P_{i+1}):=\rho^{M-}(P_{i},t_{i},P_{i+1})\cup\{(a_{i},a_{i+1})\}$
+\end_inset
+
+.
+ Each of the two checks can be performed by a single SMT query.
+\end_layout
+
+\begin_layout Itemize
+Otherwise, we check whether the entire path 
+\begin_inset Formula $a_{1},a_{2},\ldots,a_{j}$
+\end_inset
+
+ is feasible, i.e., whether there exists a transition 
+\begin_inset Formula $(a,a')\in\Delta^{m}$
+\end_inset
+
+ through intermediate states 
+\begin_inset Formula $a_{i}$
+\end_inset
+
+.
+ To this end, we check the satisfiability of the formula 
+\begin_inset Formula $\bigwedge_{i=1\ldots(j-1)}\delta(t_{i})\land\bigwedge_{i=1\ldots j}(V(P_{i})\in\|a_{i}\|)$
+\end_inset
+
+.
+ In case the formula is unsatisfiable, then we generate 
+\begin_inset Formula $j-1$
+\end_inset
+
+ partitionings of the formula into a prefix formula 
+\begin_inset Formula $Pref_{q}=\bigwedge_{i=1\ldots(q-1)}\delta(t_{i})\land\bigwedge_{i=1\ldots q}(V(P_{i})\in\|a_{i}\|)$
+\end_inset
+
+ and suffix formula 
+\begin_inset Formula $Suf_{q}=\bigwedge_{i=q\ldots(j-1)}\delta(t_{i})\land\bigwedge_{i=(q+1)\ldots j}(V(P_{i})\in\|a_{i}\|)$
+\end_inset
+
+, for 
+\begin_inset Formula $q=1\ldots(j-1)$
+\end_inset
+
+.
+ We compute a Craig interpolant of each pair 
+\begin_inset Formula $Pref_{q}$
+\end_inset
+
+, 
+\begin_inset Formula $Suf_{q}$
+\end_inset
+
+ and extract a set of new predicates from the interpolant.
+ These predicates are relevant to proving the infeasibility of the transition
+ 
+\begin_inset Formula $(a,a')$
+\end_inset
+
+ at location 
+\begin_inset Formula $q$
+\end_inset
+
+ in the path.
+ We update the labelling of the syntax tree of transition 
+\begin_inset Formula $t$
+\end_inset
+
+ adding the new predicates at relevant locations.
+\end_layout
+
+\begin_layout Itemize
+If none of the previous special cases helped to refine the transition, we
+ explore the path 
+\begin_inset Formula $a_{1},a_{2},\ldots,a_{j}$
+\end_inset
+
+ backwards, computing the precise must-predecessor on each step.
+ Denote 
+\begin_inset Formula $a_{i}^{M}$
+\end_inset
+
+ the subset of states in 
+\begin_inset Formula $\|a_{i}\|$
+\end_inset
+
+ from which there exists a concrete transition to 
+\begin_inset Formula $\|a_{j}\|$
+\end_inset
+
+.
+ Then 
+\begin_inset Formula $a_{j}^{M}=\|a_{j}\|$
+\end_inset
+
+.
+ For 
+\begin_inset Formula $i<j$
+\end_inset
+
+, 
+\begin_inset Formula $a_{i}^{M}$
+\end_inset
+
+ can be computed as 
+\begin_inset Formula $a_{i}^{M}=wp(a_{i+1}^{M},t_{i})\cap\|a_{i}\|$
+\end_inset
+
+, where 
+\begin_inset Formula $wp(a_{i+1}^{M},t_{i})$
+\end_inset
+
+ is the weakest precondition of 
+\begin_inset Formula $a_{i+1}^{M}$
+\end_inset
+
+ with respect to atomic transition 
+\begin_inset Formula $t_{i}$
+\end_inset
+
+.
+ Weakest precondition can be computed syntactically.
+ We iteratively compute 
+\begin_inset Formula $a_{i}^{M}$
+\end_inset
+
+ for decreasing values of 
+\begin_inset Formula $i$
+\end_inset
+
+ until 
+\begin_inset Formula $i=1$
+\end_inset
+
+ or 
+\begin_inset Formula $a_{i}^{M}$
+\end_inset
+
+ becomes unsatisfiable.
+ For each satisfiable 
+\begin_inset Formula $a_{i}^{M}$
+\end_inset
+
+, 
+\begin_inset Formula $i>1$
+\end_inset
+
+ we refine the set of predicates in the corresponding location: 
+\begin_inset Formula $P_{i}:=massage(P_{i},a_{i}^{M})$
+\end_inset
+
+.
+ 
+\end_layout
+
+\begin_deeper
+\begin_layout Standard
+For 
+\begin_inset Formula $i=1$
+\end_inset
+
+, formula 
+\begin_inset Formula $a_{1}^{M}$
+\end_inset
+
+ is defined over variables 
+\begin_inset Formula $Z\cup T$
+\end_inset
+
+, where 
+\begin_inset Formula $T$
+\end_inset
+
+ is the set of temporary variables.
+ In order to obtain the subset of states in 
+\begin_inset Formula $\|a\|$
+\end_inset
+
+ that have a successor in 
+\begin_inset Formula $\|a'\|$
+\end_inset
+
+, we quantify away temporary variables: 
+\begin_inset Formula $P_{1}:=massage(P_{1},\exists T.a_{1}^{M})$
+\end_inset
+
+.
+ 
+\begin_inset Note Note
+status open
+
+\begin_layout Plain Layout
+Quantifier elimination is likely to be unnecessary in practice.
+ It can be over-approximated by simply ignoring predicates containing variables
+ from 
+\begin_inset Formula $T$
+\end_inset
+
+ in 
+\begin_inset Formula $a_{1}^{M}$
+\end_inset
+
+.
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\end_deeper
+\end_deeper
 \begin_layout Standard
 \begin_inset Note Comment
 status collapsed
@@ -3239,7 +3522,6 @@ If none of the previous special cases helped to refine the transition, we
 
 \end_layout
 
-\end_deeper
 \begin_layout Standard
 \begin_inset Float figure
 wide false
