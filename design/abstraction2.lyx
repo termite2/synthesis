@@ -1,0 +1,520 @@
+#LyX 2.0 created this file. For more info see http://www.lyx.org/
+\lyxformat 413
+\begin_document
+\begin_header
+\textclass article
+\begin_preamble
+
+
+
+\newif\ifDraft\Draftfalse
+%\Drafttrue
+
+
+%\usepackage{scrartcl}
+
+\usepackage{fancyhdr}\usepackage{times}\usepackage{amsthm}\usepackage{cite}
+
+
+\usepackage[final,formats]{listings}
+
+\newcommand{\src}[1]{\texttt{#1}}
+\newcommand{\todo}[1]{\textit{\textbf{TODO: #1}}}
+
+\newtheorem{proposition}{Proposition}
+
+
+\title{Three-Valued Abstraction Refinement for Driver Synthesis}
+
+\author{Leonid Ryzhyk}
+
+
+\date{\today}
+\end_preamble
+\use_default_options false
+\maintain_unincluded_children false
+\language english
+\language_package none
+\inputencoding auto
+\fontencoding default
+\font_roman default
+\font_sans default
+\font_typewriter default
+\font_default_family default
+\use_non_tex_fonts false
+\font_sc false
+\font_osf false
+\font_sf_scale 100
+\font_tt_scale 100
+
+\graphics default
+\default_output_format default
+\output_sync 0
+\bibtex_command default
+\index_command default
+\paperfontsize 11
+\spacing single
+\use_hyperref false
+\papersize a4paper
+\use_geometry false
+\use_amsmath 2
+\use_esint 1
+\use_mhchem 0
+\use_mathdots 0
+\cite_engine basic
+\use_bibtopic false
+\use_indices false
+\paperorientation portrait
+\suppress_date false
+\use_refstyle 0
+\index Index
+\shortcut idx
+\color #008000
+\end_index
+\secnumdepth 3
+\tocdepth 3
+\paragraph_separation indent
+\paragraph_indentation default
+\quotes_language english
+\papercolumns 1
+\papersides 1
+\paperpagestyle default
+\tracking_changes false
+\output_changes false
+\html_math_output 0
+\html_css_as_file 0
+\html_be_strict false
+\end_header
+
+\begin_body
+
+\begin_layout Title
+Three-Valued Abstraction Refinement for Driver Synthesis
+\end_layout
+
+\begin_layout Section
+Definitions
+\end_layout
+
+\begin_layout Subsection
+Games
+\end_layout
+
+\begin_layout Standard
+A 
+\emph on
+reachability game 
+\emph default
+
+\begin_inset Formula $G=\langle S,I,\Phi,\delta_{c},\delta_{u},\gamma\rangle$
+\end_inset
+
+ consists of:
+\end_layout
+
+\begin_layout Itemize
+a state space 
+\begin_inset Formula $S$
+\end_inset
+
+ partitioned into controllable states 
+\begin_inset Formula $S_{c}$
+\end_inset
+
+ and uncontrollable states 
+\begin_inset Formula $S_{u}$
+\end_inset
+
+, 
+\begin_inset Formula $S_{c}\uplus S_{u}=S$
+\end_inset
+
+,
+\end_layout
+
+\begin_layout Itemize
+a set of initial states 
+\begin_inset Formula $I\subseteq S$
+\end_inset
+
+, 
+\end_layout
+
+\begin_layout Itemize
+a set of fair regions 
+\begin_inset Formula $\Phi\subseteq2^{S}\setminus\{\emptyset\}$
+\end_inset
+
+,
+\end_layout
+
+\begin_layout Itemize
+a controllable transition relation 
+\begin_inset Formula $\delta_{c}\subseteq S_{c}\times S$
+\end_inset
+
+,
+\end_layout
+
+\begin_layout Itemize
+an uncontrollable transition relation 
+\begin_inset Formula $\delta_{u}\subseteq S_{u}\times S$
+\end_inset
+
+,
+\end_layout
+
+\begin_layout Itemize
+a set of goal states 
+\begin_inset Formula $\gamma\subseteq S$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+We assume that the environment can remain idle in every state, i.e 
+\begin_inset Formula $\forall s\in S_{u}.\,(s,s)\in\delta_{u}$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+The game objective is: 
+\begin_inset Formula 
+\[
+\bigwedge_{\varphi\in\Phi}GF\varphi\rightarrow F\gamma
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection
+Discussion
+\end_layout
+
+\begin_layout Standard
+The above model is simpler than our previous model based on states and labels.
+ First, it does not have labels (they become part of the state, as explained
+ below).
+ Second, it is a strictly turn-based game, where only one of the players
+ can perform a move in each state.
+ These simplifications will lead to simpler abstraction and synthesis algorithms.
+ At the same time, this model allows capturing the nature of the interaction
+ between the driver and the environment more precisely.
+\end_layout
+
+\begin_layout Standard
+We briefly describe how a TSL2 specification can be encoded as a turn-based
+ game.
+ The state space of the game consists of all TSL variables and arguments
+ of controllable and uncontrollable tasks.
+ Every command issued by the driver to the device consists of two transitions.
+ The first transition 
+\emph on
+issues
+\emph default
+ the command, i.e., assigns its arguments.
+ The second transition 
+\emph on
+executes
+\emph default
+ the command.
+ The two transitions can be separated by several transitions tiggered by
+ other processes.
+ Note that in a concrete game values of command arguments remain unchanged
+ between the first and the second transitions.
+ This is not necessarily true in an abstract game.
+\end_layout
+
+\begin_layout Paragraph
+Example
+\end_layout
+
+\begin_layout Standard
+Consider a controllable task 
+\family typewriter
+write8
+\family default
+ defined as follows:
+\end_layout
+
+\begin_layout Standard
+\begin_inset listings
+inline false
+status open
+
+\begin_layout Plain Layout
+
+task controllable void write8(addr, val)
+\end_layout
+
+\begin_layout Plain Layout
+
+{
+\end_layout
+
+\begin_layout Plain Layout
+
+   // body of the task
+\end_layout
+
+\begin_layout Plain Layout
+
+}
+\end_layout
+
+\end_inset
+
+This task can be invoked either manually by writing the following line in
+ the driver template
+\end_layout
+
+\begin_layout Standard
+\begin_inset listings
+inline false
+status open
+
+\begin_layout Plain Layout
+
+write8(REG1_ADDR, 0);
+\end_layout
+
+\end_inset
+
+or automatically, from synthesised code.
+ In the former case the following uncontrollable transition is generated
+ for the task invocation:
+\begin_inset listings
+inline false
+status open
+
+\begin_layout Plain Layout
+
+assume(controllable==false); // only available when the environment has
+ control
+\end_layout
+
+\begin_layout Plain Layout
+
+write8_addr = REG1_ADDR;
+\end_layout
+
+\begin_layout Plain Layout
+
+write8_val = 0;
+\end_layout
+
+\begin_layout Plain Layout
+
+tag = write8;
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+In the latter case, the controllable transition can be encoded as follows:
+\end_layout
+
+\begin_layout Standard
+\begin_inset listings
+inline false
+status open
+
+\begin_layout Plain Layout
+
+assert((magic==true)&&(controllable==true)); // only available when running
+ in a magic block and when the driver has control
+\end_layout
+
+\begin_layout Plain Layout
+
+tag = write8;
+\end_layout
+
+\begin_layout Plain Layout
+
+write8_addr = *;		// value to be chosen by the synthesis algorithm
+\end_layout
+
+\begin_layout Plain Layout
+
+write8_val = *;		 // value to be chosen by the synthesis algorithm
+\end_layout
+
+\begin_layout Plain Layout
+
+tag = write8;
+\end_layout
+
+\begin_layout Plain Layout
+
+controllable=false;	 // return control to the environments
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+Regardless of how the command was issued, the actual 
+\family typewriter
+write8
+\family default
+ operation is an uncontrollable transition that is available when 
+\family typewriter
+tag==write8
+\family default
+.
+ and that resets the 
+\family typewriter
+tag
+\family default
+ value to 
+\family typewriter
+idle
+\family default
+ upon completion.
+ We encode the fact that every issued command eventually completes by adding
+ a fair region 
+\begin_inset Formula $\varphi=(tag\neq idle)$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+The 
+\family typewriter
+controllable
+\family default
+ state variable partitions the state space into controllable and uncontrollable
+ states.
+ Whenever the program is running inside a magic block, every uncontrollable
+ transition can non-deterministically transfer control to the driver by
+ assigning 
+\family typewriter
+controllable=true
+\family default
+.
+ The driver then performs the next controllable action, e.g., issues the next
+ command and returns control to the environment.
+ An additional fair region encodes the requirement that whenever 
+\family typewriter
+magic==true
+\family default
+, the driver eventually gets control.
+\end_layout
+
+\begin_layout Standard
+A separate controllable action is available to exit the magic block, in
+ which case the driver does not regain control until another magic block
+ is entered.
+\end_layout
+
+\begin_layout Subsection
+Controllable predecessor
+\end_layout
+
+\begin_layout Standard
+The 
+\emph on
+controllable predecessor
+\emph default
+ operator 
+\begin_inset Formula $Cpre:\,2^{S}\rightarrow2^{S}$
+\end_inset
+
+ returns the set of states from which the system can force the game into
+ a given region of the state space in one step by either performing a controllab
+le transition or waiting for the environment to perform an uncontrollable
+ transition out of the fair region:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+Cpre(W)=Cpre_{c}(W)\,\cup\, CpreFair_{u}(W)
+\]
+
+\end_inset
+
+where
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+Cpre_{c}(W)=\{s\in S_{c}\mid\delta_{c}(s)\cap W\neq\emptyset\}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+CpreFair_{u}(W)=\bigcup_{\varphi\in\Phi}\nu X.\varphi\cap Cpre_{u}(X\cup W)
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+Cpre_{u}(W)=\{s\in S_{u}\mid\delta_{u}(s)\subseteq W\}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection
+Winning region
+\end_layout
+
+\begin_layout Standard
+The set of winning states of the game can be computed as 
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+W=\mu X.\gamma\cup Cpre(X)
+\]
+
+\end_inset
+
+the game is winning if 
+\begin_inset Formula $I\subseteq W$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+\begin_inset CommandInset bibtex
+LatexCommand bibtex
+bibfiles "extra"
+options "plain"
+
+\end_inset
+
+
+\end_layout
+
+\end_body
+\end_document
