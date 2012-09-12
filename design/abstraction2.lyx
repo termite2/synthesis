@@ -441,7 +441,7 @@ le transition or waiting for the environment to perform an uncontrollable
 \begin_layout Standard
 \begin_inset Formula 
 \[
-Cpre(W)=Cpre_{c}(W)\,\cup\, CpreFair_{u}(W)
+Cpre(V)=Cpre_{c}(V)\,\cup\, CpreFair_{u}(V)
 \]
 
 \end_inset
@@ -452,7 +452,7 @@ where
 \begin_layout Standard
 \begin_inset Formula 
 \[
-Cpre_{c}(W)=\{s\in S_{c}\mid\delta_{c}(s)\cap W\neq\emptyset\}
+Cpre_{c}(V)=\{s\in S_{c}\mid\delta_{c}(s)\cap V\neq\emptyset\}
 \]
 
 \end_inset
@@ -463,7 +463,7 @@ Cpre_{c}(W)=\{s\in S_{c}\mid\delta_{c}(s)\cap W\neq\emptyset\}
 \begin_layout Standard
 \begin_inset Formula 
 \[
-CpreFair_{u}(W)=\bigcup_{\varphi\in\Phi}\nu X.\varphi\cap Cpre_{u}(X\cup W)
+CpreFair_{u}(V)=\bigcup_{\varphi\in\Phi}\nu X.\varphi\cap Cpre_{u}(X\cup V)
 \]
 
 \end_inset
@@ -474,7 +474,7 @@ CpreFair_{u}(W)=\bigcup_{\varphi\in\Phi}\nu X.\varphi\cap Cpre_{u}(X\cup W)
 \begin_layout Standard
 \begin_inset Formula 
 \[
-Cpre_{u}(W)=\{s\in S_{u}\mid\delta_{u}(s)\subseteq W\}
+Cpre_{u}(V)=\{s\in S_{u}\mid\delta_{u}(s)\subseteq V\}
 \]
 
 \end_inset
@@ -505,12 +505,381 @@ the game is winning if
 .
 \end_layout
 
+\begin_layout Section
+Abstract games
+\end_layout
+
+\begin_layout Subsection
+Definitions
+\end_layout
+
+\begin_layout Standard
+An 
+\emph on
+abstraction of game
+\emph default
+ 
+\begin_inset Formula $G=\langle S,I,\Phi,\delta_{c},\delta_{u},\gamma\rangle$
+\end_inset
+
+ consists of a finite set of abstract states 
+\begin_inset Formula $\Sigma$
+\end_inset
+
+ and a mapping 
+\begin_inset Formula $\|.\|:\Sigma\rightarrow2^{S}$
+\end_inset
+
+.
+ Abstraction defines partitioning of the concrete state space: 
+\begin_inset Formula $\bigcup_{v\in\Sigma}\|v\|=S$
+\end_inset
+
+ and 
+\begin_inset Formula $\forall v_{1},v\in\Sigma.v_{1}\neq v_{2}\implies\|v_{1}\|\cap\|v_{2}\|=\emptyset$
+\end_inset
+
+.
+ 
+\end_layout
+
+\begin_layout Standard
+We define the following 
+\emph on
+concretisation
+\emph default
+ and 
+\emph on
+abstraction
+\emph default
+ operators.
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $\downarrow:2^{\Sigma}\rightarrow2^{S}$
+\end_inset
+
+, 
+\begin_inset Formula $V\downarrow=\bigcup_{v\in V}\|v\|$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $\uparrow^{m}:2^{S}\rightarrow2^{\Sigma}$
+\end_inset
+
+,
+\begin_inset Formula $\sigma\uparrow^{m}=\{v\in\Sigma\mid\|v\|\cap\sigma\neq\emptyset\}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+\begin_inset Formula $\uparrow^{M}:2^{S}\rightarrow2^{\Sigma}$
+\end_inset
+
+, 
+\family default
+\series default
+\shape default
+\size default
+\emph default
+\bar default
+\strikeout default
+\uuline default
+\uwave default
+\noun default
+\color inherit
+
+\begin_inset Formula $\sigma\uparrow^{M}=\{v\in\Sigma\mid\|v\|\subseteq\sigma\}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+We assume that abstraction 
+\begin_inset Formula $\Sigma$
+\end_inset
+
+ respects goal sets and fair sets of the game.
+ We denote
+\begin_inset Formula $\hat{\gamma}\doteq\gamma\uparrow^{m}=\gamma\uparrow^{M}$
+\end_inset
+
+ and 
+\begin_inset Formula $\hat{\Phi}=\{\varphi\uparrow^{m}\mid\varphi\in\Phi\}=\{\varphi\uparrow^{M}\mid\varphi\in\Phi\}$
+\end_inset
+
+.
+\begin_inset Note Comment
+status collapsed
+
+\begin_layout Plain Layout
+Abstraction 
+\begin_inset Formula $\Sigma$
+\end_inset
+
+ induces may and must abstract games:
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Formula 
+\[
+G^{m}=\langle\Sigma,I\uparrow^{m},\hat{\Phi},\delta_{c}^{m},\delta_{u}^{M},\hat{\gamma}\rangle
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Formula 
+\[
+G^{M}=\langle\Sigma,I\uparrow^{M},\hat{\Phi},\delta_{c}^{M},\delta_{u}^{m},\hat{\gamma}\rangle
+\]
+
+\end_inset
+
+where 
+\begin_inset Formula 
+\[
+\delta^{m}=\{(v,v')\mid\exists s\in\|v\|,s'\in\|v'\|.(s,s')\in\delta\}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Plain Layout
+\begin_inset Formula 
+\[
+\delta^{M}=\{(v,v')\mid\forall s\in\|v\|.\exists s'\in\|v'\|.(s,s')\in\delta\}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Subsection
+Solving abstract games
+\end_layout
+
+\begin_layout Standard
+Given abstraction 
+\begin_inset Formula $\Sigma$
+\end_inset
+
+ of game 
+\begin_inset Formula $G$
+\end_inset
+
+, we can compute may and must winning regions 
+\begin_inset Formula $W^{m},W^{M}\subseteq\Sigma$
+\end_inset
+
+ of 
+\begin_inset Formula $G$
+\end_inset
+
+ with respect to 
+\begin_inset Formula $\Sigma$
+\end_inset
+
+, such that 
+\begin_inset Formula $W^{M}\downarrow\subseteq W\subseteq W^{m}\downarrow$
+\end_inset
+
+:
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+W^{m(M)}=\mu X.\hat{\gamma}\cup Cpre^{m(M)}(X)
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+Cpre^{m(M)}(V)=Cpre_{c}^{m(M)}(V)\,\cup\, CpreFair_{u}^{m(M)}(V)
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+where
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+Cpre_{c}^{m(M)}(V)=Cpre_{c}(V\downarrow)\uparrow^{m(M)}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+Cpre_{u}^{m(M)}(V)=Cpre_{c}(V\downarrow)\uparrow^{m(M)}
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+CpreFair_{u}^{m(M)}(V)=\bigcup_{\varphi\in\hat{\Phi}}\nu X.\varphi\cap Cpre_{u}^{m(M)}(X\cup V)
+\]
+
+\end_inset
+
+The 
+\begin_inset Formula $Cpre$
+\end_inset
+
+ operators defined above 
+\end_layout
+
+\begin_layout Subsection
+Abstraction refinement
+\end_layout
+
 \begin_layout Standard
 \begin_inset CommandInset bibtex
 LatexCommand bibtex
 bibfiles "extra"
 options "plain"
 
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset space ~
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset space ~
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset space ~
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset space ~
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset space ~
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset space ~
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset space ~
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset space ~
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset space ~
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset space ~
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset space ~
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset space ~
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset space ~
 \end_inset
 
 
