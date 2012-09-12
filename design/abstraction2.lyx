@@ -142,7 +142,7 @@ a set of initial states
 
 \begin_layout Itemize
 a set of fair regions 
-\begin_inset Formula $\Phi\subseteq2^{S}\setminus\{\emptyset\}$
+\begin_inset Formula $\Phi\subseteq2^{S_{u}}\setminus\{\emptyset\}$
 \end_inset
 
 ,
@@ -617,8 +617,23 @@ We assume that abstraction
 \begin_inset Formula $\Sigma$
 \end_inset
 
- respects goal sets and fair sets of the game.
- We denote
+ respects initial set 
+\begin_inset Note Comment
+status collapsed
+
+\begin_layout Plain Layout
+this requirement can be relaxed at the cost of slightly more complex refinement
+ algorithm
+\end_layout
+
+\end_inset
+
+, goal set, and fair sets of the game.
+ We denote 
+\begin_inset Formula $\hat{I}\doteq I\uparrow^{m}=I\uparrow^{M}$
+\end_inset
+
+, 
 \begin_inset Formula $\hat{\gamma}\doteq\gamma\uparrow^{m}=\gamma\uparrow^{M}$
 \end_inset
 
@@ -724,7 +739,7 @@ W^{m(M)}=\mu X.\hat{\gamma}\cup Cpre^{m(M)}(X)
 
 \end_inset
 
-
+where
 \end_layout
 
 \begin_layout Standard
@@ -736,10 +751,6 @@ Cpre^{m(M)}(V)=Cpre_{c}^{m(M)}(V)\,\cup\, CpreFair_{u}^{m(M)}(V)
 \end_inset
 
 
-\end_layout
-
-\begin_layout Standard
-where
 \end_layout
 
 \begin_layout Standard
@@ -773,14 +784,238 @@ CpreFair_{u}^{m(M)}(V)=\bigcup_{\varphi\in\hat{\Phi}}\nu X.\varphi\cap Cpre_{u}^
 \end_inset
 
 The 
-\begin_inset Formula $Cpre$
+\begin_inset Formula $Cpre_{c(u)}^{m(M)}$
 \end_inset
 
- operators defined above 
+ operators defined above require computing controllable predecessors over
+ sets of concrete states, which is inefficient in practice.
+ Therefore we compute over and under approximations:
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $Cpre_{c(u)}^{m+}\supseteq Cpre_{c(u)}^{m}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $Cpre_{c(u)}^{M-}\subseteq Cpre_{c(u)}^{M}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+and use these operators instead of 
+\begin_inset Formula $Cpre_{c(u)}^{m(M)}$
+\end_inset
+
+ in the above algorithm.
 \end_layout
 
 \begin_layout Subsection
 Abstraction refinement
+\end_layout
+
+\begin_layout Standard
+Abstraction refinement is performed in case when abstraction 
+\begin_inset Formula $\Sigma$
+\end_inset
+
+ and abstract controllable predecessor operators 
+\begin_inset Formula $Cpre_{c(u)}^{m+(M-)}$
+\end_inset
+
+ are insufficient to solve the game, i.e., 
+\begin_inset Formula $\hat{I}\subseteq W^{m}$
+\end_inset
+
+, but 
+\begin_inset Formula $\hat{I}\nsubseteq W^{M}$
+\end_inset
+
+.
+ 
+\end_layout
+
+\begin_layout Standard
+We choose an abstract state 
+\begin_inset Formula $v\in(W^{m}\setminus W^{M})\cap Cpre^{m}(W^{M})$
+\end_inset
+
+ at the may-must boundary, such that one of the following two conditions
+ holds: (1) 
+\begin_inset Formula $v\in Cpre_{c}^{m+}(W^{M})\setminus Cpre_{c}^{M-}(W^{M})$
+\end_inset
+
+ or (2) 
+\begin_inset Formula $v\in Cpre_{u}^{m+}(U)\setminus Cpre_{u}^{M-}(U)$
+\end_inset
+
+ where 
+\begin_inset Formula $U$
+\end_inset
+
+ is the the set obtained at the last iteration of 
+\begin_inset Formula $CpreFair_{u}^{m}(W^{M})$
+\end_inset
+
+ computation for some 
+\begin_inset Formula $\varphi\in\hat{\Phi}$
+\end_inset
+
+.
+ The existence of such 
+\begin_inset Formula $v$
+\end_inset
+
+ follows from the definition of 
+\begin_inset Formula $W^{m(M)}$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+We first check whether 
+\begin_inset Formula $v$
+\end_inset
+
+ can be either added to 
+\begin_inset Formula $W^{M}$
+\end_inset
+
+ or eliminated from 
+\begin_inset Formula $Cpre^{m}(W^{M})$
+\end_inset
+
+ without refining the abstraction, by computing more precise versions of
+ 
+\begin_inset Formula $Cpre_{c(u)}^{m+(M-)}$
+\end_inset
+
+.
+ In case (1) we check whether 
+\begin_inset Formula $v\in Cpre_{c}^{M}(W^{M})$
+\end_inset
+
+ or 
+\begin_inset Formula $v\notin Cpre_{c}^{m}(W^{M})$
+\end_inset
+
+.
+ If the former condition holds then we refine 
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+
+\begin_inset Formula $Cpre_{c}^{M-}$
+\end_inset
+
+ so that 
+\family default
+\series default
+\shape default
+\size default
+\emph default
+\bar default
+\strikeout default
+\uuline default
+\uwave default
+\noun default
+\color inherit
+
+\begin_inset Formula $v\in Cpre_{c}^{M-}(W^{M})$
+\end_inset
+
+.
+ If the latter condition holds then we refine 
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+
+\begin_inset Formula $Cpre_{c}^{m+}$
+\end_inset
+
+ so that 
+\family default
+\series default
+\shape default
+\size default
+\emph default
+\bar default
+\strikeout default
+\uuline default
+\uwave default
+\noun default
+\color inherit
+
+\begin_inset Formula $v\notin Cpre_{c}^{m+}(W^{M})$
+\end_inset
+
+.
+ Likewise, in case (2) we check whether 
+\begin_inset Formula $v\in Cpre_{u}^{M}(U)$
+\end_inset
+
+ or 
+\begin_inset Formula $v\notin Cpre_{u}^{m}(U)$
+\end_inset
+
+ and refine 
+\begin_inset Formula $Cpre_{u}^{m+}$
+\end_inset
+
+ or 
+\begin_inset Formula $Cpre_{u}^{M-}$
+\end_inset
+
+ accordingly.
+\end_layout
+
+\begin_layout Standard
+Otherwise we refine abstraction 
+\begin_inset Formula $\Sigma$
+\end_inset
+
+ by splitting abstract state 
+\begin_inset Formula $v$
+\end_inset
+
+ into two or more states 
+\begin_inset Formula $\{v_{1}\ldots v_{k}\}$
+\end_inset
+
+ such that either 
+\begin_inset Formula $v_{1}\in Cpre_{c}^{M}(W^{M})$
+\end_inset
+
+ (case (1)) or 
+\begin_inset Formula $v\in Cpre_{u}^{M}(U)$
+\end_inset
+
+ (case (2)).
+\end_layout
+
+\begin_layout Section
+Predicate abstraction
 \end_layout
 
 \begin_layout Standard
