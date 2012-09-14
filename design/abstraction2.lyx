@@ -526,17 +526,21 @@ abstraction of game
 \begin_inset Formula $\Sigma$
 \end_inset
 
- and a mapping 
-\begin_inset Formula $\|.\|:\Sigma\rightarrow2^{S}$
+ and a 
+\emph on
+concretisation
+\emph default
+ operator
+\begin_inset Formula $\downarrow:\Sigma\rightarrow2^{S}$
 \end_inset
 
 .
  Abstraction defines partitioning of the concrete state space: 
-\begin_inset Formula $\bigcup_{v\in\Sigma}\|v\|=S$
+\begin_inset Formula $\bigcup_{v\in\Sigma}v\downarrow=S$
 \end_inset
 
  and 
-\begin_inset Formula $\forall v_{1},v\in\Sigma.v_{1}\neq v_{2}\implies\|v_{1}\|\cap\|v_{2}\|=\emptyset$
+\begin_inset Formula $\forall v_{1},v\in\Sigma.v_{1}\neq v_{2}\implies v_{1}\downarrow\cap v_{2}\downarrow=\emptyset$
 \end_inset
 
 .
@@ -544,15 +548,7 @@ abstraction of game
 \end_layout
 
 \begin_layout Standard
-We define the following 
-\emph on
-concretisation
-\emph default
- and 
-\emph on
-abstraction
-\emph default
- operators.
+We extend the concretisation operator to sets of abstract states as follows:
 \end_layout
 
 \begin_layout Itemize
@@ -560,18 +556,27 @@ abstraction
 \end_inset
 
 , 
-\begin_inset Formula $V\downarrow=\bigcup_{v\in V}\|v\|$
+\begin_inset Formula $V\downarrow=\bigcup_{v\in V}v\downarrow$
 \end_inset
 
 
 \end_layout
 
+\begin_layout Standard
+We also define two 
+\emph on
+abstraction
+\emph default
+ operators:
+\end_layout
+
 \begin_layout Itemize
+May-abstraction:
 \begin_inset Formula $\uparrow^{m}:2^{S}\rightarrow2^{\Sigma}$
 \end_inset
 
 ,
-\begin_inset Formula $\sigma\uparrow^{m}=\{v\in\Sigma\mid\|v\|\cap\sigma\neq\emptyset\}$
+\begin_inset Formula $\sigma\uparrow^{m}=\{v\in\Sigma\mid v\downarrow\cap\sigma\neq\emptyset\}$
 \end_inset
 
 
@@ -590,6 +595,7 @@ abstraction
 \uwave off
 \noun off
 \color none
+Must-absteactionL
 \begin_inset Formula $\uparrow^{M}:2^{S}\rightarrow2^{\Sigma}$
 \end_inset
 
@@ -606,7 +612,7 @@ abstraction
 \noun default
 \color inherit
 
-\begin_inset Formula $\sigma\uparrow^{M}=\{v\in\Sigma\mid\|v\|\subseteq\sigma\}$
+\begin_inset Formula $\sigma\uparrow^{M}=\{v\in\Sigma\mid v\downarrow\subseteq\sigma\}$
 \end_inset
 
 
@@ -1015,7 +1021,597 @@ Otherwise we refine abstraction
 \end_layout
 
 \begin_layout Section
-Predicate abstraction
+Symbolic games
+\end_layout
+
+\begin_layout Subsection
+Definitions
+\end_layout
+
+\begin_layout Standard
+Symbolic games are defined over variables and expressions in some theory,
+ e.g., integer linear arithmetic or bitvectors.
+ 
+\end_layout
+
+\begin_layout Itemize
+Given a variable 
+\begin_inset Formula $z$
+\end_inset
+
+ in the theory, we denote 
+\begin_inset Formula $D(z)$
+\end_inset
+
+ the domain of 
+\begin_inset Formula $z$
+\end_inset
+
+.
+ 
+\end_layout
+
+\begin_layout Standard
+Given a vector of variables 
+\begin_inset Formula $Z=\{z_{1},\ldots,z_{k}\}$
+\end_inset
+
+:
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $D(Z)=\prod_{z\in Z}D(z)$
+\end_inset
+
+ is the cartesian product of individual variable domains
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $Arith(Z)$
+\end_inset
+
+ is the set of arithmetic expressions over variables in 
+\begin_inset Formula $Z$
+\end_inset
+
+ allowed by the theory.
+ For example, in the theory of integer linear arithmetic 
+\begin_inset Formula $Arith(Z)$
+\end_inset
+
+ consist of linear combinations of variables in 
+\begin_inset Formula $Z$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $Rel(Z)$
+\end_inset
+
+ is the set of 
+\emph on
+relational expressions
+\emph default
+, which consist of arithmetic expressions connected by relational operators
+ of the theory, e.g.
+\begin_inset Formula $=$
+\end_inset
+
+, 
+\begin_inset Formula $\neq$
+\end_inset
+
+, 
+\begin_inset Formula $<$
+\end_inset
+
+, 
+\begin_inset Formula $\leq$
+\end_inset
+
+, 
+\begin_inset Formula $>$
+\end_inset
+
+, 
+\begin_inset Formula $\geq$
+\end_inset
+
+, 
+\begin_inset Formula $\equiv$
+\end_inset
+
+, etc.
+ 
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $Prop(X)$
+\end_inset
+
+
+\emph on
+ 
+\emph default
+is the set of 
+\emph on
+propositional expressions 
+\emph default
+constructed out of expressions in 
+\begin_inset Formula $Rel(Z)$
+\end_inset
+
+ using boolean operators 
+\begin_inset Formula $\land$
+\end_inset
+
+, 
+\begin_inset Formula $\lor$
+\end_inset
+
+, and 
+\begin_inset Formula $\lnot$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $Z'=\{z_{1}',\ldots,z_{k}'\}$
+\end_inset
+
+ is the vector of primed versions of variables in 
+\begin_inset Formula $Z$
+\end_inset
+
+.
+ Primed variables are used to represent next-state
+\emph on
+ 
+\emph default
+values of non-primed variables.
+\end_layout
+
+\begin_layout Standard
+A 
+\emph on
+symbolic game 
+\emph default
+
+\begin_inset Formula $SG=\langle X,Y,init,fair,ctran,utran,goal\rangle$
+\end_inset
+
+ consist of 
+\end_layout
+
+\begin_layout Itemize
+A vector of 
+\emph on
+state variables
+\emph default
+ 
+\begin_inset Formula $X$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+A vector of temporary variables 
+\begin_inset Formula $Y$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+Initial state constraint 
+\begin_inset Formula $init\in Prop(X)$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+Goal constraint 
+\begin_inset Formula $goal\in Prop(X)$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+Fair regions 
+\begin_inset Formula $fair\subseteq Prop(X)$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+Sets of controllable and uncontrollable 
+\emph on
+syntactic transitions
+\emph default
+ 
+\begin_inset Formula $ctran$
+\end_inset
+
+ and 
+\begin_inset Formula $utran$
+\end_inset
+
+.
+ A syntactic transition is a loop-free structured program constructed out
+ of assignments and assume statements combined into sequential and or-blocks:
+ 
+\begin_inset Formula 
+\[
+tran:\,\,(x:=e)\mid assume(p)\mid or(tran*)\mid seq(tran*)
+\]
+
+\end_inset
+
+where
+\end_layout
+
+\begin_deeper
+\begin_layout Itemize
+\begin_inset Formula $x\in X\cup T$
+\end_inset
+
+, 
+\begin_inset Formula $e\in Arith(X\cup Y)$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $p\in Prop(X\cup Y)$
+\end_inset
+
+
+\end_layout
+
+\end_deeper
+\begin_layout Standard
+Given a symbolic game 
+\begin_inset Formula $SG=\langle X,Y,init,fair,ctran,utran,goal\rangle$
+\end_inset
+
+ we define the corresponding game 
+\begin_inset Formula $G(SG)$
+\end_inset
+
+ as follows 
+\begin_inset Formula 
+\[
+G(SG)=\langle D(X),\|init\|,\bigcup_{f\in fair}\|f\|,\bigcup_{\tau\in ctran}\|\tau\|,\bigcup_{\tau\in utran}\|\tau\|,\|goal\|\rangle
+\]
+
+\end_inset
+
+where the 
+\begin_inset Formula $\|.\|$
+\end_inset
+
+ operator maps propositional expressions and syntactic transitions into
+ sets of states and sets of transitions according to their natural semantics.
+\end_layout
+
+\begin_layout Subsection
+Predicate abstraction for symbolic games
+\end_layout
+
+\begin_layout Standard
+Abstraction of a symbolic game 
+\begin_inset Formula $SG=\langle X,Y,init,fair,ctran,utran,goal\rangle$
+\end_inset
+
+ is defined by a vector of predicates 
+\begin_inset Formula $p=\{p_{1}\ldots p_{n}\}\subseteq Rel(X)$
+\end_inset
+
+.
+ Each predicate 
+\begin_inset Formula $p_{i}$
+\end_inset
+
+ is represented by a boolean variable 
+\begin_inset Formula $P_{i}$
+\end_inset
+
+: 
+\begin_inset Formula $P_{i}\Leftrightarrow p_{i}(X)$
+\end_inset
+
+.
+ The concretisation function 
+\begin_inset Formula $\downarrow$
+\end_inset
+
+ maps a vector of boolean values to a set of concrete state variable valuations:
+ 
+\begin_inset Formula $\{b_{1}\ldots b_{n}\}\downarrow=\{x\in D(X)\mid\bigwedge_{i=1\ldots n}b_{i}=p_{i}(x)\}$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+Given a syntactic transition 
+\begin_inset Formula $\tau$
+\end_inset
+
+, we can compute next-state values of predicates in 
+\begin_inset Formula $p$
+\end_inset
+
+ wrt 
+\begin_inset Formula $\tau$
+\end_inset
+
+ as a function of 
+\begin_inset Formula $X$
+\end_inset
+
+ and 
+\begin_inset Formula $Y$
+\end_inset
+
+: 
+\begin_inset Formula $P'=f(X,Y)$
+\end_inset
+
+.
+ By replacing each atomic relational expression in 
+\begin_inset Formula $f$
+\end_inset
+
+ with either existing predicate variable from 
+\begin_inset Formula $P$
+\end_inset
+
+ or a fresh predicate variable, we obtain a function for computing next-state
+ values of 
+\begin_inset Formula $P$
+\end_inset
+
+: 
+\begin_inset Formula $P'=\Delta_{t}(P,R,T)$
+\end_inset
+
+, where 
+\begin_inset Formula $R$
+\end_inset
+
+ and 
+\begin_inset Formula $T$
+\end_inset
+
+ are vectors of fresh predicate variables over state and temporary variables:
+ 
+\begin_inset Formula $R_{i}\Leftrightarrow r_{i}(X)$
+\end_inset
+
+, 
+\begin_inset Formula $T_{j}\Leftrightarrow t_{j}(X,Y)$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+The abstraction refinement algorithm maintains for each syntactic transition
+ 
+\begin_inset Formula $t$
+\end_inset
+
+ an additional set of state predicates 
+\begin_inset Formula $q=\{q_{1}\ldots q_{l}\}\subseteq Rel(X)$
+\end_inset
+
+ with corresponding variables 
+\begin_inset Formula $Q$
+\end_inset
+
+.
+ These predicates are used in computing controllable predecessor operators,
+ as shown below.
+\end_layout
+
+\begin_layout Standard
+Controllable and uncontrollable 
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+Cpre_{u}^{m+}(V)=\bigcap_{t\in utran}Cpre_{u}^{m+}[t](V)
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+Cpre_{u}^{M-}(V)=\bigcap_{t\in utran}Cpre_{u}^{M-}[t](V)
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+Cpre_{c}^{m+}(V)=\bigcup_{t\in ctran}Cpre_{c}^{m+}[t](V)
+\]
+
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula 
+\[
+Cpre_{c}^{M-}(V)=\bigcup_{t\in ctran}Cpre_{c}^{M-}[t](V)
+\]
+
+\end_inset
+
+where
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $Cpre_{u}^{m+}[t](V)=\{P\mid\exists Q,R.(P,Q,R)\in consistent((p,q,r))\land(\forall T.((P,Q,R),T)\in consistent_{\forall}((p,q,r),t)\implies\Delta_{t}(P,R,T)\in V)\}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $Cpre_{u}^{M-}[t](V)=\{P\mid\forall R,T.(P,R,T)\in consistent((p,r,t))\implies\Delta_{t}(P,R,T)\in V\}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $Cpre_{c}^{m+}[t](V)=\{P\mid\exists R,T.(P,R,T)\in consistent((p,r,t))\land\Delta_{t}(P,R,T)\in V\}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $Cpre_{c}^{M-}[t](V)=\{P\mid\forall R.(P,Q,R)\in consistent((p,q,r))\implies(\exists T.((P,Q,R),T)\in consistent_{\forall}((p,q,r),t)\land\Delta_{t}(P,R,T)\in V)\}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+For a vector of predicates 
+\begin_inset Formula $u=\{u_{1}\ldots u_{m}\}\subseteq Rel(Z)$
+\end_inset
+
+, 
+\begin_inset Formula $consistent(u)$
+\end_inset
+
+ is the set of boolean vectors that represent consistent values of 
+\begin_inset Formula $u$
+\end_inset
+
+: 
+\begin_inset Formula $consistent(u)=\{b\in\mathbb{B}^{m}\mid(\exists z.u(z)=b)\}$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+For two vectors of predicates 
+\begin_inset Formula $u=\{u_{1}\ldots u_{m}\}\subseteq Rel(X)$
+\end_inset
+
+, 
+\begin_inset Formula $w=\{w_{1}\ldots w_{k}\}\subseteq Rel(X\cup Y)$
+\end_inset
+
+, 
+\begin_inset Formula $consistent_{\forall}(u,w)$
+\end_inset
+
+ consists of pairs of boolean vectors 
+\begin_inset Formula $(b,c)$
+\end_inset
+
+ such that any concrete assignment of variables in 
+\begin_inset Formula $X$
+\end_inset
+
+ under which 
+\begin_inset Formula $u(x)=b$
+\end_inset
+
+ can be extended to an assignment of variables in 
+\begin_inset Formula $Y$
+\end_inset
+
+ such that 
+\begin_inset Formula $w(x,y)=c$
+\end_inset
+
+: 
+\begin_inset Formula $consistent_{\forall}(u,w)=\{(b,c)\in\mathbb{B}^{m}\times\mathbb{B}^{k}\mid\forall x.(u(x)=b\implies\exists y.w(x,y)=c)\}$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Standard
+Precise computation of 
+\begin_inset Formula $consistent$
+\end_inset
+
+ and 
+\begin_inset Formula $consistent_{\forall}$
+\end_inset
+
+ can be a bottleneck in computing 
+\begin_inset Formula $Cpre_{c(u)}^{m+(M-)}[t]$
+\end_inset
+
+, especially when the number of predicates is large.
+ To avoid this bottleneck, we overapproximate 
+\begin_inset Formula $consistent$
+\end_inset
+
+ and underapproximate 
+\begin_inset Formula $consistent_{\forall}$
+\end_inset
+
+:
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $consistent^{+}(u)\supseteq consistent(u)$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Itemize
+\begin_inset Formula $consistent_{\forall}^{-}(u,w)\subseteq consistent_{\forall}(u,w)$
+\end_inset
+
+
+\end_layout
+
+\begin_layout Standard
+We refine approximations during abstraction refinement as described in the
+ following section.
+\end_layout
+
+\begin_layout Subsection
+Abstraction refinement
+\end_layout
+
+\begin_layout Standard
+\begin_inset Formula $v\in Cpre_{c}^{m+}(W^{M})\setminus Cpre_{c}^{M-}(W^{M})$
+\end_inset
+
+
 \end_layout
 
 \begin_layout Standard
