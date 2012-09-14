@@ -1420,7 +1420,7 @@ The abstraction refinement algorithm maintains for each syntactic transition
 
 .
  These predicates are used in computing controllable predecessor operators,
- as shown below.
+ as shown below, but they are not part of the abstract state space.
 \end_layout
 
 \begin_layout Standard
