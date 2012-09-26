@@ -842,30 +842,20 @@ Abstraction refinement is performed in case when abstraction
 \end_inset
 
 .
- 
-\end_layout
-
-\begin_layout Standard
-\begin_inset Float algorithm
-wide false
-sideways false
-status open
-
-\begin_layout Plain Layout
-\begin_inset Note Note
-status open
-
-\begin_layout Plain Layout
-TODO: rewrite as an algorithm
-\end_layout
-
+ We define a general abstraction refinement scheme that is independent of
+ the particular representations of 
+\begin_inset Formula $G$
 \end_inset
 
+ and 
+\begin_inset Formula $\Sigma$
+\end_inset
 
+:
 \end_layout
 
-\begin_layout Plain Layout
-We choose an abstract state 
+\begin_layout Enumerate
+Choose an abstract state 
 \begin_inset Formula $v\in(W^{m}\setminus W^{M})\cap Cpre^{m}(W^{M})$
 \end_inset
 
@@ -902,84 +892,44 @@ We choose an abstract state
 .
 \end_layout
 
-\begin_layout Plain Layout
-We first check whether 
-\begin_inset Formula $v$
+\begin_layout Enumerate
+Refine the abstraction in one of three ways.
+ (The choice of which refinement to apply is left to the concrete imlementation
+ of the algorithm)
+\end_layout
+
+\begin_deeper
+\begin_layout Enumerate
+
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+if 
+\begin_inset Formula $v\in Cpre_{c}^{m+}(W^{M})$
 \end_inset
 
- can be either added to 
-\begin_inset Formula $W^{M}$
-\end_inset
-
- or eliminated from 
-\begin_inset Formula $Cpre^{m}(W^{M})$
-\end_inset
-
- without refining the abstraction, by computing more precise versions of
- 
-\begin_inset Formula $Cpre_{c(u)}^{m+(M-)}$
-\end_inset
-
-.
- In case (1) we check whether 
-\begin_inset Formula $v\in Cpre_{c}^{M}(W^{M})$
-\end_inset
-
- or 
+, but 
 \begin_inset Formula $v\notin Cpre_{c}^{m}(W^{M})$
 \end_inset
 
-.
- If the former condition holds then we refine 
-\family roman
-\series medium
-\shape up
-\size normal
-\emph off
-\bar no
-\strikeout off
-\uuline off
-\uwave off
-\noun off
-\color none
-
-\begin_inset Formula $Cpre_{c}^{M-}$
-\end_inset
-
- so that 
-\family default
-\series default
-\shape default
-\size default
-\emph default
-\bar default
-\strikeout default
-\uuline default
-\uwave default
-\noun default
-\color inherit
-
-\begin_inset Formula $v\in Cpre_{c}^{M-}(W^{M})$
-\end_inset
-
-.
- If the latter condition holds then we refine 
-\family roman
-\series medium
-\shape up
-\size normal
-\emph off
-\bar no
-\strikeout off
-\uuline off
-\uwave off
-\noun off
-\color none
-
+, refine 
 \begin_inset Formula $Cpre_{c}^{m+}$
 \end_inset
 
  so that 
+\begin_inset Formula $v\notin Cpre_{c}^{m+}(W^{M})$
+\end_inset
+
+ after the refinement.
+ Similarly, if 
 \family default
 \series default
 \shape default
@@ -992,31 +942,75 @@ We first check whether
 \noun default
 \color inherit
 
-\begin_inset Formula $v\notin Cpre_{c}^{m+}(W^{M})$
+\begin_inset Formula $v\in Cpre_{u}^{m+}(U)$
 \end_inset
 
-.
- Likewise, in case (2) we check whether 
-\begin_inset Formula $v\in Cpre_{u}^{M}(U)$
-\end_inset
-
- or 
+, but 
 \begin_inset Formula $v\notin Cpre_{u}^{m}(U)$
 \end_inset
 
- and refine 
+, refine 
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+
 \begin_inset Formula $Cpre_{u}^{m+}$
 \end_inset
 
- or 
+ so that 
+\begin_inset Formula $v\notin Cpre_{u}^{m+}(U)$
+\end_inset
+
+ after the refinement
+\end_layout
+
+\begin_layout Enumerate
+if 
+\begin_inset Formula $v\notin Cpre_{c}^{M-}(W^{M})$
+\end_inset
+
+, but 
+\begin_inset Formula $v\in Cpre_{c}^{M}(W^{M})$
+\end_inset
+
+, refine 
+\begin_inset Formula $Cpre_{c}^{M-}$
+\end_inset
+
+ so that 
+\begin_inset Formula $v\in Cpre_{c}^{M-}(W^{M})$
+\end_inset
+
+ after the refinement.
+ Similarly, if 
+\begin_inset Formula $v\notin Cpre_{u}^{M-}(U)$
+\end_inset
+
+, but 
+\begin_inset Formula $v\in Cpre_{u}^{M}(U)$
+\end_inset
+
+, refine 
 \begin_inset Formula $Cpre_{u}^{M-}$
 \end_inset
 
- accordingly.
+ so that 
+\begin_inset Formula $v\in Cpre_{u}^{M-}(U)$
+\end_inset
+
+ after the refinement.
 \end_layout
 
-\begin_layout Plain Layout
-Otherwise we refine abstraction 
+\begin_layout Enumerate
+refine the abstract state space 
 \begin_inset Formula $\Sigma$
 \end_inset
 
@@ -1039,30 +1033,22 @@ Otherwise we refine abstraction
  (case (2)).
 \end_layout
 
-\begin_layout Plain Layout
-\begin_inset Caption
-
-\begin_layout Plain Layout
-\begin_inset CommandInset label
-LatexCommand label
-name "alg:Abstraction-refinement"
-
+\end_deeper
+\begin_layout Standard
+This scheme aims to eliminate at least one reason for the mismatch between
+ 
+\begin_inset Formula $W^{M}$
 \end_inset
 
-Abstraction refinement
-\end_layout
-
+ and 
+\begin_inset Formula $W^{m}$
 \end_inset
 
-
+ on every iteration.
+ 
 \end_layout
 
-\begin_layout Plain Layout
-
-\end_layout
-
-\end_inset
-
+\begin_layout Standard
 
 \end_layout
 
@@ -1427,7 +1413,7 @@ Given a syntactic transition
 \end_inset
 
 : 
-\begin_inset Formula $P'=\Delta_{t}(P,R,T)$
+\begin_inset Formula $P'=\Delta_{\tau}(P,R,T)$
 \end_inset
 
 , where 
@@ -1451,32 +1437,13 @@ Given a syntactic transition
 \end_layout
 
 \begin_layout Standard
-The abstraction refinement algorithm maintains for each syntactic transition
- 
-\begin_inset Formula $t$
-\end_inset
-
- an additional set of state predicates 
-\begin_inset Formula $q=\{q_{1}\ldots q_{l}\}\subseteq Rel(X)$
-\end_inset
-
- with corresponding variables 
-\begin_inset Formula $Q$
-\end_inset
-
-.
- These predicates are used in computing controllable predecessor operators,
- as shown below, but they are not part of the abstract state space.
-\end_layout
-
-\begin_layout Standard
 Abstract controllable predecessor operators are computed as follows:
 \end_layout
 
 \begin_layout Standard
 \begin_inset Formula 
 \[
-Cpre_{u}^{m+}(V)=\bigcap_{t\in utran}Cpre_{u}^{m+}[t](V)
+Cpre_{u}^{m+}(V)=\bigcap_{t\in utran}Cpre_{u}^{m+}[\tau](V)
 \]
 
 \end_inset
@@ -1487,7 +1454,7 @@ Cpre_{u}^{m+}(V)=\bigcap_{t\in utran}Cpre_{u}^{m+}[t](V)
 \begin_layout Standard
 \begin_inset Formula 
 \[
-Cpre_{u}^{M-}(V)=\bigcap_{t\in utran}Cpre_{u}^{M-}[t](V)
+Cpre_{u}^{M-}(V)=\bigcap_{t\in utran}Cpre_{u}^{M-}[\tau](V)
 \]
 
 \end_inset
@@ -1498,7 +1465,7 @@ Cpre_{u}^{M-}(V)=\bigcap_{t\in utran}Cpre_{u}^{M-}[t](V)
 \begin_layout Standard
 \begin_inset Formula 
 \[
-Cpre_{c}^{m+}(V)=\bigcup_{t\in ctran}Cpre_{c}^{m+}[t](V)
+Cpre_{c}^{m+}(V)=\bigcup_{t\in ctran}Cpre_{c}^{m+}[\tau](V)
 \]
 
 \end_inset
@@ -1509,7 +1476,7 @@ Cpre_{c}^{m+}(V)=\bigcup_{t\in ctran}Cpre_{c}^{m+}[t](V)
 \begin_layout Standard
 \begin_inset Formula 
 \[
-Cpre_{c}^{M-}(V)=\bigcup_{t\in ctran}Cpre_{c}^{M-}[t](V)
+Cpre_{c}^{M-}(V)=\bigcup_{t\in ctran}Cpre_{c}^{M-}[\tau](V)
 \]
 
 \end_inset
@@ -1518,28 +1485,28 @@ where
 \end_layout
 
 \begin_layout Itemize
-\begin_inset Formula $Cpre_{u}^{m+}[t](V)=\{P\mid\exists Q,R.(P,Q,R)\in consistent((p,q,r))\land(\forall T.((P,Q,R),T)\in consistent_{\forall}((p,q,r),t)\implies\Delta_{t}(P,R,T)\in V)\}$
+\begin_inset Formula $Cpre_{u}^{m+}[\tau](V)=\{P\mid\exists R.(P,R)\in consistent((p,r))\land(\forall T.((P,R),T)\in consistent_{\forall}((p,r),t)\implies\Delta_{\tau}(P,R,T)\in V)\}$
 \end_inset
 
 
 \end_layout
 
 \begin_layout Itemize
-\begin_inset Formula $Cpre_{u}^{M-}[t](V)=\{P\mid\forall R,T.(P,R,T)\in consistent((p,r,t))\implies\Delta_{t}(P,R,T)\in V\}$
+\begin_inset Formula $Cpre_{u}^{M-}[\tau](V)=\{P\mid\forall R,T.(P,R,T)\in consistent((p,r,t))\implies\Delta_{\tau}(P,R,T)\in V\}$
 \end_inset
 
 
 \end_layout
 
 \begin_layout Itemize
-\begin_inset Formula $Cpre_{c}^{m+}[t](V)=\{P\mid\exists R,T.(P,R,T)\in consistent((p,r,t))\land\Delta_{t}(P,R,T)\in V\}$
+\begin_inset Formula $Cpre_{c}^{m+}[\tau](V)=\{P\mid\exists R,T.(P,R,T)\in consistent((p,r,t))\land\Delta_{\tau}(P,R,T)\in V\}$
 \end_inset
 
 
 \end_layout
 
 \begin_layout Itemize
-\begin_inset Formula $Cpre_{c}^{M-}[t](V)=\{P\mid\forall R.(P,Q,R)\in consistent((p,q,r))\implies(\exists T.((P,Q,R),T)\in consistent_{\forall}((p,q,r),t)\land\Delta_{t}(P,R,T)\in V)\}$
+\begin_inset Formula $Cpre_{c}^{M-}[\tau](V)=\{P\mid\forall R.(P,R)\in consistent((p,r))\implies(\exists T.((P,R),T)\in consistent_{\forall}((p,r),t)\land\Delta_{\tau}(P,R,T)\in V)\}$
 \end_inset
 
 
@@ -1615,7 +1582,7 @@ Precise computation of
 \end_inset
 
  can be a bottleneck in computing 
-\begin_inset Formula $Cpre_{c(u)}^{m+(M-)}[t]$
+\begin_inset Formula $Cpre_{c(u)}^{m+(M-)}[\tau]$
 \end_inset
 
 , especially when the number of predicates is large.
@@ -1824,23 +1791,19 @@ According to the definition of
 \noun default
 \color inherit
 , we can find a syntactic transition 
-\begin_inset Formula $t$
+\begin_inset Formula $\tau$
 \end_inset
 
- with abstract transition function 
-\begin_inset Formula $\Delta_{t}(P,R,T)$
+ and boolean vectors 
+\begin_inset Formula $b$
 \end_inset
 
- such that there exist assignments to predicate variables 
-\begin_inset Formula $R$
+, 
+\begin_inset Formula $c$
 \end_inset
 
- and 
-\begin_inset Formula $T$
-\end_inset
-
-, such that 
-\begin_inset Formula $(v,b,c)\in consistent^{+}((p,r,t))\land\Delta_{t}(v,b,c)\in V$
+ such that 
+\begin_inset Formula $(v,b,c)\in consistent^{+}((p,r,t))\land\Delta_{\tau}(v,b,c)\in V$
 \end_inset
 
 .
@@ -1980,7 +1943,7 @@ In case the check fails, we refine
 \end_inset
 
 .
- Otherwise, go back to step 1.
+ Otherwise, return to step 1.
 \end_layout
 
 \end_deeper
@@ -2022,7 +1985,7 @@ Refining
 \end_inset
 
 , check whether 
-\begin_inset Formula $v\in Cpre_{c}^{M-}(V)$
+\begin_inset Formula $v\in Cpre_{c}^{M}(V)$
 \end_inset
 
  and, if yes, refine 
@@ -2048,8 +2011,27 @@ Refining
  after the refinement.
 \end_layout
 
-\begin_layout Itemize
-Refining 
+\begin_deeper
+\begin_layout Enumerate
+Since 
+\begin_inset Formula $v\notin Cpre_{c}^{M-}(V)$
+\end_inset
+
+, there exists a boolean vector 
+\begin_inset Formula $b$
+\end_inset
+
+ such that 
+\begin_inset Formula $\forall c.(v,b)\not\xrightarrow[M-]{c}V$
+\end_inset
+
+.
+ We check whether 
+\begin_inset Formula $\exists c.(v,b)\xrightarrow[m+]{c}V$
+\end_inset
+
+.
+ If so, we check 
 \family roman
 \series medium
 \shape up
@@ -2062,44 +2044,42 @@ Refining
 \noun off
 \color none
 
-\begin_inset Formula $Cpre_{u}^{m+}$
+\begin_inset Formula $((v,b),c)\in consistent_{\forall}((p,r),t)$
 \end_inset
 
-: Given abstract state 
-\family default
-\series default
-\shape default
-\size default
-\emph default
-\bar default
-\strikeout default
-\uuline default
-\uwave default
-\noun default
-\color inherit
-
-\begin_inset Formula $v\in Cpre_{u}^{m+}(V)\setminus Cpre_{u}^{M-}(V)$
+.
+ If so, we refine 
+\begin_inset Formula $consistent_{\forall}$
 \end_inset
 
- for some set 
-\begin_inset Formula $V$
-\end_inset
-
-, check whether 
-\begin_inset Formula $v\in Cpre_{u}^{m}(V)$
-\end_inset
-
- and, if yes, refine 
-\begin_inset Formula $Cpre_{u}^{m+}$
-\end_inset
-
- so that 
-\begin_inset Formula $v\notin Cpre_{u}^{m+}(V)$
-\end_inset
-
- after the refinement
+.
 \end_layout
 
+\begin_layout Enumerate
+Otherwise, we refine the abstraction so that the new abstraction precisely
+ distinguishes states where abstract transition 
+\begin_inset Formula $c$
+\end_inset
+
+ is available.
+ We compute formula 
+\begin_inset Formula $avl(c)=(\exists y.c=t(x,y))$
+\end_inset
+
+ over concrete state variables 
+\begin_inset Formula $x$
+\end_inset
+
+.
+ We decompose the resulting formula into atomic predicates and add newly
+ discovered predicates to the set of state predicates 
+\begin_inset Formula $p$
+\end_inset
+
+.
+\end_layout
+
+\end_deeper
 \begin_layout Itemize
 Refining 
 \family roman
@@ -2152,6 +2132,184 @@ Refining
  after the refinement
 \end_layout
 
+\begin_deeper
+\begin_layout Enumerate
+According to the definition of 
+\begin_inset Formula $Cpre_{u}^{M-}$
+\end_inset
+
+, there exists a transition 
+\begin_inset Formula $\tau$
+\end_inset
+
+ and boolean vectors 
+\begin_inset Formula $b$
+\end_inset
+
+ and 
+\begin_inset Formula $c$
+\end_inset
+
+ such that 
+\begin_inset Formula $(v,b)\xrightarrow[M-]{c}\neg V$
+\end_inset
+
+.
+ We check whether 
+\begin_inset Formula $(v,b)\xrightarrow[M]{c}\neg V$
+\end_inset
+
+, i.e., whether 
+\begin_inset Formula $(v,b,c)\in consistent((p,r,t))$
+\end_inset
+
+.
+ If yes, then 
+\begin_inset Formula $v\notin Cpre_{u}^{M}(V)$
+\end_inset
+
+.
+\end_layout
+
+\begin_layout Enumerate
+Otherwise, we refine 
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+
+\begin_inset Formula $consistent^{+}((p,r,t))$
+\end_inset
+
+.
+\end_layout
+
+\end_deeper
+\begin_layout Itemize
+Refining 
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+
+\begin_inset Formula $Cpre_{u}^{m+}$
+\end_inset
+
+: Given abstract state 
+\family default
+\series default
+\shape default
+\size default
+\emph default
+\bar default
+\strikeout default
+\uuline default
+\uwave default
+\noun default
+\color inherit
+
+\begin_inset Formula $v\in Cpre_{u}^{m+}(V)\setminus Cpre_{u}^{M-}(V)$
+\end_inset
+
+ for some set 
+\begin_inset Formula $V$
+\end_inset
+
+, check whether 
+\begin_inset Formula $v\in Cpre_{u}^{m}(V)$
+\end_inset
+
+ and, if yes, refine 
+\begin_inset Formula $Cpre_{u}^{m+}$
+\end_inset
+
+ so that 
+\begin_inset Formula $v\notin Cpre_{u}^{m+}(V)$
+\end_inset
+
+ after the refinement.
+\end_layout
+
+\begin_deeper
+\begin_layout Enumerate
+Since 
+\begin_inset Formula $v\notin Cpre_{u}^{M-}(V)$
+\end_inset
+
+, there exists boolean vectors 
+\begin_inset Formula $b$
+\end_inset
+
+, 
+\begin_inset Formula $c$
+\end_inset
+
+ such that 
+\begin_inset Formula $(v,b)\xrightarrow[M-]{c}\neg V$
+\end_inset
+
+.
+ We check 
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+
+\begin_inset Formula $((v,b),c)\in consistent_{\forall}((p,r),t)$
+\end_inset
+
+.
+ If so, we refine 
+\begin_inset Formula $consistent_{\forall}^{-}$
+\end_inset
+
+.
+ 
+\end_layout
+
+\begin_layout Enumerate
+
+\family roman
+\series medium
+\shape up
+\size normal
+\emph off
+\bar no
+\strikeout off
+\uuline off
+\uwave off
+\noun off
+\color none
+Otherwise, we refine the abstraction so that the new abstraction precisely
+ distinguishes states where abstract transition 
+\begin_inset Formula $c$
+\end_inset
+
+ is available.
+\end_layout
+
+\end_deeper
 \begin_layout Itemize
 Refining 
 \begin_inset Formula $P$
@@ -2165,50 +2323,6 @@ Refining
 \end_inset
 
 
-\end_layout
-
-\begin_layout Itemize
-Case 1:
-\begin_inset Formula $v\in Cpre_{c}^{m+}(V)\setminus Cpre_{c}^{M-}(V)$
-\end_inset
-
-.
-\end_layout
-
-\begin_deeper
-\begin_layout Itemize
-Following Algorithm
-\begin_inset space ~
-\end_inset
-
-
-\begin_inset CommandInset ref
-LatexCommand ref
-reference "alg:Abstraction-refinement"
-
-\end_inset
-
-, we first check whether 
-\begin_inset Formula $v\in Cpre_{c}^{m}(V)$
-\end_inset
-
-.
-\end_layout
-
-\begin_layout Itemize
-\begin_inset Formula $v\in Cpre_{c}^{M}(V)$
-\end_inset
-
-
-\end_layout
-
-\end_deeper
-\begin_layout Itemize
-Due to the choice of 
-\begin_inset Formula $v$
-\end_inset
-
- and according to the definition of 
 \end_layout
 
 \begin_layout Standard
