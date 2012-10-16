@@ -3,6 +3,9 @@ module AbsGame(VarCategory(..),
                AbsVar(..),
                PredicateDB(..),
                pdbPred,
+               pdbGetVar,
+               pdbLookupVar,
+               pdbAllocVar,
                AbsGame(..)) where
 
 import Control.Monad.State
@@ -42,6 +45,18 @@ pdbPred pdb = map avarPred $ filter (\v -> case v of
                                                 PredVar _ _ -> True
                                                 _           -> False) 
                            $ M.keys (pdbStateVar pdb) ++ M.keys (pdbTmpVar pdb) ++ M.keys (pdbUntrackedVar pdb)
+
+-- Retrieve existing var that is known to exist in the DB
+pdbGetVar :: PredicateDB c v p -> AbsVar p -> (v,v)
+pdbGetVar = error "Not implemented pdbGetVar"
+
+-- Lookup variable
+pdbLookupVar :: PredicateDB c v p -> AbsVar p -> Maybe (v,v)
+pdbLookupVar = error "Not implemented pdbLookupVar"
+
+-- Lookup or allocate variable
+pdbAllocVar :: AbsVar p -> VarCategory -> State (PredicateDB c v p) (v,v)
+pdbAllocVar = error "Not implemented: pdbAllocVar"
 
 -- Everything the abstraction algorithm needs to know about the game.
 data AbsGame c v a p = AbsGame {
