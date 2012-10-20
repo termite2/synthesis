@@ -16,6 +16,7 @@ import LogicClasses
 
 data VarCategory = VarState
                  | VarTmp
+                 deriving (Eq)
 
 -- Predicate class.  A predicate can be converted to a string and compared
 -- with other predicates.  
