@@ -48,42 +48,48 @@ data Ops s u = Ops {
     bforall, bexists                          :: DDNode s u -> DDNode s u -> ST s (DDNode s u),
     leq                                       :: DDNode s u -> DDNode s u -> ST s Bool,
     makePrime                                 :: DDNode s u -> DDNode s u -> ST s (DDNode s u),
-    largestCube                               :: DDNode s u -> ST s (DDNode s u),
+    largestCube                               :: DDNode s u -> ST s (DDNode s u, Int),
     supportIndices                            :: DDNode s u -> ST s ([Int]),
-    supportIndex                              :: DDNode s u -> Int -> ST s Bool,
     ithVar                                    :: Int -> ST s (DDNode s u),
     shift                                     :: [DDNode s u] -> [DDNode s u] -> DDNode s u -> ST s (DDNode s u),
     ref                                       :: DDNode s u -> ST s (),
-    deref                                     :: DDNode s u -> ST s ()
+    deref                                     :: DDNode s u -> ST s (),
+    indicesToCube                             :: [Int] -> ST s (DDNode s u),
+    computeCube                               :: [DDNode s u] -> [Bool] -> ST s (DDNode s u),
+    nodesToCube                               :: [DDNode s u] -> ST s (DDNode s u),
+    satCube                                   :: DDNode s u -> ST s [Int]
 }
 
 constructOps :: STDdManager s u -> Ops s u
 constructOps m = Ops {..}
     where
-    band           = C.band    m
-    bor            = C.bor     m
-    bxor           = C.bxor    m
-    bxnor          = C.bxnor   m
-    bimp x y       = C.bor     m (C.bnot x) y
-    bnand          = C.bnand   m
-    bnor           = C.bnor    m
-    (.&)           = C.band    m
-    (.|)           = C.bor     m
-    (.->) x y      = C.bor     m (C.bnot x) y
-    bnot           = C.bnot     
-    btrue          = C.bone    m
-    bfalse         = C.bzero   m
-    bforall        = C.bforall m
-    bexists        = C.bexists m
-    supportIndices = undefined m
-    supportIndex   = undefined m
-    ithVar         = C.bvar    m
-    leq            = C.leq     m
-    shift          = C.shift   m
-    ref            = C.ref      
-    deref          = C.deref   m
-    makePrime      = undefined m
-    largestCube    = undefined m
+    band           = C.band           m
+    bor            = C.bor            m
+    bxor           = C.bxor           m
+    bxnor          = C.bxnor          m
+    bimp x y       = C.bor            m (C.bnot x) y
+    bnand          = C.bnand          m
+    bnor           = C.bnor           m
+    (.&)           = C.band           m
+    (.|)           = C.bor            m
+    (.->) x y      = C.bor            m (C.bnot x) y
+    bnot           = C.bnot            
+    btrue          = C.bone           m
+    bfalse         = C.bzero          m
+    bforall        = C.bforall        m
+    bexists        = C.bexists        m
+    supportIndices = C.supportIndices m
+    ithVar         = C.bvar           m
+    leq            = C.leq            m
+    shift          = C.shift          m
+    ref            = C.ref             
+    deref          = C.deref          m
+    makePrime      = C.makePrime      m
+    largestCube    = C.largestCube    m
+    indicesToCube  = C.indicesToCube  m
+    computeCube    = C.computeCube    m
+    nodesToCube    = C.nodesToCube    m
+    satCube        = C.satCube        m
 
 -- ===Data structures for keeping track of abstraction state===
 
@@ -248,7 +254,10 @@ data TheorySolver sp lp = TheorySolver {
 }
 
 createCubeNodes :: Ops s u -> [Int] -> ST s (DDNode s u, [DDNode s u])
-createCubeNodes = undefined
+createCubeNodes Ops{..} inds = do
+    nodes <- mapM ithVar inds 
+    cube  <- nodesToCube nodes
+    return (cube, nodes)
 
 createSection :: Ops s u -> [Int] -> ST s (Section s u)
 createSection ops inds = do
@@ -281,9 +290,11 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     dumpState rd
     return (rd, RefineStatic {..})
 
+{-
 --Variable promotion strategies
 refineAny :: Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (Maybe [Int])
 refineAny Ops{..} RefineDynamic{..} newSU = (fmap (Just . singleton)) $ findM (supportIndex newSU) $ inds untrackedState
+-}
 
 --TODO wrong. must find prime implicant wrt newSU
 refineLeastPreds :: forall s u sp lp. Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (Maybe [Int])
@@ -297,7 +308,7 @@ refineLeastPreds (Ops{..}) (RefineDynamic{..}) newSU
     where
     sizeVarsNext :: DDNode s u -> ST s (Int, [Int], DDNode s u)
     sizeVarsNext remaining = do
-        lc    <- largestCube remaining
+        (lc, sz) <- largestCube remaining
         prime <- makePrime lc remaining
         deref remaining
         deref lc
@@ -408,13 +419,18 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     }
 
 presentVars :: Ops s u -> DDNode s u -> ST s [(Int, Bool)]
-presentVars = undefined
+presentVars Ops{..} x = do
+    res <- satCube x
+    return $ map (second (/=0)) $ filter ((/=2) . snd) $ zip [0..] res
 
 makeCube :: Ops s u -> [(DDNode s u, Bool)] -> ST s (DDNode s u)
-makeCube = undefined
+makeCube Ops{..} = uncurry computeCube . unzip
 
 makeCubeIdx :: Ops s u -> [(Int, Bool)] -> ST s (DDNode s u)
-makeCubeIdx = undefined
+makeCubeIdx Ops{..} list = do
+    let (idxs, phases) = unzip list
+    nodes <- mapM ithVar idxs
+    computeCube nodes phases 
 
 --Refine one of the consistency relations so that we make progress. Does not promote untracked state.
 --TODO win must be next state
@@ -438,7 +454,7 @@ refineConsistency ops@Ops{..} TheorySolver{..} rd@RefineDynamic{..} win = do
             --There may be a refinement
             --extract a (s, u) pair that will make progress if one exists
             t5 <- bexists (cube label) t4
-            t6 <- largestCube t5
+            (t6, sz) <- largestCube t5
             t7 <- makePrime t6 t5
             deref t5
             deref t6
@@ -461,7 +477,7 @@ refineConsistency ops@Ops{..} TheorySolver{..} rd@RefineDynamic{..} win = do
                     return $ Just $ rd {consistentPlusCU = consistentPlusCU', consistentPlusCUL = consistentPlusCUL'}
                 Nothing -> do
                     --consistentPlusCU cannot be refined but maybe consistentPlusCUL can
-                    t6 <- largestCube t4
+                    (t6, sz) <- largestCube t4
                     t7 <- makePrime t6 t4
                     deref t4
                     deref t6
