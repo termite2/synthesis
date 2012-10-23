@@ -39,7 +39,7 @@ insertList = flip $ foldl (flip $ uncurry Map.insert)
 deleteList :: (Ord k) => [k] -> Map k v -> Map k v
 deleteList = flip $ foldl (flip Map.delete) 
 
---BDD operations instead of a class
+--BDD operations record instead of a class
 data Ops s u = Ops {
     band, bor, bxor, bxnor, bimp, bnand, bnor :: DDNode s u -> DDNode s u -> ST s (DDNode s u),
     (.&), (.|), (.->)                         :: DDNode s u -> DDNode s u -> ST s (DDNode s u),
@@ -57,7 +57,9 @@ data Ops s u = Ops {
     indicesToCube                             :: [Int] -> ST s (DDNode s u),
     computeCube                               :: [DDNode s u] -> [Bool] -> ST s (DDNode s u),
     nodesToCube                               :: [DDNode s u] -> ST s (DDNode s u),
-    satCube                                   :: DDNode s u -> ST s [Int]
+    satCube                                   :: DDNode s u -> ST s [Int],
+    setVarMap                                 :: [DDNode s u] -> [DDNode s u] -> ST s (),
+    mapVars                                   :: DDNode s u -> ST s (DDNode s u)
 }
 
 constructOps :: STDdManager s u -> Ops s u
@@ -90,6 +92,8 @@ constructOps m = Ops {..}
     computeCube    = C.computeCube    m
     nodesToCube    = C.nodesToCube    m
     satCube        = C.satCube        m
+    setVarMap      = C.setVarMap      m
+    mapVars        = C.mapVars        m
 
 -- ===Data structures for keeping track of abstraction state===
 
@@ -126,7 +130,7 @@ data RefineDynamic s u sp lp = RefineDynamic {
 --TODO take into account existence of next some state
 cPre' :: Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (DDNode s u)
 cPre' Ops{..} RefineDynamic{..} target = do
-    t0 <- shift (vars trackedState) (vars next) target
+    t0 <- mapVars target
     t1 <- trans .-> t0
     deref t0
     t2 <- bforall (cube next) t1
@@ -156,7 +160,7 @@ fixedPoint (ops @ Ops {..}) func start = do
         False -> fixedPoint ops func res
         
 solveGame :: Ops s u -> RefineStatic s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (DDNode s u)
-solveGame (ops@Ops{..}) (rs @ RefineStatic{..}) (rd @ RefineDynamic{..}) target = fixedPoint ops func target
+solveGame (ops@Ops{..}) (rs @ RefineStatic{..}) (rd @ RefineDynamic{..}) target = setVarMap (vars trackedState) (vars next) >> fixedPoint ops func target
     where
     func target = do
         t1 <- bor target goal
@@ -265,15 +269,18 @@ createSection ops inds = do
     return $ Section {..}
 
 createSection2 :: Ops s u -> [(DDNode s u, Int)] -> ST s (Section s u)
-createSection2 = undefined
+createSection2 Ops{..} pairs = do
+    let (vars, inds) = unzip pairs
+    cube <- nodesToCube vars
+    return $ Section {..}
 
 --Create an initial abstraction and set up the data structures
-initialAbstraction :: (Show sp, Show lp) => Ops s u -> Abstractor s u sp lp -> ST s (RefineDynamic s u sp lp, RefineStatic s u)
+initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u sp lp -> ST s (RefineDynamic s u sp lp, RefineStatic s u)
 initialAbstraction ops@Ops{..} Abstractor{..} = do
     let (statePredDB, endState, goalExpr) = goalAbs ops emptyPredDB 0 
         endNext = 2*endState
     next <- createSection ops [endState .. endNext-1]
-    let (untrackedPredDB, labelPredDB, endUntracked, newStates, newLabel, transs) = updateAbs ops statePredDB emptyPredDB emptyPredDB endNext (zip (vars next) (extractPreds statePredDB))
+    let (untrackedPredDB, labelPredDB, end, newStates, newLabel, transs) = updateAbs ops statePredDB emptyPredDB emptyPredDB endNext (zip (vars next) (extractPreds statePredDB))
 
     trans            <- transs
 
@@ -285,18 +292,26 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     untrackedState    <- createSection2 ops $ extractVars untrackedPredDB
     label             <- createSection2 ops $ concatMap (pairToList . snd) newLabel 
     goal              <- goalExpr
-    let enablingVars = map (snd . snd . snd) newLabel
+    let statePredsRev  = Map.fromList $ map (snd . snd &&& fst) newStates
+        labelPredsRev  = Map.fromList $ concatMap func newLabel
+            where func (lp, ((_, i), (_, e))) = [(i, (lp, True)), (e, (lp, False))]
+        trackedPreds   = statePredDB
+        untrackedPreds = untrackedPredDB
+        labelPreds     = labelPredDB
+        nextAvlIndex   = end
+        enablingVars = map (snd . snd . snd) newLabel
     let rd = RefineDynamic {..}
     dumpState rd
     return (rd, RefineStatic {..})
 
-{-
 --Variable promotion strategies
+
+{-
 refineAny :: Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (Maybe [Int])
 refineAny Ops{..} RefineDynamic{..} newSU = (fmap (Just . singleton)) $ findM (supportIndex newSU) $ inds untrackedState
 -}
 
---TODO wrong. must find prime implicant wrt newSU
+--Refine the least number of untracked state predicates possible to make progress
 refineLeastPreds :: forall s u sp lp. Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (Maybe [Int])
 refineLeastPreds (Ops{..}) (RefineDynamic{..}) newSU 
     | newSU == bfalse = return Nothing
@@ -309,7 +324,7 @@ refineLeastPreds (Ops{..}) (RefineDynamic{..}) newSU
     sizeVarsNext :: DDNode s u -> ST s (Int, [Int], DDNode s u)
     sizeVarsNext remaining = do
         (lc, sz) <- largestCube remaining
-        prime <- makePrime lc remaining
+        prime <- makePrime lc newSU
         deref remaining
         deref lc
         (size, vars) <- analyseCube prime
@@ -324,7 +339,6 @@ refineLeastPreds (Ops{..}) (RefineDynamic{..}) newSU
             if (size' < size) then doLoop size' vars' remaining' else doLoop size vars remaining'
     analyseCube :: DDNode s u -> ST s (Int, [Int])
     analyseCube cube' = do
-        --TODO optimise below a lot
         untrackedCube <- bexists (cube trackedState) cube'
         support <- supportIndices untrackedCube
         deref untrackedCube
@@ -398,7 +412,8 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
 
     let enablingVars' = enablingVars ++ map (snd . snd . snd) newLPreds
 
-    let labelPredsRev' = undefined
+    let labelPredsRev' = insertList (concatMap func newLPreds) labelPredsRev
+            where func (lp, ((_, i), (_, e))) = [(i, (lp, True)), (e, (lp, False))]
 
     return $ RefineDynamic {
         trans              = trans',
