@@ -1,83 +1,29 @@
-module AbsGame(VarCategory(..),
-               Pred(..),
-               AbsVar(..),
-               PredicateDB(..),
-               pdbPred,
-               pdbGetVar,
-               pdbLookupVar,
-               pdbAllocVar,
-               AbsGame(..)) where
+module AbsGame(AbsGame(..)) where
 
 import Control.Monad.State
-
 import qualified Data.Map as M
 
-import LogicClasses
-
-data VarCategory = VarState
-                 | VarTmp
-                 deriving (Eq)
-
--- Predicate class.  A predicate can be converted to a string and compared
--- with other predicates.  
-class (Show p, Eq p, Ord p) => Pred p where
-    predOverlap :: p -> p -> Bool   -- True if predicates share a common variable
-
-data AbsVar p = PredVar {avarName::String, avarPred::p}
-              | BoolVar {avarName::String}
-              | EnumVar {avarName::String, avarSize::Int}
-
-instance Eq (AbsVar p) where
-    (==) v1 v2 = avarName v1 == avarName v2
-
-instance Ord (AbsVar p) where
-    compare v1 v2 = compare (avarName v1) (avarName v2)
-
--- Predicate database
-data PredicateDB c v p = PredicateDB { 
-    pdbCtx          :: c,                  -- Logic context used to allocate vars
-    pdbStateVar     :: M.Map (AbsVar p) v, -- Map predicate or variable name to logic variables
-    pdbTmpVar       :: M.Map (AbsVar p) v, -- Map predicate or variable name to logic variables
-    pdbUntrackedVar :: M.Map (AbsVar p) v  -- Map predicate or variable name to logic variables
-}
-
-pdbPred :: PredicateDB c v p -> [p]
-pdbPred pdb = map avarPred $ filter (\v -> case v of 
-                                                PredVar _ _ -> True
-                                                _           -> False) 
-                           $ M.keys (pdbStateVar pdb) ++ M.keys (pdbTmpVar pdb) ++ M.keys (pdbUntrackedVar pdb)
-
--- Retrieve existing var that is known to exist in the DB
-pdbGetVar :: PredicateDB c v p -> AbsVar p -> (v,v)
-pdbGetVar = error "Not implemented pdbGetVar"
-
--- Lookup variable
-pdbLookupVar :: PredicateDB c v p -> AbsVar p -> Maybe (v,v)
-pdbLookupVar = error "Not implemented pdbLookupVar"
-
--- Lookup or allocate variable
-pdbAllocVar :: AbsVar p -> VarCategory -> State (PredicateDB c v p) (v,v)
-pdbAllocVar = error "Not implemented: pdbAllocVar"
+import PredicateDB
 
 -- Everything the abstraction algorithm needs to know about the game.
-data AbsGame c v a p = AbsGame {
+data AbsGame c v a p o = AbsGame {
     -- Decompose goal relations into predicates and compile them.
     -- Returns the list of named goals.  The predicate DB contains
     -- newly discovered predicates and variables.
-    gameGoals       :: State (PredicateDB c v p) [(String,a)],
+    gameGoals       :: PredicateDB c v p o [(String,a)],
 
     -- Decompose fair set relations into predicates and compile them.
     -- Returns the list of fair sets.  The predicate DB contains
     -- newly discovered predicates and variables.
-    gameFair        :: State (PredicateDB c v p) [a],
+    gameFair        :: PredicateDB c v p o [a],
 
     -- Decompose initial state relation into predicates and compile it.
     -- In order to obtain an abstraction of the initial relation wrt predicate
     -- already in the DB, just quantify away all newly discovered predicates
     -- and variables.
-    gameInit        :: State (PredicateDB c v p) a,
+    gameInit        :: PredicateDB c v p o a,
 
     -- Compute controllable and uncontrollable  update function.
-    gameVarUpdateC :: [AbsVar p] -> State (PredicateDB c v p) [a],
-    gameVarUpdateU :: [AbsVar p] -> State (PredicateDB c v p) [a]
+    gameVarUpdateC :: [AbsVar p] -> PredicateDB c v p o [a],
+    gameVarUpdateU :: [AbsVar p] -> PredicateDB c v p o [a]
 }
