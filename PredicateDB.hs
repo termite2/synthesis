@@ -72,7 +72,7 @@ pdbLookupVar :: AbsVar p -> PredicateDB c v p o (Maybe v)
 pdbLookupVar = undefined
 
 -- Lookup or allocate variable
-pdbAllocVar :: AbsVar p -> VarCategory -> PredicateDB c v p o (v,v)
+pdbAllocVar :: AbsVar p -> VarCategory -> PredicateDB c v p o v
 pdbAllocVar = undefined
 
 -- Retrieve extended opaque state
