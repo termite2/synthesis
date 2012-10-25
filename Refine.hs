@@ -46,6 +46,7 @@ data Ops s u = Ops {
     bnot                                      :: DDNode s u -> DDNode s u,
     btrue, bfalse                             :: DDNode s u,
     bforall, bexists                          :: DDNode s u -> DDNode s u -> ST s (DDNode s u),
+    andAbstract, xorExistAbstract             :: DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u),
     leq                                       :: DDNode s u -> DDNode s u -> ST s Bool,
     makePrime                                 :: DDNode s u -> DDNode s u -> ST s (DDNode s u),
     largestCube                               :: DDNode s u -> ST s (DDNode s u, Int),
@@ -65,35 +66,37 @@ data Ops s u = Ops {
 constructOps :: STDdManager s u -> Ops s u
 constructOps m = Ops {..}
     where
-    band           = C.band           m
-    bor            = C.bor            m
-    bxor           = C.bxor           m
-    bxnor          = C.bxnor          m
-    bimp x y       = C.bor            m (C.bnot x) y
-    bnand          = C.bnand          m
-    bnor           = C.bnor           m
-    (.&)           = C.band           m
-    (.|)           = C.bor            m
-    (.->) x y      = C.bor            m (C.bnot x) y
-    bnot           = C.bnot            
-    btrue          = C.bone           m
-    bfalse         = C.bzero          m
-    bforall        = flip $ C.bforall m
-    bexists        = flip $ C.bexists m
-    supportIndices = C.supportIndices m
-    ithVar         = C.bvar           m
-    leq            = C.leq            m
-    shift          = C.shift          m
-    ref            = C.ref             
-    deref          = C.deref          m
-    makePrime      = C.makePrime      m
-    largestCube    = C.largestCube    m
-    indicesToCube  = C.indicesToCube  m
-    computeCube    = C.computeCube    m
-    nodesToCube    = C.nodesToCube    m
-    satCube        = C.satCube        m
-    setVarMap      = C.setVarMap      m
-    mapVars        = C.mapVars        m
+    band                   = C.band           m
+    bor                    = C.bor            m
+    bxor                   = C.bxor           m
+    bxnor                  = C.bxnor          m
+    bimp x y               = C.bor            m (C.bnot x) y
+    bnand                  = C.bnand          m
+    bnor                   = C.bnor           m
+    (.&)                   = C.band           m
+    (.|)                   = C.bor            m
+    (.->) x y              = C.bor            m (C.bnot x) y
+    bnot                   = C.bnot            
+    btrue                  = C.bone           m
+    bfalse                 = C.bzero          m
+    bforall                = flip $ C.bforall m
+    bexists                = flip $ C.bexists m
+    andAbstract c f g      = C.andAbstract m f g c
+    xorExistAbstract c f g = C.xorExistAbstract m f g c
+    supportIndices         = C.supportIndices m
+    ithVar                 = C.bvar           m
+    leq                    = C.leq            m
+    shift                  = C.shift          m
+    ref                    = C.ref             
+    deref                  = C.deref          m
+    makePrime              = C.makePrime      m
+    largestCube            = C.largestCube    m
+    indicesToCube          = C.indicesToCube  m
+    computeCube            = C.computeCube    m
+    nodesToCube            = C.nodesToCube    m
+    satCube                = C.satCube        m
+    setVarMap              = C.setVarMap      m
+    mapVars                = C.mapVars        m
 
 -- ===Data structures for keeping track of abstraction state===
 
@@ -128,6 +131,7 @@ data RefineDynamic s u sp lp = RefineDynamic {
 -- ===Solve an abstracted and compiled game===
 
 --TODO take into account existence of next some state
+--TODO use faster bdd functions
 cPre' :: Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (DDNode s u)
 cPre' Ops{..} RefineDynamic{..} target = do
     t0 <- mapVars target
@@ -470,8 +474,10 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
         False -> do
             --There may be a refinement
             --extract a (s, u) pair that will make progress if one exists
+            traceST "consistency refinement may be possible"
             t5 <- bexists (cube label) t4
             (t6, sz) <- largestCube t5
+            traceST $ "Cube size: " ++ show sz
             t7 <- makePrime t6 t5
             deref t5
             deref t6
@@ -493,7 +499,9 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
                     return $ Just $ rd {consistentPlusCU = consistentPlusCU', consistentPlusCUL = consistentPlusCUL'}
                 Nothing -> do
                     --consistentPlusCU cannot be refined but maybe consistentPlusCUL can
+                    traceST "consistentPlusCU could not be refined"
                     (t6, sz) <- largestCube t4
+                    traceST $ "cube size: " ++ show sz
                     t7 <- makePrime t6 t4
                     deref t4
                     deref t6
