@@ -23,7 +23,11 @@ data AbsGame c v a p o = AbsGame {
     -- and variables.
     gameInit        :: PredicateDB c v p o a,
 
-    -- Compute controllable and uncontrollable  update function.
-    gameVarUpdateC :: [AbsVar p] -> PredicateDB c v p o [a],
-    gameVarUpdateU :: [AbsVar p] -> PredicateDB c v p o [a]
+    -- Compute controllable/uncontrollable update functions.
+    -- Input arguments: list of abstract variables and corresponding next-state
+    -- logic variables.
+    -- Output: relation between current-state abstract variables and 
+    -- next-state values of input variables
+    gameVarUpdateC :: [(AbsVar p, v)] -> PredicateDB c v p o [a],
+    gameVarUpdateU :: [(AbsVar p, v)] -> PredicateDB c v p o [a]
 }
