@@ -78,8 +78,8 @@ constructOps m = Ops {..}
     bnot           = C.bnot            
     btrue          = C.bone           m
     bfalse         = C.bzero          m
-    bforall        = C.bforall        m
-    bexists        = C.bexists        m
+    bforall        = flip $ C.bforall m
+    bexists        = flip $ C.bexists m
     supportIndices = C.supportIndices m
     ithVar         = C.bvar           m
     leq            = C.leq            m
@@ -160,23 +160,25 @@ fixedPoint (ops @ Ops {..}) func start = do
         False -> fixedPoint ops func res
         
 solveGame :: Ops s u -> RefineStatic s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (DDNode s u)
-solveGame (ops@Ops{..}) (rs @ RefineStatic{..}) (rd @ RefineDynamic{..}) target = setVarMap (vars trackedState) (vars next) >> fixedPoint ops func target
+solveGame (ops@Ops{..}) (rs @ RefineStatic{..}) (rd @ RefineDynamic{..}) target = fixedPoint ops func target
     where
     func target = do
-        t1 <- bor target goal
+        t1 <- target .| goal
         res <- cPre ops rd t1
         deref t1
         return res
 
 -- ===Abstraction refinement===
 
---TODO deref in below functions, especially the foldMs
 removeVariables :: Ops s u -> [(DDNode s u, Int)] -> Section s u -> ST s (Section s u)
 removeVariables Ops{..} nodeInds Section{..} = do
     let (vars'', inds'') = unzip nodeInds
         inds' = inds \\ inds''
         vars' = vars \\ vars''
-    cube' <- foldM bexists cube vars''
+    cube'' <- nodesToCube vars'' --foldM bexists cube vars''
+    cube'  <- bexists cube'' cube
+    deref cube''
+    deref cube
     return $ Section cube' vars' inds'
 
 addVariables :: Ops s u -> [(DDNode s u, Int)] -> Section s u -> ST s (Section s u)
@@ -184,7 +186,10 @@ addVariables Ops{..} nodeInds Section{..} = do
     let (vars'', inds'') = unzip nodeInds
         inds' = inds ++ inds''
         vars' = vars ++ vars''
-    cube' <- foldM (.&) cube vars''
+    cube'' <- nodesToCube vars''
+    cube' <- cube .& cube''
+    deref cube''
+    deref cube
     return $ Section cube' vars' inds'
     
 type StatePredDB s u p = Map p (DDNode s u, Int)
@@ -300,9 +305,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
         labelPreds     = labelPredDB
         nextAvlIndex   = end
         enablingVars = map (snd . snd . snd) newLabel
-    let rd = RefineDynamic {..}
-    dumpState rd
-    return (rd, RefineStatic {..})
+    return (RefineDynamic {..}, RefineStatic {..})
 
 --Variable promotion strategies
 
@@ -361,7 +364,6 @@ makePairs Ops{..} inds = sequence $ map func inds
         return (n, idx)
 
 --Promote untracked state variables to full state variables so that we can make progress towards the goal. Does not refine the consistency relations.
---TODO deref foldMs
 promoteUntracked :: (Ord lp, Ord sp) => Ops s u -> Abstractor s u sp lp -> RefineDynamic s u sp lp -> [Int] -> ST s (RefineDynamic s u sp lp)
 promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     --look up the predicates to promote
@@ -448,10 +450,10 @@ makeCubeIdx Ops{..} list = do
     computeCube nodes phases 
 
 --Refine one of the consistency relations so that we make progress. Does not promote untracked state.
---TODO win must be next state
+--TODO take into account existence of next state
 refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver sp lp -> RefineDynamic s u sp lp -> DDNode s u -> ST s (Maybe (RefineDynamic s u sp lp))
 refineConsistency ops@Ops{..} TheorySolver{..} rd@RefineDynamic{..} win = do
-    t0 <- shift (vars trackedState) (vars next) win
+    t0 <- mapVars win
     t1 <- trans .-> t0
     deref t0
     t2 <- bforall (cube next) t1
@@ -537,20 +539,22 @@ absRefineLoop :: forall s u sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdMan
 absRefineLoop m spec ts = do
     let ops@Ops{..} = constructOps m
     (rd, rs) <- initialAbstraction ops spec
+    dumpState rd
     refineLoop ops rs rd bfalse
     where
         refineLoop :: Ops s u -> RefineStatic s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s Bool
         refineLoop (ops@Ops{..}) rs = refineLoop'
             where 
-            refineLoop' (rd@RefineDynamic{..}) lastWin = do
+            refineLoop' rd@RefineDynamic{..} lastWin = do
+                setVarMap (vars trackedState) (vars next) 
                 winRegion <- solveGame ops rs rd lastWin
-                deref lastWin --TODO maybe
-                winning <- winRegion `leq` undefined --init
+                winning   <- undefined `leq` winRegion 
                 case winning of
                     True -> do
                         deref winRegion
                         return True
                     False -> do
+                        --TODO this is the wrong refinement order
                         res <- pickUntrackedToPromote ops rd winRegion
                         case res of 
                             Just vars -> do
@@ -559,10 +563,10 @@ absRefineLoop m spec ts = do
                             Nothing -> do
                                 res <- refineConsistency ops ts rd winRegion 
                                 case res of
+                                    Just newRD -> refineLoop' newRD winRegion
                                     Nothing -> do
                                         deref winRegion
                                         return False
-                                    Just newRD -> refineLoop' newRD winRegion
 
 --Top level interface
 absRefine :: (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> UnsatCore p -> (sp -> p) -> (lp -> p) -> (p -> sp) -> (p -> sp) -> ST s Bool
