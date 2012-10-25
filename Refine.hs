@@ -452,7 +452,7 @@ makeCubeIdx Ops{..} list = do
 --Refine one of the consistency relations so that we make progress. Does not promote untracked state.
 --TODO take into account existence of next state
 refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver sp lp -> RefineDynamic s u sp lp -> DDNode s u -> ST s (Maybe (RefineDynamic s u sp lp))
-refineConsistency ops@Ops{..} TheorySolver{..} rd@RefineDynamic{..} win = do
+refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
     t0 <- mapVars win
     t1 <- trans .-> t0
     deref t0
@@ -482,7 +482,6 @@ refineConsistency ops@Ops{..} TheorySolver{..} rd@RefineDynamic{..} win = do
             case unsatCoreState preds of
                 Just pairs -> do
                     --consistentPlusCU can be refined
-                    --TODO this will not make any progress it the game is re-solved so maybe just call refineConsistency again
                     traceST "refining consistentPlusCU"
                     deref t4
                     inconsistent <- makeCube ops $ map (first (sel1 . fromJustNote "refineConsistency" . flip Map.lookup (Map.union trackedPreds untrackedPreds))) pairs
@@ -521,7 +520,7 @@ refineConsistency ops@Ops{..} TheorySolver{..} rd@RefineDynamic{..} win = do
                             consistentPlusCUL' <- consistentPlusCUL .& bnot inconsistent
                             deref inconsistent
                             deref consistentPlusCUL
-                            return $ Just $ rd {consistentPlusCUL = consistentPlusCUL'}
+                            refineConsistency ops ts (rd {consistentPlusCUL = consistentPlusCUL'}) win
                         Nothing -> do
                             --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
                             traceST "refining consistentMinusCUL"
