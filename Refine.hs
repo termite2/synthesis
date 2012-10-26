@@ -131,23 +131,19 @@ data RefineDynamic s u sp lp = RefineDynamic {
 -- ===Solve an abstracted and compiled game===
 
 --TODO take into account existence of next some state
---TODO use faster bdd functions
 cPre' :: Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (DDNode s u)
 cPre' Ops{..} RefineDynamic{..} target = do
     t0 <- mapVars target
-    t1 <- trans .-> t0
+    t1 <- liftM bnot $ andAbstract (cube next) trans (bnot t0)
     deref t0
-    t2 <- bforall (cube next) t1
+    t3 <- consistentMinusCUL .& t1
     deref t1
-    t3 <- consistentMinusCUL .& t2
-    deref t2
     t4 <- bexists (cube label) t3
     deref t3
     t5 <- consistentPlusCU .-> t4
     deref t4
     return t5
 
---TODO can quantify out untrackedState in advance
 cPre :: Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (DDNode s u)
 cPre (ops @ (Ops {..})) (rd @ (RefineDynamic {..})) target = do
     su <- cPre' ops rd target
