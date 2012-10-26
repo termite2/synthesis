@@ -131,22 +131,24 @@ data RefineDynamic s u sp lp = RefineDynamic {
 -- ===Solve an abstracted and compiled game===
 
 --TODO take into account existence of next some state
-cPre' :: Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (DDNode s u)
-cPre' Ops{..} RefineDynamic{..} target = do
+cPre' :: Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+cPre' Ops{..} RefineDynamic{..} hasOutgoings target = do
     t0 <- mapVars target
     t1 <- liftM bnot $ andAbstract (cube next) trans (bnot t0)
     deref t0
-    t3 <- consistentMinusCUL .& t1
+    t2 <- hasOutgoings .& t1
     deref t1
+    t3 <- consistentMinusCUL .& t2
+    deref t2
     t4 <- bexists (cube label) t3
     deref t3
     t5 <- consistentPlusCU .-> t4
     deref t4
     return t5
 
-cPre :: Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (DDNode s u)
-cPre (ops @ (Ops {..})) (rd @ (RefineDynamic {..})) target = do
-    su <- cPre' ops rd target
+cPre :: Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+cPre (ops @ (Ops {..})) (rd @ (RefineDynamic {..})) hasOutgoings target = do
+    su <- cPre' ops rd hasOutgoings target
     t6 <- bforall (cube untrackedState) su
     deref su
     return t6
@@ -160,11 +162,15 @@ fixedPoint (ops @ Ops {..}) func start = do
         False -> fixedPoint ops func res
         
 solveGame :: Ops s u -> RefineStatic s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (DDNode s u)
-solveGame (ops@Ops{..}) (rs @ RefineStatic{..}) (rd @ RefineDynamic{..}) target = fixedPoint ops func target
+solveGame (ops@Ops{..}) (rs @ RefineStatic{..}) (rd @ RefineDynamic{..}) target = do 
+    hasOutgoings <- bexists (cube next) trans
+    fp <- fixedPoint ops (func hasOutgoings) target
+    deref hasOutgoings
+    return fp
     where
-    func target = do
+    func hasOutgoings target = do
         t1 <- target .| goal
-        res <- cPre ops rd t1
+        res <- cPre ops rd hasOutgoings t1
         deref t1
         return res
 
@@ -348,8 +354,10 @@ refineLeastPreds (Ops{..}) (RefineDynamic{..}) newSU
         return (length support, support)
 
 pickUntrackedToPromote :: Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (Maybe [Int])
-pickUntrackedToPromote (ops@Ops{..}) rd win = do
-    su    <- cPre' ops rd win
+pickUntrackedToPromote ops@Ops{..} rd@RefineDynamic{..} win = do
+    hasOutgoings <- bexists (cube next) trans
+    su    <- cPre' ops rd hasOutgoings win
+    deref hasOutgoings
     newSU <- su .& bnot win
     deref su
     res <- refineLeastPreds ops rd newSU
