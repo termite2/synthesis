@@ -6,6 +6,7 @@ module PredicateDB(VarCategory(..),
                    pdbGetVar,
                    pdbLookupVar,
                    pdbAllocVar,
+                   pdbAllocTmpVar,
                    pdbPutExt,
                    pdbGetExt) where
 
@@ -74,6 +75,12 @@ pdbLookupVar = undefined
 -- Lookup or allocate variable
 pdbAllocVar :: AbsVar p -> VarCategory -> PredicateDB c v p o v
 pdbAllocVar = undefined
+
+-- Allocate temporary logic variable 
+-- This variable is not part of the PDB and is only used internally
+-- by the variable update function computation algorithm
+pdbAllocTmpVar :: Int -> PredicateDB c v p o v
+pdbAllocTmpVar = undefined
 
 -- Retrieve extended opaque state
 pdbGetExt :: PredicateDB c v p o o
