@@ -23,6 +23,9 @@ data AbsGame c v a p o = AbsGame {
     -- and variables.
     gameInit        :: PredicateDB c v p o a,
 
+    -- Generate consistency constraint over abstract variables in the game
+    gameConsistent  :: PredicateDB c v p o a,
+
     -- Compute controllable/uncontrollable update functions.
     -- Input arguments: list of abstract variables and corresponding next-state
     -- logic variables.

@@ -3,6 +3,7 @@ module PredicateDB(VarCategory(..),
                    PredicateDB,
                    pdbCtx,
                    pdbPred,
+                   pdbAbsVar,
                    pdbGetVar,
                    pdbLookupVar,
                    pdbAllocVar,
@@ -63,6 +64,10 @@ pdbCtx = undefined
 -- List all predicates
 pdbPred :: PredicateDB c v p o [p]
 pdbPred = undefined
+
+-- List all abstract variables in PDB
+pdbAbsVar :: PredicateDB c v p o [AbsVar p]
+pdbAbsVar = undefined
 
 -- Retrieve existing var that is known to exist in the DB
 pdbGetVar :: AbsVar p -> PredicateDB c v p o v
