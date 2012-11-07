@@ -66,37 +66,37 @@ data Ops s u = Ops {
 constructOps :: STDdManager s u -> Ops s u
 constructOps m = Ops {..}
     where
-    band                   = C.band           m
-    bor                    = C.bor            m
-    bxor                   = C.bxor           m
-    bxnor                  = C.bxnor          m
-    bimp x y               = C.bor            m (C.bnot x) y
-    bnand                  = C.bnand          m
-    bnor                   = C.bnor           m
-    (.&)                   = C.band           m
-    (.|)                   = C.bor            m
-    (.->) x y              = C.bor            m (C.bnot x) y
-    bnot                   = C.bnot            
-    btrue                  = C.bone           m
-    bfalse                 = C.bzero          m
-    bforall                = flip $ C.bforall m
-    bexists                = flip $ C.bexists m
-    andAbstract c f g      = C.andAbstract m f g c
+    band                   = C.band             m
+    bor                    = C.bor              m
+    bxor                   = C.bxor             m
+    bxnor                  = C.bxnor            m
+    bimp x y               = C.bor              m (C.bnot x) y
+    bnand                  = C.bnand            m
+    bnor                   = C.bnor             m
+    (.&)                   = C.band             m
+    (.|)                   = C.bor              m
+    (.->) x y              = C.bor              m (C.bnot x) y
+    bnot                   = C.bnot              
+    btrue                  = C.bone             m
+    bfalse                 = C.bzero            m
+    bforall                = flip $ C.bforall   m
+    bexists                = flip $ C.bexists   m
+    andAbstract c f g      = C.andAbstract      m f g c
     xorExistAbstract c f g = C.xorExistAbstract m f g c
-    supportIndices         = C.supportIndices m
-    ithVar                 = C.bvar           m
-    leq                    = C.leq            m
-    shift                  = C.shift          m
-    ref                    = C.ref             
-    deref                  = C.deref          m
-    makePrime              = C.makePrime      m
-    largestCube            = C.largestCube    m
-    indicesToCube          = C.indicesToCube  m
-    computeCube            = C.computeCube    m
-    nodesToCube            = C.nodesToCube    m
-    satCube                = C.satCube        m
-    setVarMap              = C.setVarMap      m
-    mapVars                = C.mapVars        m
+    supportIndices         = C.supportIndices   m
+    ithVar                 = C.bvar             m
+    leq                    = C.leq              m
+    shift                  = C.shift            m
+    ref                    = C.ref               
+    deref                  = C.deref            m
+    makePrime              = C.makePrime        m
+    largestCube            = C.largestCube      m
+    indicesToCube          = C.indicesToCube    m
+    computeCube            = C.computeCube      m
+    nodesToCube            = C.nodesToCube      m
+    satCube                = C.satCube          m
+    setVarMap              = C.setVarMap        m
+    mapVars                = C.mapVars          m
 
 -- ===Data structures for keeping track of abstraction state===
 
@@ -110,27 +110,99 @@ data RefineStatic s u = RefineStatic {
     goal :: DDNode s u
 }
 
+data Variable p v where
+    Predicate :: p -> Variable p v
+    NonAbs    :: String -> v -> Variable p v
+
+instance (Show p, Show v) => Show (Variable p v) where
+    show (Predicate p) = "Predicate variable: " ++ show p
+    show (NonAbs n v)  = "Non-abstracted variable: " ++ show n ++ " " ++ show v
+
+getPredicate :: Variable p v -> Maybe p
+getPredicate (Predicate p) = Just p
+getPredicate (NonAbs n v)  = Nothing
+
+getPredicates :: [(Variable p v, a)] -> [(p, a)]
+getPredicates = mapMaybe func 
+    where
+    func (Predicate p, x) = Just (p, x)
+    func _                = Nothing
+
+type VarInfo s u = (DDNode s u, Int)
+node :: VarInfo s u -> DDNode s u
+node = fst
+idx  :: VarInfo s u -> Int
+idx  = snd
+
 data RefineDynamic s u sp lp = RefineDynamic {
+    --relations
     trans              :: DDNode s u,
     consistentPlusCU   :: DDNode s u,
     consistentMinusCUL :: DDNode s u,
     consistentPlusCUL  :: DDNode s u,
+    --sections
     trackedState       :: Section s u,
     untrackedState     :: Section s u,
     label              :: Section s u,
     next               :: Section s u,
     nextAvlIndex       :: Int,
-    statePredsRev      :: Map Int sp,
-    labelPredsRev      :: Map Int (lp, Bool),
-    trackedPreds       :: Map sp (DDNode s u, Int),
-    untrackedPreds     :: Map sp (DDNode s u, Int),
-    labelPreds         :: Map lp ((DDNode s u, Int), (DDNode s u, Int)),
+    --mappings from index to variable/predicate
+    stateRev           :: Map Int (Variable sp [DDNode s u]),
+    labelRev           :: Map Int (Variable lp [DDNode s u], Bool),
+    --below maps are used for update function compilation and constructing
+    --new consistency relations
+    statePreds         :: Map sp (VarInfo s u),
+    stateVars          :: Map String [VarInfo s u],
+    --predicate variable, enabling variable
+    labelPreds         :: Map lp (VarInfo s u, VarInfo s u),
+    labelVars          :: Map String ([VarInfo s u], VarInfo s u),
+    --All enabling vars in existance
     enablingVars       :: [Int]
 }
 
+--convenience functions for constructing the reverse mappings
+constructStatePredRev :: [(sp, VarInfo s u)] -> Map Int (Variable sp [DDNode s u])
+constructStatePredRev pairs = Map.fromList $ map (uncurry func) pairs
+    where
+    func pred vi = (idx vi, Predicate pred)
+
+constructStateVarRev  :: [(String, [VarInfo s u])] -> Map Int (Variable sp [DDNode s u])
+constructStateVarRev pairs = Map.fromList $ concatMap (uncurry func) pairs
+    where
+    func name vars = map func' vars
+        where
+        func' var = (idx var, NonAbs name (map node vars))
+
+constructLabelPredRev :: [(lp, (VarInfo s u, VarInfo s u))] -> Map Int (Variable lp [DDNode s u], Bool)
+constructLabelPredRev pairs = Map.fromList $ concatMap (uncurry func) pairs
+    where
+    func pred (vi, evi) = [(idx vi, (Predicate pred, True)), (idx evi, (Predicate pred, False))]
+
+constructLabelVarRev  :: [(String, ([VarInfo s u], VarInfo s u))] -> Map Int (Variable lp [DDNode s u], Bool)
+constructLabelVarRev pairs = Map.fromList $ concatMap (uncurry func) pairs
+    where
+    func name (vi, evi) = (idx evi, (NonAbs name (map node vi), False)) : map func' vi
+        where
+        func' var = (idx var, (NonAbs name (map node vi), True))
+
+--debug dump
+dumpState :: (Show sp, Show lp) => RefineDynamic s u sp lp -> ST s ()
+dumpState RefineDynamic{..} = unsafeIOToST $ do
+    putStrLn $ "State inds: "     ++ show (inds trackedState)
+    putStrLn $ "Next inds: "      ++ show (inds next)
+    putStrLn $ "Untracked inds: " ++ show (inds untrackedState)
+    putStrLn $ "label inds: "     ++ show (inds label)
+    putStrLn $ "Nxt avl ixd: "    ++ show nextAvlIndex
+    putStrLn $ "stateRev: "       ++ show (Map.toList stateRev)
+    putStrLn $ "labelRev: "       ++ show (Map.toList labelRev)
+    putStrLn $ "State preds: "    ++ show (Map.keys statePreds)
+    putStrLn $ "State vars: "     ++ show (Map.keys stateVars)
+    putStrLn $ "label preds: "    ++ show (Map.keys labelPreds)
+    putStrLn $ "label vars: "     ++ show (Map.keys labelVars)
+    putStrLn $ "enabling vars: "  ++ show enablingVars
+
 -- ===Solve an abstracted and compiled game===
 
---TODO take into account existence of next some state
 cPre' :: Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 cPre' Ops{..} RefineDynamic{..} hasOutgoings target = do
     t0 <- mapVars target
@@ -169,6 +241,7 @@ solveGame (ops@Ops{..}) (rs @ RefineStatic{..}) (rd @ RefineDynamic{..}) target 
     return fp
     where
     func hasOutgoings target = do
+        traceST "solveGame: iteration"
         t1 <- target .| goal
         res <- cPre ops rd hasOutgoings t1
         deref t1
@@ -197,67 +270,53 @@ addVariables Ops{..} nodeInds Section{..} = do
     deref cube''
     deref cube
     return $ Section cube' vars' inds'
-    
-type StatePredDB s u p = Map p (DDNode s u, Int)
-type LabelPredDB s u p = Map p ((DDNode s u, Int), (DDNode s u, Int))
-emptyPredDB  = Map.empty
-extractPreds = Map.keys
-extractVars  = map snd . Map.toList
 
-dumpState :: (Show sp, Show lp) => RefineDynamic s u sp lp -> ST s ()
-dumpState RefineDynamic{..} = unsafeIOToST $ do
-    putStrLn $ "State inds: "      ++ show (inds trackedState)
-    putStrLn $ "Next inds: "       ++ show (inds next)
-    putStrLn $ "Untracked inds: "  ++ show (inds untrackedState)
-    putStrLn $ "label inds: "      ++ show (inds label)
-    putStrLn $ "Nxt avl ixd: "     ++ show nextAvlIndex
-    putStrLn $ "State preds: "     ++ show (Map.keys trackedPreds)
-    putStrLn $ "untracked preds: " ++ show (Map.keys untrackedPreds)
-    putStrLn $ "label preds: "     ++ show (Map.keys labelPreds)
-    putStrLn $ "enabling vars: "   ++ show enablingVars
+data GoalAbsRet s u sp = GoalAbsRet {
+    goalStatePreds :: Map sp (VarInfo s u),
+    goalStateVars  :: Map String [VarInfo s u],
+    endGoalState   :: Int,
+    goalExpr       :: DDNode s u
+}
+
+data UpdateAbsRet s u sp lp = UpdateAbsRet {
+    updateStatePreds :: Map sp (VarInfo s u),
+    updateStateVars  :: Map String [VarInfo s u],
+    updateLabelPreds :: Map lp (VarInfo s u, VarInfo s u),
+    updateLabelVars  :: Map String ([VarInfo s u], VarInfo s u),
+    updateOffset     :: Int,
+    updateExpr       :: DDNode s u
+}
 
 --Input to the refinement algorithm. Represents the spec.
 data Abstractor s u sp lp = Abstractor {
     goalAbs :: 
         Ops s u -> 
         --state pred db
-        StatePredDB s u sp -> 
+        Map sp (VarInfo s u) -> 
+        --variable DB
+        Map String [VarInfo s u] -> 
         --free var offset
         Int -> 
-        (
-         --new untracked db
-         StatePredDB s u sp, 
-         --new offset
-         Int, 
-         --update function conjunction
-         ST s (DDNode s u)
-        ),
+        --return
+        ST s (GoalAbsRet s u sp),
     updateAbs :: 
         Ops s u -> 
         --state predicate db
-        StatePredDB s u sp -> 
-        --untracked 
-        StatePredDB s u sp ->
+        Map sp (VarInfo s u) -> 
+        --state variable db
+        Map String [VarInfo s u] -> 
         --label
-        LabelPredDB s u lp -> 
+        Map lp (VarInfo s u, VarInfo s u) -> 
+        --Label var db
+        Map String ([VarInfo s u], VarInfo s u) -> 
         --Free var offset
         Int ->
-        --Next state node, predicate being update pairs
-        [(DDNode s u, sp)] -> 
-        (
-          --new untracked pred db
-          StatePredDB s u sp, 
-          --new label pred db
-          LabelPredDB s u lp, 
-          --new offset
-          Int, 
-          --new state predicates
-          [(sp, (DDNode s u, Int))], 
-          --new label and enabling predicates
-          [(lp, ((DDNode s u, Int), (DDNode s u, Int)))],
-          --update function conjunction
-          ST s (DDNode s u)
-         )
+        --Predicates being updated, next state node pairs
+        [(sp, DDNode s u)] -> 
+        --State variables being updated, next state nodes pairs
+        [(String, [DDNode s u])] -> 
+        --return
+        ST s (UpdateAbsRet s u sp lp)
 }
 
 --Theory solving
@@ -285,33 +344,55 @@ createSection2 Ops{..} pairs = do
     cube <- nodesToCube vars
     return $ Section {..}
 
+func :: Monad m => (a, m b) -> m (a, b)
+func (x, y) = do
+    y <- y
+    return (x, y)
+
 --Create an initial abstraction and set up the data structures
 initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u sp lp -> ST s (RefineDynamic s u sp lp, RefineStatic s u)
 initialAbstraction ops@Ops{..} Abstractor{..} = do
-    let (statePredDB, endState, goalExpr) = goalAbs ops emptyPredDB 0 
-        endNext = 2*endState
-    next <- createSection ops [endState .. endNext-1]
-    let (untrackedPredDB, labelPredDB, end, newStates, newLabel, transs) = updateAbs ops statePredDB emptyPredDB emptyPredDB endNext (zip (vars next) (extractPreds statePredDB))
-
-    trans            <- transs
-
+    --abstract the goal
+    GoalAbsRet {..}     <- goalAbs ops Map.empty Map.empty 0 
+    let
+        endStateAndNext = 2*endGoalState
+        goalPreds       = map (second ((+ endGoalState) . idx)) $ Map.toList goalStatePreds
+        goalVars        = map (second (map $ (+ endGoalState) . idx)) $ Map.toList goalStateVars
+    goalPreds <- sequence $ map (func . second ithVar) goalPreds 
+    goalVars  <- sequence $ map (func . second (sequence . map ithVar)) goalVars
+    --get the abstract update functions for the goal predicates and variables
+    UpdateAbsRet {..}   <- updateAbs ops goalStatePreds goalStateVars Map.empty Map.empty endStateAndNext goalPreds goalVars
+    --create the consistency constraints
     let consistentPlusCU   = btrue
         consistentMinusCUL = bfalse
         consistentPlusCUL  = btrue
-
-    trackedState      <- createSection2 ops $ extractVars statePredDB
-    untrackedState    <- createSection2 ops $ extractVars untrackedPredDB
-    label             <- createSection2 ops $ concatMap (pairToList . snd) newLabel 
-    goal              <- goalExpr
-    let statePredsRev  = Map.fromList $ map (snd . snd &&& fst) newStates
-        labelPredsRev  = Map.fromList $ concatMap func newLabel
-            where func (lp, ((_, i), (_, e))) = [(i, (lp, True)), (e, (lp, False))]
-        trackedPreds   = statePredDB
-        untrackedPreds = untrackedPredDB
-        labelPreds     = labelPredDB
-        nextAvlIndex   = end
-        enablingVars = map (snd . snd . snd) newLabel
-    return (RefineDynamic {..}, RefineStatic {..})
+    --create the sections
+    trackedState       <- createSection2 ops $ 
+        Map.elems goalStatePreds ++ concat (Map.elems goalStateVars)
+    untrackedState     <- createSection2 ops $ 
+        Map.elems (updateStatePreds Map.\\ goalStatePreds) ++ concat (Map.elems (updateStateVars Map.\\ goalStateVars))
+    label              <- createSection2 ops $ 
+        concatMap pairToList (Map.elems updateLabelPreds) ++ concatMap (uncurry (flip (:))) (Map.elems updateLabelVars)
+    next               <- createSection ops [endGoalState .. endStateAndNext-1]
+    --construct the reverse mappings and enabling variables list
+    let statePredsRev  = constructStatePredRev $ Map.toList updateStatePreds
+        stateVarsRev   = constructStateVarRev  $ Map.toList updateStateVars
+        stateRev       = Map.union statePredsRev stateVarsRev
+        labelPredsRev  = constructLabelPredRev $ Map.toList updateLabelPreds
+        labelVarsRev   = constructLabelVarRev  $ Map.toList updateLabelVars
+        labelRev       = Map.union labelPredsRev labelVarsRev
+        enablingVars   = map (idx . snd) (Map.elems updateLabelPreds) ++ map (idx . snd) (Map.elems updateLabelVars)
+    --construct the RefineDynamic
+    let rd = RefineDynamic {
+        trans = updateExpr, 
+        nextAvlIndex = updateOffset, 
+        statePreds = updateStatePreds, 
+        stateVars = updateStateVars, 
+        labelPreds = updateLabelPreds, 
+        labelVars = updateLabelVars, 
+        ..
+    }
+    return (rd, RefineStatic {goal=goalExpr, ..})
 
 --Variable promotion strategies
 
@@ -375,7 +456,7 @@ makePairs Ops{..} inds = sequence $ map func inds
 promoteUntracked :: (Ord lp, Ord sp) => Ops s u -> Abstractor s u sp lp -> RefineDynamic s u sp lp -> [Int] -> ST s (RefineDynamic s u sp lp)
 promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     --look up the predicates to promote
-    let refinePreds    = map (fromJustNote "promoteUntracked" . flip Map.lookup statePredsRev) indices
+    let refinePreds    = map (fromJustNote "promoteUntracked" . flip Map.lookup stateRev) indices
 
     --create a section consisting of the new variables to promote
     toPromote          <- makePairs ops indices
@@ -385,44 +466,39 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     let nextAvlIndex   = nextAvlIndex + length indices
 
     --compute the update functions
-    let (untrackedPredDB', labelPredDB', newOffset', newUPreds, newLPreds, predUpdates) = updateAbs ops trackedPreds untrackedPreds labelPreds nextAvlIndex $ zip (map fst nextPairs) refinePreds
+    UpdateAbsRet {..}  <- updateAbs ops statePreds stateVars labelPreds labelVars nextAvlIndex undefined undefined
 
     --update the transition relation
-    predUpdates        <- predUpdates
-    trans'             <- trans .& predUpdates
-    deref predUpdates  
+    trans'             <- trans .& updateExpr
+    deref updateExpr  
     deref trans
 
     --update the sections
     trackedState       <- addVariables    ops toPromote trackedState 
     untrackedState'    <- removeVariables ops toPromote untrackedState
-    untrackedState     <- addVariables    ops (map snd newUPreds) untrackedState'
-    label              <- addVariables    ops (concatMap (pairToList . snd) newLPreds) label
+    untrackedState     <- addVariables    ops undefined untrackedState'
+    label              <- addVariables    ops undefined label
     next               <- addVariables    ops nextPairs next
 
     --update the predicate dbs
-    let trackedPreds'   = deleteList refinePreds trackedPreds'
-    let untrackedPreds' = insertList newUPreds $ deleteList refinePreds untrackedPreds
-    let labelPreds'     = insertList newLPreds labelPreds
+    let statePreds'     = insertList undefined statePreds
+    let labelPreds'     = insertList undefined labelPreds
     
     --update the untracked preds reverse map
-    let statePredsRev' = insertList (zip indices refinePreds) statePredsRev
-
-    --update the next available index
-    let nextAvlIndex   = newOffset'
+    let stateRev'       = insertList (zip indices refinePreds) stateRev
 
     --update the consistency relations
     consistentPlusCU   <- return consistentPlusCU   
     consistentPlusCUL  <- return consistentPlusCUL 
 
-    newEnFalse <- makeCube ops $ zip (map (fst . snd . snd) newLPreds) (repeat False)
+    newEnFalse <- makeCube ops $ zip undefined (repeat False)
     consistentMinusCUL' <- consistentMinusCUL .& newEnFalse
     deref consistentMinusCUL'
     deref newEnFalse
 
-    let enablingVars' = enablingVars ++ map (snd . snd . snd) newLPreds
+    let enablingVars' = enablingVars ++ undefined
 
-    let labelPredsRev' = insertList (concatMap func newLPreds) labelPredsRev
+    let labelRev' = insertList (concatMap func undefined) labelRev
             where func (lp, ((_, i), (_, e))) = [(i, (lp, True)), (e, (lp, False))]
 
     return $ RefineDynamic {
@@ -434,13 +510,12 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
         untrackedState     = untrackedState,
         label              = label,
         next               = next,
-        nextAvlIndex       = nextAvlIndex,
-        statePredsRev      = statePredsRev',
-        trackedPreds       = trackedPreds',
-        untrackedPreds     = untrackedPreds',
+        nextAvlIndex       = updateOffset,
+        stateRev           = stateRev',
+        statePreds         = statePreds',
         labelPreds         = labelPreds',
         enablingVars       = enablingVars', 
-        labelPredsRev      = labelPredsRev'
+        labelRev           = undefined
     }
 
 presentVars :: Ops s u -> DDNode s u -> ST s [(Int, Bool)]
@@ -458,7 +533,6 @@ makeCubeIdx Ops{..} list = do
     computeCube nodes phases 
 
 --Refine one of the consistency relations so that we make progress. Does not promote untracked state.
---TODO take into account existence of next state
 refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver sp lp -> RefineDynamic s u sp lp -> DDNode s u -> ST s (Maybe (RefineDynamic s u sp lp))
 refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
     t0 <- mapVars win
@@ -487,14 +561,14 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
             deref t6
             c <- presentVars ops t7 
             deref t7
-            let preds = map (first $ fromJustNote "refineConsistency1" . flip Map.lookup statePredsRev) c
+            let preds = getPredicates $ map (first $ fromJustNote "refineConsistency1" . flip Map.lookup stateRev) c
             traceST $ show preds
             case unsatCoreState preds of
                 Just pairs -> do
                     --consistentPlusCU can be refined
                     traceST "refining consistentPlusCU"
                     deref t4
-                    inconsistent <- makeCube ops $ map (first (sel1 . fromJustNote "refineConsistency" . flip Map.lookup (Map.union trackedPreds untrackedPreds))) pairs
+                    inconsistent <- makeCube ops $ map (first (node . fromJustNote "refineConsistency" . flip Map.lookup statePreds)) pairs
                     consistentPlusCU'  <- consistentPlusCU .& bnot inconsistent
                     deref consistentPlusCU
                     consistentPlusCUL' <- consistentPlusCUL .& bnot inconsistent
@@ -514,18 +588,18 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
                     let (stateIndices, labelIndices) = partition (\(p, x) -> elem p (inds trackedState) || elem p (inds untrackedState)) c
                     traceST $ "stateIndices: " ++ show stateIndices
                     traceST $ "labelIndices: " ++ show labelIndices
-                    let cStatePreds = map (first $ fromJustNote "refineConsistency2" . flip Map.lookup statePredsRev) stateIndices
-                    let cLabelPreds = catMaybes $ map (uncurry func) labelIndices
+                    let cStatePreds = getPredicates $ map (first $ fromJustNote "refineConsistency2" . flip Map.lookup stateRev) stateIndices
+                    let cLabelPreds = getPredicates $ catMaybes $ map (uncurry func) labelIndices
                             where
-                            func idx polarity = case fromJustNote "refineConsistency3" $ Map.lookup idx labelPredsRev of
+                            func idx polarity = case fromJustNote "refineConsistency3" $ Map.lookup idx labelRev of
                                 (_, False)   -> Nothing
                                 (pred, True) -> Just (pred, polarity)
                     case unsatCoreStateLabel cStatePreds cLabelPreds of
                         Just (statePairs, labelPairs) -> do
                             --consistentPlusCUL can be refined
                             traceST "refining consistentPlusCUL"
-                            inconsistentState <- makeCube ops $ map (first (sel1 . fromJustNote "refineConsistency" . flip Map.lookup (Map.union trackedPreds untrackedPreds))) statePairs
-                            inconsistentLabel <- makeCube ops $ map (first (sel1 . sel1 . fromJustNote "refineConsistency" . flip Map.lookup labelPreds)) labelPairs
+                            inconsistentState <- makeCube ops $ map (first (node . fromJustNote "refineConsistency" . flip Map.lookup statePreds)) statePairs
+                            inconsistentLabel <- makeCube ops $ map (first (node . sel1 . fromJustNote "refineConsistency" . flip Map.lookup labelPreds)) labelPairs
                             inconsistent <- inconsistentState .& inconsistentLabel
                             deref inconsistentState
                             deref inconsistentLabel
@@ -536,7 +610,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
                         Nothing -> do
                             --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
                             traceST "refining consistentMinusCUL"
-                            consistentMinusCUL'' <- makeCubeIdx ops c
+                            consistentMinusCUL'' <- makeCubeIdx ops c --TODO wrong
                             let enTrue  = zip (map ((+1) . fst) labelIndices) (repeat True)
                                 enFalse = zip (enablingVars \\ (map ((+1) . fst) labelIndices)) (repeat False)
                             enablePreds          <- makeCubeIdx ops $ enTrue ++ enFalse
@@ -562,6 +636,7 @@ absRefineLoop m spec ts = do
                 winning   <- undefined `leq` winRegion 
                 case winning of
                     True -> do
+                        traceST "winning"
                         deref winRegion
                         return True
                     False -> do
