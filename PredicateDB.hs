@@ -120,7 +120,12 @@ something accessor key func sz = do
 -- This variable is not part of the PDB and is only used internally
 -- by the variable update function computation algorithm
 pdbAllocTmpVar :: Int -> PredicateDB p o s u [DDNode s u]
-pdbAllocTmpVar = undefined
+pdbAllocTmpVar sz = do
+    st <- get
+    m  <- gets dbManager
+    newVar <- lift $ sequence $ map (bvar m) (take sz $ iterate (+1) (dbNextIndex st))
+    modify $ \st -> st {dbNextIndex = dbNextIndex st + sz}
+    return newVar
 
 -- Retrieve extended opaque state
 pdbGetExt :: PredicateDB p o s u o
