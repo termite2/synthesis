@@ -3,7 +3,6 @@ module PredicateDB(VarCategory(..),
                    PredicateDB,
                    pdbCtx,
                    pdbPred,
-                   pdbAbsVar,
                    pdbGetVar,
                    pdbLookupVar,
                    pdbAllocVar,
@@ -29,15 +28,14 @@ data VarCategory = VarState
 class (Show p, Eq p, Ord p) => Pred p where
     predOverlap :: p -> p -> Bool   -- True if predicates share a common variable
 
-data AbsVar p = PredVar {avarName::String, avarPred::p}
-              | BoolVar {avarName::String}
-              | EnumVar {avarName::String, avarSize::Int}
+data AbsVar p = PredVar    {avarPred::p}
+              | NonPredVar {avarName::String, avarSize::Int}
 
 instance Eq (AbsVar p) where
-    (==) v1 v2 = avarName v1 == avarName v2
+    (==) v1 v2 = undefined
 
 instance Ord (AbsVar p) where
-    compare v1 v2 = compare (avarName v1) (avarName v2)
+    compare v1 v2 = undefined
 
 data PredDBState p o s u = PredDBState {
     dbManager    :: STDdManager s u,
@@ -67,10 +65,6 @@ pdbPred = do
     lp <- gets dbLabelPreds
     return $ Map.keys sp ++ Map.keys lp
 
--- List all abstract variables in PDB
-pdbAbsVar :: PredicateDB p o s u [AbsVar p]
-pdbAbsVar = undefined
-
 -- Retrieve existing var that is known to exist in the DB
 pdbGetVar :: Ord p => AbsVar p -> PredicateDB p o s u [DDNode s u]
 pdbGetVar p = do
@@ -81,27 +75,21 @@ singleton x = [x]
 
 -- Lookup variable
 pdbLookupVar :: Ord p => AbsVar p -> PredicateDB p o s u (Maybe [DDNode s u])
-pdbLookupVar (PredVar _ pred) = do
+pdbLookupVar (PredVar pred) = do
     sp <- gets dbStatePreds
     lp <- gets dbLabelPreds 
     return $ liftM singleton $ Map.lookup pred (Map.union sp lp)
-pdbLookupVar (BoolVar name)   = do
-    sp <- gets dbStateVars
-    lp <- gets dbLabelVars
-    return $ Map.lookup name (Map.union sp lp)
-pdbLookupVar (EnumVar name _) = do
+pdbLookupVar (NonPredVar name _) = do
     sp <- gets dbStateVars
     lp <- gets dbLabelVars
     return $ Map.lookup name (Map.union sp lp)
 
 -- Lookup or allocate variable
 pdbAllocVar :: (Ord p) => AbsVar p -> VarCategory -> PredicateDB p o s u [DDNode s u]
-pdbAllocVar (PredVar _ p)   VarState = something dbStatePreds p  (:[]) 1
-pdbAllocVar (PredVar _ p)   VarTmp   = something dbLabelPreds p  (:[]) 1
-pdbAllocVar (BoolVar nm)    VarState = something dbStateVars  nm id    1
-pdbAllocVar (BoolVar nm)    VarTmp   = something dbLabelVars  nm id    1
-pdbAllocVar (EnumVar nm sz) VarState = something dbStateVars  nm id    sz
-pdbAllocVar (EnumVar nm sz) VarTmp   = something dbLabelVars  nm id    sz
+pdbAllocVar (PredVar p)        VarState = something dbStatePreds p  (:[]) 1
+pdbAllocVar (PredVar p)        VarTmp   = something dbLabelPreds p  (:[]) 1
+pdbAllocVar (NonPredVar nm sz) VarState = something dbStateVars  nm id    sz
+pdbAllocVar (NonPredVar nm sz) VarTmp   = something dbLabelVars  nm id    sz
 
 --TODO actually put it in the map
 something accessor key func sz = do
@@ -133,6 +121,5 @@ pdbGetExt = gets dbUserState
 
 -- Update extended opaque state
 pdbPutExt :: o -> PredicateDB p o s u ()
-pdbPutExt us = do
-    modify $ \st -> st {dbUserState = us}
+pdbPutExt us = modify $ \st -> st {dbUserState = us}
 
