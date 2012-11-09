@@ -6,6 +6,7 @@
 module Solver(SatResult(..),
               Solver(..)) where
 
+import CuddExplicitDeref
 import PredicateDB
 
 data SatResult = SatYes
@@ -13,20 +14,20 @@ data SatResult = SatYes
                | SatMaybe
                deriving (Eq)
 
-data Solver c v a p = forall o . Solver {
+data Solver p s u = forall o . Solver {
 
     -- Check satisfiability of a conjunction of predicates
-    checkSat :: [p] -> SatResult,
+    checkSat :: [(p, Bool)] -> SatResult,
 
     -- Check satisfiability of a conjunction of predicates and 
     -- compute unsatisfiable core if it is unsat
-    unsatCore :: [p] -> (SatResult, [p]),
+    unsatCore :: [(p, Bool)] -> (SatResult, [p]),
 
     -- Existentially quantify away a set of concrete variables from 
     -- a conjunction of predicates.  May introduce new predicates.
     -- Returns logic relation that represents the formula after 
     -- quantification.
-    equant :: [p] -> [String] -> PredicateDB c v p o a
+    equant :: [(p, Bool)] -> [String] -> PredicateDB p o s u (DDNode s u)
 }
 
 
