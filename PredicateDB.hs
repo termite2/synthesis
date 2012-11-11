@@ -31,11 +31,17 @@ class (Show p, Eq p, Ord p) => Pred p where
 data AbsVar p = PredVar    {avarPred::p}
               | NonPredVar {avarName::String, avarSize::Int}
 
-instance Eq (AbsVar p) where
-    (==) v1 v2 = undefined
+instance Eq p => Eq (AbsVar p) where
+    (==) (PredVar p1)      (PredVar p2)      = p1 == p2
+    (==) (NonPredVar n1 _) (NonPredVar n2 _) = n1 == n2
+    (==) _                 _                 = False
 
-instance Ord (AbsVar p) where
-    compare v1 v2 = undefined
+instance Ord p => Ord (AbsVar p) where
+    compare (PredVar p1)      (PredVar p2)      = compare p1 p2
+    compare (NonPredVar n1 _) (NonPredVar n2 _) = compare n1 n2
+    compare (PredVar _)       (NonPredVar _ _)  = LT
+    compare (NonPredVar _ _)  (PredVar _)       = GT
+
 
 data PredDBState p o s u = PredDBState {
     dbManager    :: STDdManager s u,
