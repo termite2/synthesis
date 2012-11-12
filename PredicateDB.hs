@@ -92,23 +92,50 @@ pdbLookupVar (NonPredVar name _) = do
 
 -- Lookup or allocate variable
 pdbAllocVar :: (Ord p) => AbsVar p -> VarCategory -> PredicateDB p o s u [DDNode s u]
-pdbAllocVar (PredVar p)        VarState = something dbStatePreds p  (:[]) 1
-pdbAllocVar (PredVar p)        VarTmp   = something dbLabelPreds p  (:[]) 1
-pdbAllocVar (NonPredVar nm sz) VarState = something dbStateVars  nm id    sz
-pdbAllocVar (NonPredVar nm sz) VarTmp   = something dbLabelVars  nm id    sz
-
---TODO actually put it in the map
-something accessor key func sz = do
-    theMap <- gets accessor
+pdbAllocVar (PredVar p) VarState = do
+    theMap <- gets dbStatePreds
     m      <- gets dbManager
-    case Map.lookup key theMap of
-        Just var -> return $ func var
+    case Map.lookup p theMap of
+        Just var -> return [var]
+        Nothing -> do
+            st <- get
+            newVar <- lift $ bvar m $ dbNextIndex st
+            modify $ \st -> st {dbNextIndex = dbNextIndex st + 1}
+            modify $ \st -> st {dbStatePreds = Map.insert  p newVar (dbStatePreds st)}
+            return [newVar]
+pdbAllocVar (PredVar p) VarTmp = do
+    theMap <- gets dbLabelPreds
+    m      <- gets dbManager
+    case Map.lookup p theMap of
+        Just var -> return [var]
+        Nothing -> do
+            st <- get
+            newVar <- lift $ bvar m $ dbNextIndex st
+            modify $ \st -> st {dbNextIndex = dbNextIndex st + 1}
+            modify $ \st -> st {dbLabelPreds = Map.insert  p newVar (dbLabelPreds st)}
+            return [newVar]
+pdbAllocVar (NonPredVar nm sz) VarState = do
+    theMap <- gets dbStateVars
+    m      <- gets dbManager
+    case Map.lookup nm theMap of
+        Just var -> return var
         Nothing -> do
             st <- get
             newVar <- lift $ sequence $ map (bvar m) (take sz $ iterate (+1) (dbNextIndex st))
             modify $ \st -> st {dbNextIndex = dbNextIndex st + sz}
+            modify $ \st -> st {dbStateVars = Map.insert nm newVar (dbStateVars st)}
             return newVar
-
+pdbAllocVar (NonPredVar nm sz) VarTmp = do
+    theMap <- gets dbLabelVars
+    m      <- gets dbManager
+    case Map.lookup nm theMap of
+        Just var -> return var
+        Nothing -> do
+            st <- get
+            newVar <- lift $ sequence $ map (bvar m) (take sz $ iterate (+1) (dbNextIndex st))
+            modify $ \st -> st {dbNextIndex = dbNextIndex st + sz}
+            modify $ \st -> st {dbLabelVars = Map.insert nm newVar (dbLabelVars st)}
+            return newVar
 
 -- Allocate temporary logic variable 
 -- This variable is not part of the PDB and is only used internally
