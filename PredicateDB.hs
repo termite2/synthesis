@@ -77,14 +77,12 @@ pdbGetVar p = do
     res <- pdbLookupVar p
     return $ fromJustNote "pdbGetVar" res
 
-singleton x = [x]
-
 -- Lookup variable
 pdbLookupVar :: Ord p => AbsVar p -> PredicateDB p o s u (Maybe [DDNode s u])
 pdbLookupVar (PredVar pred) = do
     sp <- gets dbStatePreds
     lp <- gets dbLabelPreds 
-    return $ liftM singleton $ Map.lookup pred (Map.union sp lp)
+    return $ liftM (:[]) $ Map.lookup pred (Map.union sp lp)
 pdbLookupVar (NonPredVar name _) = do
     sp <- gets dbStateVars
     lp <- gets dbLabelVars
