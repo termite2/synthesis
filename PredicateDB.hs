@@ -8,7 +8,8 @@ module PredicateDB(VarCategory(..),
                    pdbAllocVar,
                    pdbAllocTmpVar,
                    pdbPutExt,
-                   pdbGetExt) where
+                   pdbGetExt,
+                   PredDBState(..)) where
 
 import Control.Monad.ST.Lazy
 import qualified Data.Map as Map
@@ -18,6 +19,8 @@ import Safe
 
 import LogicClasses
 import CuddExplicitDeref
+
+import Refine
 
 data VarCategory = VarState
                  | VarTmp
@@ -45,12 +48,12 @@ instance Ord p => Ord (AbsVar p) where
 
 data PredDBState p o s u = PredDBState {
     dbManager    :: STDdManager s u,
-    dbStatePreds :: Map p (DDNode s u),
-    dbStateVars  :: Map String [DDNode s u],
-    dbLabelPreds :: Map p (DDNode s u),
-    dbLabelVars  :: Map String [DDNode s u],
-    dbUserState  :: o,
-    dbNextIndex  :: Int
+    dbStatePreds :: Map p (VarInfo s u),
+    dbStateVars  :: Map String [VarInfo s u],
+    dbLabelPreds :: Map p (VarInfo s u, VarInfo s u),
+    dbLabelVars  :: Map String ([VarInfo s u], VarInfo s u),
+    dbNextIndex  :: Int,
+    dbUserState  :: o
 }
 
 -- Predicate DB type:
@@ -82,11 +85,11 @@ pdbLookupVar :: Ord p => AbsVar p -> PredicateDB p o s u (Maybe [DDNode s u])
 pdbLookupVar (PredVar pred) = do
     sp <- gets dbStatePreds
     lp <- gets dbLabelPreds 
-    return $ liftM (:[]) $ Map.lookup pred (Map.union sp lp)
+    return $ liftM (:[]) $ Map.lookup pred (Map.union (fmap fst sp) (fmap (fst . fst) lp))
 pdbLookupVar (NonPredVar name _) = do
     sp <- gets dbStateVars
     lp <- gets dbLabelVars
-    return $ Map.lookup name (Map.union sp lp)
+    return $ Map.lookup name $ Map.union (fmap (map fst) sp) (fmap (map fst . fst) lp)
 
 -- Lookup or allocate variable
 pdbAllocVar :: (Ord p) => AbsVar p -> VarCategory -> PredicateDB p o s u [DDNode s u]
@@ -94,45 +97,49 @@ pdbAllocVar (PredVar p) VarState = do
     theMap <- gets dbStatePreds
     m      <- gets dbManager
     case Map.lookup p theMap of
-        Just var -> return [var]
+        Just var -> return [fst var]
         Nothing -> do
             st <- get
             newVar <- lift $ bvar m $ dbNextIndex st
             modify $ \st -> st {dbNextIndex = dbNextIndex st + 1}
-            modify $ \st -> st {dbStatePreds = Map.insert  p newVar (dbStatePreds st)}
+            modify $ \st -> st {dbStatePreds = Map.insert  p (newVar, dbNextIndex st) (dbStatePreds st)}
             return [newVar]
 pdbAllocVar (PredVar p) VarTmp = do
     theMap <- gets dbLabelPreds
     m      <- gets dbManager
     case Map.lookup p theMap of
-        Just var -> return [var]
+        Just var -> return [fst $ fst var]
         Nothing -> do
             st <- get
             newVar <- lift $ bvar m $ dbNextIndex st
-            modify $ \st -> st {dbNextIndex = dbNextIndex st + 1}
-            modify $ \st -> st {dbLabelPreds = Map.insert  p newVar (dbLabelPreds st)}
+            newEn  <- lift $ bvar m $ dbNextIndex st + 1
+            modify $ \st -> st {dbNextIndex = dbNextIndex st + 2}
+            modify $ \st -> st {dbLabelPreds = Map.insert  p ((newVar, dbNextIndex st), (newEn, dbNextIndex st + 1)) (dbLabelPreds st)}
             return [newVar]
 pdbAllocVar (NonPredVar nm sz) VarState = do
     theMap <- gets dbStateVars
     m      <- gets dbManager
     case Map.lookup nm theMap of
-        Just var -> return var
+        Just var -> return $ map fst var
         Nothing -> do
             st <- get
-            newVar <- lift $ sequence $ map (bvar m) (take sz $ iterate (+1) (dbNextIndex st))
+            let inds = take sz $ iterate (+1) (dbNextIndex st)
+            newVar <- lift $ sequence $ map (bvar m) inds
             modify $ \st -> st {dbNextIndex = dbNextIndex st + sz}
-            modify $ \st -> st {dbStateVars = Map.insert nm newVar (dbStateVars st)}
+            modify $ \st -> st {dbStateVars = Map.insert nm (zip newVar inds) (dbStateVars st)}
             return newVar
 pdbAllocVar (NonPredVar nm sz) VarTmp = do
     theMap <- gets dbLabelVars
     m      <- gets dbManager
     case Map.lookup nm theMap of
-        Just var -> return var
+        Just var -> return $ map fst $ fst var
         Nothing -> do
             st <- get
-            newVar <- lift $ sequence $ map (bvar m) (take sz $ iterate (+1) (dbNextIndex st))
-            modify $ \st -> st {dbNextIndex = dbNextIndex st + sz}
-            modify $ \st -> st {dbLabelVars = Map.insert nm newVar (dbLabelVars st)}
+            let inds = take sz $ iterate (+1) (dbNextIndex st)
+            newVar <- lift $ sequence $ map (bvar m) inds
+            newEn  <- lift $ bvar m $ dbNextIndex st + sz
+            modify $ \st -> st {dbNextIndex = dbNextIndex st + sz + 1}
+            modify $ \st -> st {dbLabelVars = Map.insert nm ((zip newVar inds), (newEn, dbNextIndex st + sz)) (dbLabelVars st)}
             return newVar
 
 -- Allocate temporary logic variable 
