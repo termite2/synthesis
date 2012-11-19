@@ -24,7 +24,7 @@ conj m nodes = go (C.bone m) nodes
 
 theGoalAbs m absGame ops spdb svdb offset = do
     let state = PredDBState m spdb svdb (error "shoudn't need label preds") (error "shouldn't need label vars") offset undefined
-    ([(_, goal)], PredDBState{..}) <- runStateT (gameGoals absGame) state
+    ((_, goal):_, PredDBState{..}) <- runStateT (gameGoals absGame) state
     return $ GoalAbsRet dbStatePreds dbStateVars dbNextIndex goal
 
 theUpdateAbs m absGame ops spdb svdb lpdb lvdb offset preds vars = do
