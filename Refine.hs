@@ -134,7 +134,7 @@ node = fst
 idx  :: VarInfo s u -> Int
 idx  = snd
 
-data RefineDynamic s u sp lp = RefineDynamic {
+data RefineDynamic s u o sp lp = RefineDynamic {
     --relations
     trans              :: DDNode s u,
     consistentPlusCU   :: DDNode s u,
@@ -157,7 +157,9 @@ data RefineDynamic s u sp lp = RefineDynamic {
     labelPreds         :: Map lp (VarInfo s u, VarInfo s u),
     labelVars          :: Map String ([VarInfo s u], VarInfo s u),
     --All enabling vars in existance
-    enablingVars       :: [Int]
+    enablingVars       :: [Int],
+    --abstractor state
+    abstractorState    :: o
 }
 
 --convenience functions for constructing the reverse mappings
@@ -186,7 +188,7 @@ constructLabelVarRev pairs = Map.fromList $ concatMap (uncurry func) pairs
         func' var = (idx var, (NonAbs name (map node vi), True))
 
 --debug dump
-dumpState :: (Show sp, Show lp) => RefineDynamic s u sp lp -> ST s ()
+dumpState :: (Show sp, Show lp) => RefineDynamic s u o sp lp -> ST s ()
 dumpState RefineDynamic{..} = unsafeIOToST $ do
     putStrLn $ "State inds: "     ++ show (inds trackedState)
     putStrLn $ "Next inds: "      ++ show (inds next)
@@ -203,7 +205,7 @@ dumpState RefineDynamic{..} = unsafeIOToST $ do
 
 -- ===Solve an abstracted and compiled game===
 
-cPre' :: Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+cPre' :: Ops s u -> RefineDynamic s u o sp lp -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 cPre' Ops{..} RefineDynamic{..} hasOutgoings target = do
     t0 <- mapVars target
     t1 <- liftM bnot $ andAbstract (cube next) trans (bnot t0)
@@ -218,7 +220,7 @@ cPre' Ops{..} RefineDynamic{..} hasOutgoings target = do
     deref t4
     return t5
 
-cPre :: Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+cPre :: Ops s u -> RefineDynamic s u o sp lp -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 cPre (ops @ (Ops {..})) (rd @ (RefineDynamic {..})) hasOutgoings target = do
     su <- cPre' ops rd hasOutgoings target
     t6 <- bforall (cube untrackedState) su
@@ -233,7 +235,7 @@ fixedPoint (ops @ Ops {..}) func start = do
         True -> return start
         False -> fixedPoint ops func res
         
-solveGame :: Ops s u -> RefineStatic s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (DDNode s u)
+solveGame :: Ops s u -> RefineStatic s u -> RefineDynamic s u o sp lp -> DDNode s u -> ST s (DDNode s u)
 solveGame (ops@Ops{..}) (rs @ RefineStatic{..}) (rd @ RefineDynamic{..}) target = do 
     hasOutgoings <- bexists (cube next) trans
     fp <- fixedPoint ops (func hasOutgoings) target
@@ -271,24 +273,26 @@ addVariables Ops{..} nodeInds Section{..} = do
     deref cube
     return $ Section cube' vars' inds'
 
-data GoalAbsRet s u sp = GoalAbsRet {
+data GoalAbsRet s u o sp = GoalAbsRet {
     goalStatePreds :: Map sp (VarInfo s u),
     goalStateVars  :: Map String [VarInfo s u],
     endGoalState   :: Int,
-    goalExpr       :: DDNode s u
+    goalExpr       :: DDNode s u,
+    goalAbsState   :: o
 }
 
-data UpdateAbsRet s u sp lp = UpdateAbsRet {
+data UpdateAbsRet s u o sp lp = UpdateAbsRet {
     updateStatePreds :: Map sp (VarInfo s u),
     updateStateVars  :: Map String [VarInfo s u],
     updateLabelPreds :: Map lp (VarInfo s u, VarInfo s u),
     updateLabelVars  :: Map String ([VarInfo s u], VarInfo s u),
     updateOffset     :: Int,
-    updateExpr       :: DDNode s u
+    updateExpr       :: DDNode s u,
+    updateAbsState   :: o
 }
 
 --Input to the refinement algorithm. Represents the spec.
-data Abstractor s u sp lp = Abstractor {
+data Abstractor s u o sp lp = Abstractor {
     goalAbs :: 
         Ops s u -> 
         --state pred db
@@ -297,8 +301,10 @@ data Abstractor s u sp lp = Abstractor {
         Map String [VarInfo s u] -> 
         --free var offset
         Int -> 
+        --Abstractor state
+        o -> 
         --return
-        ST s (GoalAbsRet s u sp),
+        ST s (GoalAbsRet s u o sp),
     updateAbs :: 
         Ops s u -> 
         --state predicate db
@@ -311,12 +317,14 @@ data Abstractor s u sp lp = Abstractor {
         Map String ([VarInfo s u], VarInfo s u) -> 
         --Free var offset
         Int ->
+        --Abstractor state
+        o -> 
         --Predicates being updated, next state node pairs
         [(sp, DDNode s u)] -> 
         --State variables being updated, next state nodes pairs
         [(String, [DDNode s u])] -> 
         --return
-        ST s (UpdateAbsRet s u sp lp)
+        ST s (UpdateAbsRet s u o sp lp)
 }
 
 --Theory solving
@@ -350,10 +358,10 @@ func (x, y) = do
     return (x, y)
 
 --Create an initial abstraction and set up the data structures
-initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u sp lp -> ST s (RefineDynamic s u sp lp, RefineStatic s u)
-initialAbstraction ops@Ops{..} Abstractor{..} = do
+initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u o sp lp -> o -> ST s (RefineDynamic s u o sp lp, RefineStatic s u)
+initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
     --abstract the goal
-    GoalAbsRet {..}     <- goalAbs ops Map.empty Map.empty 0 
+    GoalAbsRet {..}     <- goalAbs ops Map.empty Map.empty 0 abstractorState
     let
         endStateAndNext = 2*endGoalState
         goalPreds       = map (second ((+ endGoalState) . idx)) $ Map.toList goalStatePreds
@@ -361,7 +369,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     goalPreds <- sequence $ map (func . second ithVar) goalPreds 
     goalVars  <- sequence $ map (func . second (sequence . map ithVar)) goalVars
     --get the abstract update functions for the goal predicates and variables
-    UpdateAbsRet {..}   <- updateAbs ops goalStatePreds goalStateVars Map.empty Map.empty endStateAndNext goalPreds goalVars
+    UpdateAbsRet {..}   <- updateAbs ops goalStatePreds goalStateVars Map.empty Map.empty endStateAndNext goalAbsState goalPreds goalVars
     --create the consistency constraints
     let consistentPlusCU   = btrue
         consistentMinusCUL = bfalse
@@ -390,6 +398,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
         stateVars = updateStateVars, 
         labelPreds = updateLabelPreds, 
         labelVars = updateLabelVars, 
+        abstractorState = updateAbsState,
         ..
     }
     return (rd, RefineStatic {goal=goalExpr, ..})
@@ -402,7 +411,7 @@ refineAny Ops{..} RefineDynamic{..} newSU = (fmap (Just . singleton)) $ findM (s
 -}
 
 --Refine the least number of untracked state predicates possible to make progress
-refineLeastPreds :: forall s u sp lp. Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (Maybe [Int])
+refineLeastPreds :: forall s u o sp lp. Ops s u -> RefineDynamic s u o sp lp -> DDNode s u -> ST s (Maybe [Int])
 refineLeastPreds (Ops{..}) (RefineDynamic{..}) newSU 
     | newSU == bfalse = return Nothing
     | otherwise       = do
@@ -434,7 +443,7 @@ refineLeastPreds (Ops{..}) (RefineDynamic{..}) newSU
         deref untrackedCube
         return (length support, support)
 
-pickUntrackedToPromote :: Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (Maybe [Int])
+pickUntrackedToPromote :: Ops s u -> RefineDynamic s u o sp lp -> DDNode s u -> ST s (Maybe [Int])
 pickUntrackedToPromote ops@Ops{..} rd@RefineDynamic{..} win = do
     hasOutgoings <- bexists (cube next) trans
     su    <- cPre' ops rd hasOutgoings win
@@ -453,7 +462,7 @@ makePairs Ops{..} inds = sequence $ map func inds
         return (n, idx)
 
 --Promote untracked state variables to full state variables so that we can make progress towards the goal. Does not refine the consistency relations.
-promoteUntracked :: (Ord lp, Ord sp) => Ops s u -> Abstractor s u sp lp -> RefineDynamic s u sp lp -> [Int] -> ST s (RefineDynamic s u sp lp)
+promoteUntracked :: (Ord lp, Ord sp) => Ops s u -> Abstractor s u o sp lp -> RefineDynamic s u o sp lp -> [Int] -> ST s (RefineDynamic s u o sp lp)
 promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     --look up the predicates to promote
     let refinePreds    = map (fromJustNote "promoteUntracked" . flip Map.lookup stateRev) indices
@@ -466,7 +475,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     let nextAvlIndex   = nextAvlIndex + length indices
 
     --compute the update functions
-    UpdateAbsRet {..}  <- updateAbs ops statePreds stateVars labelPreds labelVars nextAvlIndex undefined undefined
+    UpdateAbsRet {..}  <- updateAbs ops statePreds stateVars labelPreds labelVars nextAvlIndex abstractorState undefined undefined 
 
     --update the transition relation
     trans'             <- trans .& updateExpr
@@ -515,7 +524,8 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
         statePreds         = statePreds',
         labelPreds         = labelPreds',
         enablingVars       = enablingVars', 
-        labelRev           = undefined
+        labelRev           = undefined,
+        abstractorState    = updateAbsState
     }
 
 presentVars :: Ops s u -> DDNode s u -> ST s [(Int, Bool)]
@@ -533,7 +543,7 @@ makeCubeIdx Ops{..} list = do
     computeCube nodes phases 
 
 --Refine one of the consistency relations so that we make progress. Does not promote untracked state.
-refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver sp lp -> RefineDynamic s u sp lp -> DDNode s u -> ST s (Maybe (RefineDynamic s u sp lp))
+refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver sp lp -> RefineDynamic s u o sp lp -> DDNode s u -> ST s (Maybe (RefineDynamic s u o sp lp))
 refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
     t0 <- mapVars win
     t1 <- trans .-> t0
@@ -620,14 +630,14 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
                             return $ Just $ rd {consistentMinusCUL = consistentMinusCUL'}
 
 --The abstraction-refinement loop
-absRefineLoop :: forall s u sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver sp lp -> ST s Bool
-absRefineLoop m spec ts = do
+absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u o sp lp -> TheorySolver sp lp -> o -> ST s Bool
+absRefineLoop m spec ts abstractorState = do
     let ops@Ops{..} = constructOps m
-    (rd, rs) <- initialAbstraction ops spec
+    (rd, rs) <- initialAbstraction ops spec abstractorState
     dumpState rd
     refineLoop ops rs rd bfalse
     where
-        refineLoop :: Ops s u -> RefineStatic s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s Bool
+        refineLoop :: Ops s u -> RefineStatic s u -> RefineDynamic s u o sp lp -> DDNode s u -> ST s Bool
         refineLoop (ops@Ops{..}) rs = refineLoop'
             where 
             refineLoop' rd@RefineDynamic{..} lastWin = do
@@ -654,10 +664,11 @@ absRefineLoop m spec ts = do
                                         deref winRegion
                                         return False
 
+{-
 --Top level interface
 absRefine :: (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> UnsatCore p -> (sp -> p) -> (lp -> p) -> (p -> sp) -> (p -> sp) -> ST s Bool
 absRefine m spec uc ps pl sp lp = absRefineLoop m spec $ TheorySolver ucs ucl
     where
     ucs = undefined
     ucl = undefined
-
+-}
