@@ -25,7 +25,7 @@ conj m nodes = go (C.bone m) nodes
         go accum' ns
 
 theGoalAbs m absGame ops ipdb ivdb spdb svdb offset absState = do
-    let state = PredDBState m ipdb ivdb spdb svdb (error "shoudn't need label preds") (error "shouldn't need label vars") offset absState
+    let state = PredDBState m ipdb ivdb spdb svdb (error "shouldn't need label preds") (error "shouldn't need label vars") offset absState
     ((_, goal):_, PredDBState{..}) <- runStateT (gameGoals absGame) state
     return $ GoalAbsRet dbStatePreds dbStateVars dbNextIndex goal dbUserState
 
@@ -38,18 +38,26 @@ theUpdateAbs m absGame ops ipdb ivdb spdb svdb lpdb lvdb offset absState preds v
 help vname vnodes = (NonPredVar vname (length vnodes), vnodes)
 
 theInitAbs m absGame ops offset absState = do
-    let state = PredDBState m Map.empty Map.empty Map.empty Map.empty (error "shoudn't need label preds") (error "shouldn't need label vars") offset absState
+    let state = PredDBState m Map.empty Map.empty Map.empty Map.empty (error "shouldn't need label preds") (error "shouldn't need label vars") offset absState
     (res, PredDBState {..}) <- runStateT (gameInit absGame) state
     return $ InitAbsRet dbStatePreds dbStateVars res dbNextIndex dbUserState
+
+theUCState = undefined
+
+theUCLabel = undefined
 
 --Arguments: AbsGame structure, abstractor state
 doEverything :: (Ord p, Show p) => AbsGame p o s u -> o -> ST s Bool
 doEverything absGame initialAbsState = do
     m <- cuddInitSTDefaults 
     let abstractor = Abstractor {
-        goalAbs   = theGoalAbs m absGame,
-        updateAbs = theUpdateAbs m absGame,
-        initAbs   = theInitAbs m absGame
-    }
-    absRefineLoop m abstractor undefined initialAbsState
+            goalAbs   = theGoalAbs m absGame,
+            updateAbs = theUpdateAbs m absGame,
+            initAbs   = theInitAbs m absGame
+        }
+        theorySolver = TheorySolver {
+            unsatCoreState      = theUCState,
+            unsatCoreStateLabel = theUCLabel
+        }
+    absRefineLoop m abstractor theorySolver initialAbsState
 

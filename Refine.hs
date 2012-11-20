@@ -13,8 +13,8 @@ import Data.Tuple.All
 
 import Safe
 
-import CuddExplicitDeref as C
-import CuddExplicitDeref (DDNode)
+import qualified CuddExplicitDeref as C
+import CuddExplicitDeref (DDNode, STDdManager)
 
 -- ===Utility functions===
 traceST :: String -> ST s ()
@@ -60,7 +60,9 @@ data Ops s u = Ops {
     nodesToCube                               :: [DDNode s u] -> ST s (DDNode s u),
     satCube                                   :: DDNode s u -> ST s [Int],
     setVarMap                                 :: [DDNode s u] -> [DDNode s u] -> ST s (),
-    mapVars                                   :: DDNode s u -> ST s (DDNode s u)
+    mapVars                                   :: DDNode s u -> ST s (DDNode s u),
+    debugCheck                                :: ST s (),
+    checkKeys                                 :: ST s ()
 }
 
 constructOps :: STDdManager s u -> Ops s u
@@ -97,6 +99,8 @@ constructOps m = Ops {..}
     satCube                = C.satCube          m
     setVarMap              = C.setVarMap        m
     mapVars                = C.mapVars          m
+    debugCheck             = C.debugCheck       m
+    checkKeys              = C.checkKeys        m
 
 -- ===Data structures for keeping track of abstraction state===
 
@@ -356,8 +360,6 @@ data Abstractor s u o sp lp = Abstractor {
 }
 
 --Theory solving
-type UnsatCore p = [(p, Bool)] -> Maybe [(p, Bool)]
-
 data TheorySolver sp lp = TheorySolver {
     unsatCoreState      :: [(sp, Bool)] -> Maybe [(sp, Bool)],
     unsatCoreStateLabel :: [(sp, Bool)] -> [(lp, Bool)] -> Maybe ([(sp, Bool)], [(lp, Bool)])
@@ -385,13 +387,18 @@ func (x, y) = do
     y <- y
     return (x, y)
 
+check ops = debugCheck ops >> checkKeys ops
+
 --Create an initial abstraction and set up the data structures
 initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u o sp lp -> o -> ST s (RefineDynamic s u o sp lp, RefineStatic s u)
 initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
+    check ops
     --abstract init
     InitAbsRet {..}     <- initAbs ops 0 abstractorState
+    check ops
     --abstract the goal
     GoalAbsRet {..}     <- goalAbs ops initStatePreds initStateVars Map.empty Map.empty initOffset initAbsState 
+    check ops
     let
         numStateVars    = length $ Map.elems goalStatePreds ++ concat (Map.elems goalStateVars)
         endStateAndNext = endGoalState + numStateVars
