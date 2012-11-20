@@ -602,6 +602,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
         True  -> do
             --no refinement of consistency relations will make progress
             traceST "no consistency refinement possible"
+            check ops
             return Nothing
         False -> do
             --There may be a refinement
@@ -628,6 +629,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
                     consistentPlusCUL' <- consistentPlusCUL .& bnot inconsistent
                     deref consistentPlusCUL'
                     deref inconsistent
+                    check ops
                     return $ Just $ rd {consistentPlusCU = consistentPlusCU', consistentPlusCUL = consistentPlusCUL'}
                 Nothing -> do
                     --consistentPlusCU cannot be refined but maybe consistentPlusCUL can
@@ -660,6 +662,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
                             consistentPlusCUL' <- consistentPlusCUL .& bnot inconsistent
                             deref inconsistent
                             deref consistentPlusCUL
+                            check ops
                             refineConsistency ops ts (rd {consistentPlusCUL = consistentPlusCUL'}) win
                         Nothing -> do
                             --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
@@ -671,6 +674,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
                             consistentMinusCUL'  <- consistentMinusCUL'' .& enablePreds
                             deref consistentMinusCUL'
                             deref enablePreds
+                            check ops
                             return $ Just $ rd {consistentMinusCUL = consistentMinusCUL'}
 
 --The abstraction-refinement loop
@@ -696,18 +700,18 @@ absRefineLoop m spec ts abstractorState = do
                         return True
                     False -> do
                         traceST "Not winning without further refinement"
-                        --TODO this is the wrong refinement order
-                        res <- pickUntrackedToPromote ops rd winRegion
-                        case res of 
-                            Just vars -> do
-                                newRD <- promoteUntracked ops spec rd vars 
-                                refineLoop' newRD winRegion
+                        res <- refineConsistency ops ts rd winRegion 
+                        case res of
+                            Just newRD -> refineLoop' newRD winRegion
                             Nothing -> do
-                                res <- refineConsistency ops ts rd winRegion 
-                                case res of
-                                    Just newRD -> refineLoop' newRD winRegion
+                                res <- pickUntrackedToPromote ops rd winRegion
+                                case res of 
+                                    Just vars -> do
+                                        newRD <- promoteUntracked ops spec rd vars 
+                                        refineLoop' newRD winRegion
                                     Nothing -> do
                                         deref winRegion
+                                        traceST "Game is not winning"
                                         return False
 
 {-

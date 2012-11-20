@@ -14,6 +14,7 @@ import CuddExplicitDeref as C
 import Refine
 import AbsGame
 import PredicateDB
+import Solver
 
 conj :: STDdManager s u -> [DDNode s u] -> ST s (DDNode s u)
 conj m nodes = go (C.bone m) nodes
@@ -42,13 +43,13 @@ theInitAbs m absGame ops offset absState = do
     (res, PredDBState {..}) <- runStateT (gameInit absGame) state
     return $ InitAbsRet dbStatePreds dbStateVars res dbNextIndex dbUserState
 
-theUCState = undefined
+theUCState solver preds = error $ "solver state interface not implemented: " ++ show preds
 
-theUCLabel = undefined
+theUCLabel solver statePreds labelPreds = error $  "solver state, label interface not implemented: " ++ show statePreds ++ " - " ++ show labelPreds
 
 --Arguments: AbsGame structure, abstractor state
-doEverything :: (Ord p, Show p) => AbsGame p o s u -> o -> ST s Bool
-doEverything absGame initialAbsState = do
+doEverything :: (Ord p, Show p) => AbsGame p o s u -> o -> Solver p s u -> ST s Bool
+doEverything absGame initialAbsState solver = do
     m <- cuddInitSTDefaults 
     let abstractor = Abstractor {
             goalAbs   = theGoalAbs m absGame,
@@ -56,8 +57,8 @@ doEverything absGame initialAbsState = do
             initAbs   = theInitAbs m absGame
         }
         theorySolver = TheorySolver {
-            unsatCoreState      = theUCState,
-            unsatCoreStateLabel = theUCLabel
+            unsatCoreState      = theUCState solver,
+            unsatCoreStateLabel = theUCLabel solver
         }
     absRefineLoop m abstractor theorySolver initialAbsState
 
