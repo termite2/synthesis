@@ -7,6 +7,7 @@ import Control.Monad.State
 import Control.Arrow
 import qualified Data.Map as Map
 import Data.Map (Map)
+import Data.List
 
 import CuddST
 import CuddExplicitDeref as C
@@ -48,7 +49,10 @@ theUCState solver preds = case unsatCore solver preds of
     (SatMaybe, _)  -> error "Solver returned SatMaybe"
     (SatNo,    uc) -> Just uc
 
-theUCLabel solver statePreds labelPreds = error $  "solver state, label interface not implemented: " ++ show statePreds ++ " - " ++ show labelPreds
+theUCLabel solver statePreds labelPreds = case unsatCore solver (statePreds ++ labelPreds) of 
+    (SatYes, _) -> Nothing
+    (SatMaybe, _) -> error "Solver returned SatMaybe"
+    (SatNo, uc) -> Just $ partition (flip elem (map fst statePreds) . fst) uc
 
 --Arguments: AbsGame structure, abstractor state
 doEverything :: (Ord p, Show p) => AbsGame p o s u -> o -> Solver p s u -> ST s Bool
