@@ -198,6 +198,8 @@ dumpState RefineDynamic{..} = unsafeIOToST $ do
     putStrLn $ "Nxt avl ixd: "    ++ show nextAvlIndex
     putStrLn $ "stateRev: "       ++ show (Map.toList stateRev)
     putStrLn $ "labelRev: "       ++ show (Map.toList labelRev)
+    putStrLn $ "Init preds: "     ++ show (Map.toList initPreds)
+    putStrLn $ "Init vars: "      ++ show (Map.toList initVars)
     putStrLn $ "State preds: "    ++ show (Map.keys statePreds)
     putStrLn $ "State vars: "     ++ show (Map.keys stateVars)
     putStrLn $ "label preds: "    ++ show (Map.keys labelPreds)
@@ -419,20 +421,24 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
         labelVarsRev   = constructLabelVarRev  $ Map.toList updateLabelVars
         labelRev       = Map.union labelPredsRev labelVarsRev
         enablingVars   = map (idx . snd) (Map.elems updateLabelPreds) ++ map (idx . snd) (Map.elems updateLabelVars)
-    --construct the RefineDynamic
+    --construct the RefineDynamic and RefineStatic
     let rd = RefineDynamic {
-        trans = updateExpr, 
-        nextAvlIndex = updateOffset, 
-        statePreds = updateStatePreds, 
-        stateVars = updateStateVars, 
-        labelPreds = updateLabelPreds, 
-        labelVars = updateLabelVars, 
-        abstractorState = updateAbsState,
-        initPreds = initStatePreds,
-        initVars = initStateVars,
-        ..
-    }
-    return (rd, RefineStatic {goal=goalExpr, init=initExpr, ..})
+            trans           = updateExpr, 
+            nextAvlIndex    = updateOffset, 
+            statePreds      = updateStatePreds, 
+            stateVars       = updateStateVars, 
+            labelPreds      = updateLabelPreds, 
+            labelVars       = updateLabelVars, 
+            abstractorState = updateAbsState,
+            initPreds       = initStatePreds,
+            initVars        = initStateVars,
+            ..
+        }
+        rs = RefineStatic {
+            goal = goalExpr,
+            init = initExpr
+        }
+    return (rd, rs)
 
 --Variable promotion strategies
 
@@ -675,13 +681,14 @@ absRefineLoop m spec ts abstractorState = do
                 setVarMap (vars trackedState) (vars next) 
                 winRegion <- solveGame ops rs rd lastWin
                 traceST "Game solved"
-                winning   <- undefined `leq` winRegion 
+                winning   <- init `leq` winRegion 
                 case winning of
                     True -> do
                         traceST "winning"
                         deref winRegion
                         return True
                     False -> do
+                        traceST "Not winning without further refinement"
                         --TODO this is the wrong refinement order
                         res <- pickUntrackedToPromote ops rd winRegion
                         case res of 
