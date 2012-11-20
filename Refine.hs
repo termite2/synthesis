@@ -107,7 +107,8 @@ data Section s u = Section {
 }
 
 data RefineStatic s u = RefineStatic {
-    goal :: DDNode s u
+    goal :: DDNode s u,
+    init :: DDNode s u
 }
 
 data Variable p v where
@@ -150,10 +151,10 @@ data RefineDynamic s u o sp lp = RefineDynamic {
     stateRev           :: Map Int (Variable sp [DDNode s u]),
     labelRev           :: Map Int (Variable lp [DDNode s u], Bool),
     --below maps are used for update function compilation and constructing
-    --new consistency relations
+    initPreds          :: Map sp (VarInfo s u),
+    initVars           :: Map String [VarInfo s u],
     statePreds         :: Map sp (VarInfo s u),
     stateVars          :: Map String [VarInfo s u],
-    --predicate variable, enabling variable
     labelPreds         :: Map lp (VarInfo s u, VarInfo s u),
     labelVars          :: Map String ([VarInfo s u], VarInfo s u),
     --All enabling vars in existance
@@ -287,14 +288,27 @@ data UpdateAbsRet s u o sp lp = UpdateAbsRet {
     updateLabelPreds :: Map lp (VarInfo s u, VarInfo s u),
     updateLabelVars  :: Map String ([VarInfo s u], VarInfo s u),
     updateOffset     :: Int,
+    --predicate variable, enabling variable
     updateExpr       :: DDNode s u,
     updateAbsState   :: o
+}
+
+data InitAbsRet s u o sp = InitAbsRet {
+    initStatePreds :: Map sp (VarInfo s u),
+    initStateVars  :: Map String [VarInfo s u],
+    initExpr       :: DDNode s u,
+    initOffset     :: Int,
+    initAbsState   :: o
 }
 
 --Input to the refinement algorithm. Represents the spec.
 data Abstractor s u o sp lp = Abstractor {
     goalAbs :: 
         Ops s u -> 
+        --init pred map
+        Map sp (VarInfo s u) -> 
+        --init var map 
+        Map String [VarInfo s u] -> 
         --state pred db
         Map sp (VarInfo s u) -> 
         --variable DB
@@ -307,6 +321,10 @@ data Abstractor s u o sp lp = Abstractor {
         ST s (GoalAbsRet s u o sp),
     updateAbs :: 
         Ops s u -> 
+        --init pred map 
+        Map sp (VarInfo s u) -> 
+        --init var map 
+        Map String [VarInfo s u] -> 
         --state predicate db
         Map sp (VarInfo s u) -> 
         --state variable db
@@ -324,7 +342,15 @@ data Abstractor s u o sp lp = Abstractor {
         --State variables being updated, next state nodes pairs
         [(String, [DDNode s u])] -> 
         --return
-        ST s (UpdateAbsRet s u o sp lp)
+        ST s (UpdateAbsRet s u o sp lp),
+    initAbs :: 
+        Ops s u -> 
+        --Free var offset
+        Int -> 
+        --Abstractor state
+        o -> 
+        --return
+        ST s (InitAbsRet s u o sp)
 }
 
 --Theory solving
@@ -360,8 +386,10 @@ func (x, y) = do
 --Create an initial abstraction and set up the data structures
 initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u o sp lp -> o -> ST s (RefineDynamic s u o sp lp, RefineStatic s u)
 initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
+    --abstract init
+    InitAbsRet {..}     <- initAbs ops 0 abstractorState
     --abstract the goal
-    GoalAbsRet {..}     <- goalAbs ops Map.empty Map.empty 0 abstractorState
+    GoalAbsRet {..}     <- goalAbs ops initStatePreds initStateVars Map.empty Map.empty initOffset initAbsState 
     let
         numStateVars    = length $ Map.elems goalStatePreds ++ concat (Map.elems goalStateVars)
         endStateAndNext = endGoalState + numStateVars
@@ -370,7 +398,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
     goalPreds <- sequence $ map (func . second ithVar) goalPreds 
     goalVars  <- sequence $ map (func . second (sequence . map ithVar)) goalVars
     --get the abstract update functions for the goal predicates and variables
-    UpdateAbsRet {..}   <- updateAbs ops goalStatePreds goalStateVars Map.empty Map.empty endStateAndNext goalAbsState goalPreds goalVars
+    UpdateAbsRet {..}   <- updateAbs ops initStatePreds initStateVars goalStatePreds goalStateVars Map.empty Map.empty endStateAndNext goalAbsState goalPreds goalVars
     --create the consistency constraints
     let consistentPlusCU   = btrue
         consistentMinusCUL = bfalse
@@ -400,9 +428,11 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
         labelPreds = updateLabelPreds, 
         labelVars = updateLabelVars, 
         abstractorState = updateAbsState,
+        initPreds = initStatePreds,
+        initVars = initStateVars,
         ..
     }
-    return (rd, RefineStatic {goal=goalExpr, ..})
+    return (rd, RefineStatic {goal=goalExpr, init=initExpr, ..})
 
 --Variable promotion strategies
 
@@ -476,7 +506,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     let nextAvlIndex   = nextAvlIndex + length indices
 
     --compute the update functions
-    UpdateAbsRet {..}  <- updateAbs ops statePreds stateVars labelPreds labelVars nextAvlIndex abstractorState undefined undefined 
+    UpdateAbsRet {..}  <- updateAbs ops initPreds initVars statePreds stateVars labelPreds labelVars nextAvlIndex abstractorState undefined undefined 
 
     --update the transition relation
     trans'             <- trans .& updateExpr
@@ -639,7 +669,7 @@ absRefineLoop m spec ts abstractorState = do
     refineLoop ops rs rd bfalse
     where
         refineLoop :: Ops s u -> RefineStatic s u -> RefineDynamic s u o sp lp -> DDNode s u -> ST s Bool
-        refineLoop (ops@Ops{..}) rs = refineLoop'
+        refineLoop ops@Ops{..} rs@RefineStatic{..} = refineLoop'
             where 
             refineLoop' rd@RefineDynamic{..} lastWin = do
                 setVarMap (vars trackedState) (vars next) 

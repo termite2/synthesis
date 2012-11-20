@@ -48,6 +48,8 @@ instance Ord p => Ord (AbsVar p) where
 
 data PredDBState p o s u = PredDBState {
     dbManager    :: STDdManager s u,
+    dbInitPreds  :: Map p (VarInfo s u),
+    dbInitVars   :: Map String [VarInfo s u],
     dbStatePreds :: Map p (VarInfo s u),
     dbStateVars  :: Map String [VarInfo s u],
     dbLabelPreds :: Map p (VarInfo s u, VarInfo s u),
