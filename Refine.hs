@@ -363,7 +363,8 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
     --abstract the goal
     GoalAbsRet {..}     <- goalAbs ops Map.empty Map.empty 0 abstractorState
     let
-        endStateAndNext = 2*endGoalState
+        numStateVars    = length $ Map.elems goalStatePreds ++ concat (Map.elems goalStateVars)
+        endStateAndNext = endGoalState + numStateVars
         goalPreds       = map (second ((+ endGoalState) . idx)) $ Map.toList goalStatePreds
         goalVars        = map (second (map $ (+ endGoalState) . idx)) $ Map.toList goalStateVars
     goalPreds <- sequence $ map (func . second ithVar) goalPreds 
@@ -643,6 +644,7 @@ absRefineLoop m spec ts abstractorState = do
             refineLoop' rd@RefineDynamic{..} lastWin = do
                 setVarMap (vars trackedState) (vars next) 
                 winRegion <- solveGame ops rs rd lastWin
+                traceST "Game solved"
                 winning   <- undefined `leq` winRegion 
                 case winning of
                     True -> do
