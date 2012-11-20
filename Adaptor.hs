@@ -43,7 +43,10 @@ theInitAbs m absGame ops offset absState = do
     (res, PredDBState {..}) <- runStateT (gameInit absGame) state
     return $ InitAbsRet dbStatePreds dbStateVars res dbNextIndex dbUserState
 
-theUCState solver preds = error $ "solver state interface not implemented: " ++ show preds
+theUCState solver preds = case unsatCore solver preds of
+    (SatYes,   _)  -> Nothing
+    (SatMaybe, _)  -> error "Solver returned SatMaybe"
+    (SatNo,    uc) -> Just uc
 
 theUCLabel solver statePreds labelPreds = error $  "solver state, label interface not implemented: " ++ show statePreds ++ " - " ++ show labelPreds
 

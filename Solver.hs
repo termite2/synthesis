@@ -21,7 +21,7 @@ data Solver p s u = forall o . Solver {
 
     -- Check satisfiability of a conjunction of predicates and 
     -- compute unsatisfiable core if it is unsat
-    unsatCore :: [(p, Bool)] -> (SatResult, [p]),
+    unsatCore :: [(p, Bool)] -> (SatResult, [(p, Bool)]),
 
     -- Existentially quantify away a set of concrete variables from 
     -- a conjunction of predicates.  May introduce new predicates.
