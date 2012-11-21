@@ -17,6 +17,7 @@ import qualified CuddExplicitDeref as C
 import CuddExplicitDeref (DDNode, STDdManager)
 
 -- ===Utility functions===
+{-# NOINLINE traceST #-}
 traceST :: String -> ST s ()
 traceST = unsafeIOToST . putStrLn
 
@@ -195,6 +196,7 @@ constructLabelVarRev pairs = Map.fromList $ concatMap (uncurry func) pairs
 --debug dump
 dumpState :: (Show sp, Show lp) => RefineDynamic s u o sp lp -> ST s ()
 dumpState RefineDynamic{..} = unsafeIOToST $ do
+    putStrLn $ "******************Refinement state***********************"
     putStrLn $ "State inds: "     ++ show (inds trackedState)
     putStrLn $ "Next inds: "      ++ show (inds next)
     putStrLn $ "Untracked inds: " ++ show (inds untrackedState)
@@ -209,6 +211,7 @@ dumpState RefineDynamic{..} = unsafeIOToST $ do
     putStrLn $ "label preds: "    ++ show (Map.keys labelPreds)
     putStrLn $ "label vars: "     ++ show (Map.keys labelVars)
     putStrLn $ "enabling vars: "  ++ show enablingVars
+    putStrLn $ "*********************************************************\n"
 
 -- ===Solve an abstracted and compiled game===
 
@@ -586,7 +589,14 @@ makeCubeIdx Ops{..} list = do
     nodes <- mapM ithVar idxs
     computeCube nodes phases 
 
+bddSynopsis Ops{..} node = case node==bfalse of
+                               True -> "Zero"
+                               False -> case node==btrue of
+                                            True -> "True"
+                                            False -> "Non-constant"
+
 --Refine one of the consistency relations so that we make progress. Does not promote untracked state.
+--TODO: check for existence of label first
 refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver sp lp -> RefineDynamic s u o sp lp -> DDNode s u -> ST s (Maybe (RefineDynamic s u o sp lp))
 refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
     t0 <- mapVars win
@@ -596,28 +606,34 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
     deref t1
     t3 <- consistentPlusCUL .& t2
     deref t2
-    t4 <- t3 .& bnot win
+    hasOutgoings <- bexists (cube next) trans
+    tt3 <- hasOutgoings .& t3
+    deref hasOutgoings
     deref t3
+    t4 <- tt3 .& bnot win
+    deref tt3
     case t4==bfalse of 
         True  -> do
             --no refinement of consistency relations will make progress
+            --there are no <c, u, l> tuples that are winning with the overapproximation of consistentCUL
             traceST "no consistency refinement possible"
             check ops
             return Nothing
         False -> do
             --There may be a refinement
-            --extract a (s, u) pair that will make progress if one exists
+            --extract a <s, u> pair that will make progress if one exists
             traceST "consistency refinement may be possible"
             t5 <- bexists (cube label) t4
             (t6, sz) <- largestCube t5
-            traceST $ "Cube size: " ++ show sz
             t7 <- makePrime t6 t5
             deref t5
             deref t6
             c <- presentVars ops t7 
             deref t7
-            let preds = getPredicates $ map (first $ fromJustNote "refineConsistency1" . flip Map.lookup stateRev) c
-            traceST $ show preds
+            let stateUntrackedProgress = map (first $ fromJustNote "refineConsistency1" . flip Map.lookup stateRev) c
+            traceST $ "Tuple that will make progress: " ++ show stateUntrackedProgress
+            let preds = getPredicates stateUntrackedProgress
+            traceST $ "Preds being checked for consistency: " ++ show preds
             case unsatCoreState preds of
                 Just pairs -> do
                     --consistentPlusCU can be refined
@@ -632,24 +648,23 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
                     check ops
                     return $ Just $ rd {consistentPlusCU = consistentPlusCU', consistentPlusCUL = consistentPlusCUL'}
                 Nothing -> do
-                    --consistentPlusCU cannot be refined but maybe consistentPlusCUL can
+                    --consistentPlusCU cannot be refined but maybe consistentPlusCUL or consistentMinusCUL can be
                     traceST "consistentPlusCU could not be refined"
                     (t6, sz) <- largestCube t4
-                    traceST $ "cube size: " ++ show sz
                     t7 <- makePrime t6 t4
                     deref t4
                     deref t6
                     c <- presentVars ops t7
                     deref t7
                     let (stateIndices, labelIndices) = partition (\(p, x) -> elem p (inds trackedState) || elem p (inds untrackedState)) c
-                    traceST $ "stateIndices: " ++ show stateIndices
-                    traceST $ "labelIndices: " ++ show labelIndices
                     let cStatePreds = getPredicates $ map (first $ fromJustNote "refineConsistency2" . flip Map.lookup stateRev) stateIndices
                     let cLabelPreds = getPredicates $ catMaybes $ map (uncurry func) labelIndices
                             where
                             func idx polarity = case fromJustNote "refineConsistency3" $ Map.lookup idx labelRev of
                                 (_, False)   -> Nothing
                                 (pred, True) -> Just (pred, polarity)
+                    traceST $ "state preds for solver: " ++ show cStatePreds
+                    traceST $ "label preds for solver: " ++ show cLabelPreds
                     case unsatCoreStateLabel cStatePreds cLabelPreds of
                         Just (statePairs, labelPairs) -> do
                             --consistentPlusCUL can be refined
