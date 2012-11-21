@@ -122,7 +122,7 @@ data Variable p v where
 
 instance (Show p, Show v) => Show (Variable p v) where
     show (Predicate p) = "Predicate variable: " ++ show p
-    show (NonAbs n v)  = "Non-abstracted variable: " ++ show n ++ " " ++ show v
+    show (NonAbs n v)  = "Non-abstracted variable: " ++ show n
 
 getPredicate :: Variable p v -> Maybe p
 getPredicate (Predicate p) = Just p
@@ -193,24 +193,27 @@ constructLabelVarRev pairs = Map.fromList $ concatMap (uncurry func) pairs
         where
         func' var = (idx var, (NonAbs name (map node vi), True))
 
+format :: [(String, String)] -> String
+format = concat . map ('\t' :) . intersperse "\n" . map (uncurry (\x y -> x ++ ": " ++ y))
+
 --debug dump
 dumpState :: (Show sp, Show lp) => RefineDynamic s u o sp lp -> ST s ()
 dumpState RefineDynamic{..} = unsafeIOToST $ do
     putStrLn $ "******************Refinement state***********************"
-    putStrLn $ "State inds: "     ++ show (inds trackedState)
-    putStrLn $ "Next inds: "      ++ show (inds next)
-    putStrLn $ "Untracked inds: " ++ show (inds untrackedState)
-    putStrLn $ "label inds: "     ++ show (inds label)
-    putStrLn $ "Nxt avl ixd: "    ++ show nextAvlIndex
-    putStrLn $ "stateRev: "       ++ show (Map.toList stateRev)
-    putStrLn $ "labelRev: "       ++ show (Map.toList labelRev)
-    putStrLn $ "Init preds: "     ++ show (Map.toList initPreds)
-    putStrLn $ "Init vars: "      ++ show (Map.toList initVars)
-    putStrLn $ "State preds: "    ++ show (Map.keys statePreds)
-    putStrLn $ "State vars: "     ++ show (Map.keys stateVars)
-    putStrLn $ "label preds: "    ++ show (Map.keys labelPreds)
-    putStrLn $ "label vars: "     ++ show (Map.keys labelVars)
-    putStrLn $ "enabling vars: "  ++ show enablingVars
+    putStrLn $ "State inds: "                   ++ show (inds trackedState)
+    putStrLn $ "Next inds: "                    ++ show (inds next)
+    putStrLn $ "Untracked inds: "               ++ show (inds untrackedState)
+    putStrLn $ "label inds: "                   ++ show (inds label)
+    putStrLn $ "Nxt avl ixd: "                  ++ show nextAvlIndex
+    putStrLn $ "stateRev: \n"                   ++ format (map (show *** show) $ Map.toList stateRev)
+    putStrLn $ "labelRev: \n"                   ++ format (map (show *** show) $ Map.toList labelRev)
+    putStrLn $ "Init preds: \n"                 ++ format (map (show *** show) $ Map.toList initPreds)
+    putStrLn $ "Init vars: \n"                  ++ format (map (show *** show) $ Map.toList initVars)
+    putStrLn $ "State and untracked preds: "    ++ show (Map.keys statePreds)
+    putStrLn $ "State and untracked vars: "     ++ show (Map.keys stateVars)
+    putStrLn $ "label preds: "                  ++ show (Map.keys labelPreds)
+    putStrLn $ "label vars: "                   ++ show (Map.keys labelVars)
+    putStrLn $ "enabling vars: "                ++ show enablingVars
     putStrLn $ "*********************************************************\n"
 
 -- ===Solve an abstracted and compiled game===
@@ -392,6 +395,8 @@ func (x, y) = do
 
 check ops = debugCheck ops >> checkKeys ops
 
+asterixs = "*******************************************"
+
 --Create an initial abstraction and set up the data structures
 initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u o sp lp -> o -> ST s (RefineDynamic s u o sp lp, RefineStatic s u)
 initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
@@ -399,9 +404,15 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
     --abstract init
     InitAbsRet {..}     <- initAbs ops 0 abstractorState
     check ops
+    traceST "*******************************************\n"
+    traceST $ "Abstraction of Init: \nState Preds: \n" ++ format (map (show *** (show . snd)) $ Map.toList initStatePreds) ++ "\nState Vars: \n" ++ format (map (show *** (show . map (show . snd))) $ Map.toList initStateVars)
+    traceST "******************************************\n\n"
     --abstract the goal
     GoalAbsRet {..}     <- goalAbs ops initStatePreds initStateVars Map.empty Map.empty initOffset initAbsState 
     check ops
+    traceST "*****************************************\n"
+    traceST $ "Abstraction of Goal: \nStatePreds: \n" ++ format (map (show *** (show . snd)) $ Map.toList goalStatePreds) ++ "\nState vars: \n" ++ format (map (show *** (show . map (show . snd))) $ Map.toList goalStateVars)
+    traceST "****************************************\n\n"
     let
         numStateVars    = length $ Map.elems goalStatePreds ++ concat (Map.elems goalStateVars)
         endStateAndNext = endGoalState + numStateVars
@@ -410,7 +421,12 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
     goalPreds <- sequence $ map (func . second ithVar) goalPreds 
     goalVars  <- sequence $ map (func . second (sequence . map ithVar)) goalVars
     --get the abstract update functions for the goal predicates and variables
+    traceST "***************************************\n"
+    traceST $ "calling update on predicates: " ++ show (map fst goalPreds) ++ " and variables: " ++ show (map fst goalVars)
     UpdateAbsRet {..}   <- updateAbs ops initStatePreds initStateVars goalStatePreds goalStateVars Map.empty Map.empty endStateAndNext goalAbsState goalPreds goalVars
+    traceST $ "Abstraction of variable updates: \nState and untracked preds after update: " ++ format (map (show *** (show . snd)) $ Map.toList updateStatePreds) ++ "\nVars: " ++ format (map (show *** (show . map (show . snd))) $ Map.toList updateStateVars)
+    traceST $ "\nLabel preds after update: " ++ format (map (show *** (show . snd . fst)) $ Map.toList updateLabelPreds) ++ "\nVars: " ++ format (map (show *** (show . map (show . snd) . fst)) $ Map.toList updateLabelVars)
+    traceST "***************************************\n\n"
     --create the consistency constraints
     let consistentPlusCU   = btrue
         consistentMinusCUL = bfalse
@@ -490,12 +506,16 @@ refineLeastPreds (Ops{..}) (RefineDynamic{..}) newSU
         deref untrackedCube
         return (length support, support)
 
-pickUntrackedToPromote :: Ops s u -> RefineDynamic s u o sp lp -> DDNode s u -> ST s (Maybe [Int])
-pickUntrackedToPromote ops@Ops{..} rd@RefineDynamic{..} win = do
+pickUntrackedToPromote :: Ops s u -> RefineDynamic s u o sp lp -> RefineStatic s u -> DDNode s u -> ST s (Maybe [Int])
+pickUntrackedToPromote ops@Ops{..} rd@RefineDynamic{..} RefineStatic{..} win = do
     hasOutgoings <- bexists (cube next) trans
-    su    <- cPre' ops rd hasOutgoings win
+    win' <- win .| goal
+    su    <- cPre' ops rd hasOutgoings win'
     deref hasOutgoings
-    newSU <- su .& bnot win
+    traceST $ "Asdfasdf"
+    newSU <- su .& bnot win'
+    error "halt"
+    deref win'
     deref su
     res <- refineLeastPreds ops rd newSU
     deref newSU
@@ -597,9 +617,10 @@ bddSynopsis Ops{..} node = case node==bfalse of
 
 --Refine one of the consistency relations so that we make progress. Does not promote untracked state.
 --TODO: check for existence of label first
-refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver sp lp -> RefineDynamic s u o sp lp -> DDNode s u -> ST s (Maybe (RefineDynamic s u o sp lp))
-refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
-    t0 <- mapVars win
+refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver sp lp -> RefineDynamic s u o sp lp -> RefineStatic s u -> DDNode s u -> ST s (Maybe (RefineDynamic s u o sp lp))
+refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win = do
+    win' <- win .| goal
+    t0 <- mapVars win'
     t1 <- trans .-> t0
     deref t0
     t2 <- bforall (cube next) t1
@@ -610,7 +631,8 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
     tt3 <- hasOutgoings .& t3
     deref hasOutgoings
     deref t3
-    t4 <- tt3 .& bnot win
+    t4 <- tt3 .& bnot win'
+    deref win'
     deref tt3
     case t4==bfalse of 
         True  -> do
@@ -678,7 +700,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} win = do
                             deref inconsistent
                             deref consistentPlusCUL
                             check ops
-                            refineConsistency ops ts (rd {consistentPlusCUL = consistentPlusCUL'}) win
+                            refineConsistency ops ts (rd {consistentPlusCUL = consistentPlusCUL'}) rs win
                         Nothing -> do
                             --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
                             traceST "refining consistentMinusCUL"
@@ -697,7 +719,10 @@ absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdM
 absRefineLoop m spec ts abstractorState = do
     let ops@Ops{..} = constructOps m
     (rd, rs) <- initialAbstraction ops spec abstractorState
+    traceST "Refinement state after initial abstraction: " 
     dumpState rd
+    traceST $ "Goal is: " ++ (bddSynopsis ops $ goal rs)
+    traceST $ "Init is: " ++ (bddSynopsis ops $ Refine.init rs)
     refineLoop ops rs rd bfalse
     where
         refineLoop :: Ops s u -> RefineStatic s u -> RefineDynamic s u o sp lp -> DDNode s u -> ST s Bool
@@ -715,18 +740,26 @@ absRefineLoop m spec ts abstractorState = do
                         return True
                     False -> do
                         traceST "Not winning without further refinement"
-                        res <- refineConsistency ops ts rd winRegion 
+                        res <- refineConsistency ops ts rd rs winRegion 
                         case res of
-                            Just newRD -> refineLoop' newRD winRegion
+                            Just newRD -> do
+                                traceST "Refined consistency relations. Resolving"
+                                refineLoop' newRD winRegion
                             Nothing -> do
-                                res <- pickUntrackedToPromote ops rd winRegion
+                                traceST "Could not refine consistency relations. Attempting to refine untracked state variables"
+                                res <- pickUntrackedToPromote ops rd rs winRegion
                                 case res of 
                                     Just vars -> do
+                                        traceST "Found untracked variables to promote. Promoting them..."
                                         newRD <- promoteUntracked ops spec rd vars 
                                         refineLoop' newRD winRegion
                                     Nothing -> do
-                                        deref winRegion
                                         traceST "Game is not winning"
+                                        deref winRegion
+                                        --Below line is a hack to make
+                                        --haskell print things because for
+                                        --some reason it doesnt
+                                        error "asdf"
                                         return False
 
 {-
