@@ -33,7 +33,7 @@ theGoalAbs m absGame ops ipdb ivdb spdb svdb offset absState = do
 
 theUpdateAbs m absGame ops ipdb ivdb spdb svdb lpdb lvdb offset absState preds vars = do
     let state = PredDBState m ipdb ivdb spdb svdb lpdb lvdb offset absState
-    (res, PredDBState{..}) <- runStateT (gameVarUpdateC absGame ((map (PredVar *** (:[])) preds) ++ (map (uncurry help) vars))) state
+    (res, PredDBState{..}) <- runStateT (gameVarUpdateU absGame ((map (PredVar *** (:[])) preds) ++ (map (uncurry help) vars))) state
     res <- conj m res
     return $ UpdateAbsRet dbStatePreds dbStateVars dbLabelPreds dbLabelVars dbNextIndex res dbUserState
     
