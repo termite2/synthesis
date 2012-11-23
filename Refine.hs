@@ -10,11 +10,13 @@ import Control.Monad
 import Data.List
 import Data.Maybe
 import Data.Tuple.All
+import Debug.Trace as T
 
 import Safe
 
 import qualified CuddExplicitDeref as C
 import CuddExplicitDeref (DDNode, STDdManager)
+import Util
 
 -- ===Utility functions===
 {-# NOINLINE traceST #-}
@@ -156,21 +158,38 @@ primeCover Ops{..} node = do
             res <- primeCover' next
             return $ pm : res
 
-toDot :: Ops s u -> [DDNode s u] -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s String
-toDot ops@Ops{..} stateVars nextVars stateCube untrackedCube labelCube nextCube trans goal init = do
+toDot :: Ops s u -> Map String [VarInfo s u] -> Map String [VarInfo s u] -> Map String ([VarInfo s u], VarInfo s u) -> [DDNode s u] -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s String
+toDot ops@Ops{..} svMap uvMap lvMap stateVars nextVars stateCube untrackedCube labelCube nextCube trans goal init = do
     let stateNextVars = stateVars ++ nextVars
     stateNextCube <- stateCube .& nextCube
     untrackedLabelCube <- untrackedCube .& labelCube
     transitions <- concPart ops stateNextVars stateNextCube untrackedLabelCube trans
     culnTuples <- mapM split transitions
-    let transSection = map (uncurryN draw) culnTuples
+    transSection <- mapM (uncurryN draw) culnTuples
     goalNodes <- allMinterms ops stateVars goal
-    let goalSection = concat $ intersperse ";\n" $ map (goalFunc "[color=\"Blue\"]") goalNodes
+    gs <- mapM (goalFunc "[color=\"Blue\"]") goalNodes
+    let goalSection = concat $ intersperse ";\n" gs
     initNodes <- allMinterms ops stateVars init
-    let initSection = concat $ intersperse ";\n" $ map (goalFunc "[style=\"dashed\"]") initNodes
+    is <- mapM (goalFunc "[style=\"dashed\"]") initNodes
+    let initSection = concat $ intersperse ";\n" is 
     check ops
     return $ "digraph trans {\n" ++ concat (intersperse ";\n" transSection) ++ "\n" ++ goalSection ++ "\n" ++ initSection ++ "}\n"
     where
+        goalFunc attrib node = do
+            si <- stateInterp svMap node
+            return $ "\"" ++ si ++ "\" " ++ attrib
+        stateInterp theMap node = do
+            let a = map (second (map snd)) $ Map.toList theMap
+            st <- satCube node
+            return $ concat $ intersperse ", " $ map (func st) a
+            where
+            func bits (name, idxs) = name ++ ": " ++ show (map b2IntLSF expanded)
+                where
+                encoding = map (bits !!) idxs
+                expanded = allComb $ map func encoding
+                func 0 = [False]
+                func 1 = [True]
+                func 2 = [False, True]
         split (currentNext, untrackedLabel) = do
             s  <- bexists nextCube currentNext
             n' <- bexists stateCube currentNext
@@ -182,10 +201,28 @@ toDot ops@Ops{..} stateVars nextVars stateCube untrackedCube labelCube nextCube 
             u  <- bexists labelCube ulc
             l  <- bexists untrackedCube ulc
             return (u, l)
-        draw c uls n = "\"" ++ show (C.toInt c) ++ "\" -> \"" ++ show (C.toInt n) ++ "\" [label=\"" ++ concat (intersperse "; " (map doLabs uls)) ++ "\"]"
+        draw c uls n = do
+            si <- stateInterp svMap c
+            ni <- stateInterp svMap n
+            labs <- mapM doLabs uls
+            return $ "\"" ++ si ++ "\" -> \"" ++ ni ++ "\" [label=\"" ++ concat (intersperse "; " labs) ++ "\"]"
             where
-            doLabs (u, l) = show (C.toInt u) ++ " -- " ++ show (C.toInt l)
-        goalFunc attrib node = show (C.toInt node) ++ " " ++ attrib
+            doLabs (u, l) = do
+                li <- labelInterp l
+                ui <- stateInterp uvMap u
+                return $ ui ++ " -- " ++ li
+            labelInterp node = do
+                let a = map (second (map snd *** snd)) $ Map.toList lvMap
+                st <- satCube node
+                return $ concat $ intersperse ", " $ map (func st) a
+                where
+                func bits (name, (idxs, en)) = name ++ ": " ++ show (map b2IntLSF expanded)
+                    where
+                    encoding = map (bits !!) idxs
+                    expanded = allComb $ map func encoding
+                    func 0 = [False]
+                    func 1 = [True]
+                    func 2 = [False, True]
 
 -- ===Data structures for keeping track of abstraction state===
 
@@ -556,9 +593,14 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
     initCube <- nodesToCube $ map fst $ Map.elems initStatePreds ++ concat (Map.elems initStateVars)
     initNoState <- bexists (cube trackedState) initCube
     initStates <- bexists initNoState initExpr
-    graph <- toDot ops (vars trackedState) (vars next) (cube trackedState) (cube untrackedState) (cube label) (cube next) updateExpr goalExpr initStates
-    unsafeIOToST $ do
-        writeFile "trans.dot" graph
+    let theMap = Map.filterWithKey f (stateVars rd)
+            where
+            f k v = not $ null $ (map snd v) `intersect` (inds trackedState)
+    let theUMap = Map.filterWithKey f (stateVars rd)
+            where
+            f k v = not $ null $ (map snd v) `intersect` (inds untrackedState)
+    graph <- toDot ops theMap theUMap (labelVars rd) (vars trackedState) (vars next) (cube trackedState) (cube untrackedState) (cube label) (cube next) updateExpr goalExpr initStates
+    unsafeIOToST $ writeFile "trans.dot" graph
     return (rd, rs)
 
 --Variable promotion strategies
