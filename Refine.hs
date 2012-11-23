@@ -158,6 +158,43 @@ primeCover Ops{..} node = do
             res <- primeCover' next
             return $ pm : res
 
+listPrimeImplicants :: Ops s u -> [[(String, [Int])]] -> DDNode s u -> ST s [[[(String, [Int])]]]
+listPrimeImplicants ops@Ops{..} varss trans = do
+    pc <- primeCover ops trans
+    mapM func pc
+    where
+    func prime = do
+        mapM func2 varss
+        where
+        func2 section = stateInterp ops section prime
+
+formatPrimeImplicants :: [[[(String, [Int])]]] -> String
+formatPrimeImplicants = concat . intersperse " ; " . map func 
+    where
+    func = concat . intersperse " -- " . map func2
+        where
+        func2 = concat . intersperse ", " . map (uncurry func3)
+            where
+            func3 name values = name ++ ": " ++ show values
+
+stateInterp :: Ops s u -> [(String, [Int])] -> DDNode s u -> ST s [(String, [Int])]
+stateInterp Ops{..} theList node = do
+    st <- satCube node
+    return $ map (func st) theList
+    where
+    func bits (name, idxs) = (name, (map b2IntLSF expanded))
+        where
+        encoding = map (bits !!) idxs
+        expanded = allComb $ map func encoding
+        func 0 = [False]
+        func 1 = [True]
+        func 2 = [False, True]
+
+formatStateInterp :: [(String, [Int])] -> String
+formatStateInterp = concat . intersperse ", " . map (uncurry func)
+    where
+    func name values = name ++ ": " ++ show values
+
 toDot :: Ops s u -> Map String [VarInfo s u] -> Map String [VarInfo s u] -> Map String ([VarInfo s u], VarInfo s u) -> [DDNode s u] -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s String
 toDot ops@Ops{..} svMap uvMap lvMap stateVars nextVars stateCube untrackedCube labelCube nextCube goal init trans = do
     let stateNextVars = stateVars ++ nextVars
@@ -176,20 +213,8 @@ toDot ops@Ops{..} svMap uvMap lvMap stateVars nextVars stateCube untrackedCube l
     return $ "digraph trans {\n" ++ concat (intersperse ";\n" transSection) ++ "\n" ++ goalSection ++ "\n" ++ initSection ++ "}\n"
     where
         goalFunc attrib node = do
-            si <- stateInterp svMap node
-            return $ "\"" ++ si ++ "\" " ++ attrib
-        stateInterp theMap node = do
-            let a = map (second (map snd)) $ Map.toList theMap
-            st <- satCube node
-            return $ concat $ intersperse ", " $ map (func st) a
-            where
-            func bits (name, idxs) = name ++ ": " ++ show (map b2IntLSF expanded)
-                where
-                encoding = map (bits !!) idxs
-                expanded = allComb $ map func encoding
-                func 0 = [False]
-                func 1 = [True]
-                func 2 = [False, True]
+            si <- stateInterp ops (map (second (map snd)) $ Map.toList svMap) node
+            return $ "\"" ++ (formatStateInterp si) ++ "\" " ++ attrib
         split (currentNext, untrackedLabel) = do
             s  <- bexists nextCube currentNext
             n' <- bexists stateCube currentNext
@@ -202,15 +227,15 @@ toDot ops@Ops{..} svMap uvMap lvMap stateVars nextVars stateCube untrackedCube l
             l  <- bexists untrackedCube ulc
             return (u, l)
         draw c uls n = do
-            si <- stateInterp svMap c
-            ni <- stateInterp svMap n
+            si <- stateInterp ops (map (second (map snd)) $ Map.toList svMap) c
+            ni <- stateInterp ops (map (second (map snd)) $ Map.toList svMap) n
             labs <- mapM doLabs uls
-            return $ "\"" ++ si ++ "\" -> \"" ++ ni ++ "\" [label=\"" ++ concat (intersperse "; " labs) ++ "\"]"
+            return $ "\"" ++ formatStateInterp si ++ "\" -> \"" ++ formatStateInterp ni ++ "\" [label=\"" ++ concat (intersperse "; " labs) ++ "\"]"
             where
             doLabs (u, l) = do
                 li <- labelInterp l
-                ui <- stateInterp uvMap u
-                return $ ui ++ " -- " ++ li
+                ui <- stateInterp ops (map (second (map snd)) $ Map.toList uvMap) u
+                return $ (formatStateInterp ui) ++ " -- " ++ li
             labelInterp node = do
                 let a = map (second (map snd *** snd)) $ Map.toList lvMap
                 st <- satCube node
