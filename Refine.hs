@@ -1,5 +1,5 @@
 {-# LANGUAGE RecordWildCards, ScopedTypeVariables, GADTs #-}
-module Refine where
+module Refine (absRefineLoop, VarInfo, GoalAbsRet(..), UpdateAbsRet(..), InitAbsRet(..), Abstractor(..), TheorySolver(..)) where
 
 import Control.Monad.ST.Lazy
 import qualified Data.Map as Map
@@ -63,7 +63,8 @@ data Ops s u = Ops {
     setVarMap                                 :: [DDNode s u] -> [DDNode s u] -> ST s (),
     mapVars                                   :: DDNode s u -> ST s (DDNode s u),
     debugCheck                                :: ST s (),
-    checkKeys                                 :: ST s ()
+    checkKeys                                 :: ST s (),
+    pickOneMinterm                            :: DDNode s u -> [DDNode s u] -> ST s (DDNode s u)
 }
 
 constructOps :: STDdManager s u -> Ops s u
@@ -102,6 +103,89 @@ constructOps m = Ops {..}
     mapVars                = C.mapVars          m
     debugCheck             = C.debugCheck       m
     checkKeys              = C.checkKeys        m
+    pickOneMinterm         = C.pickOneMinterm   m
+
+conj :: Ops s u -> [DDNode s u] -> ST s (DDNode s u)
+conj Ops{..} nodes = do
+        ref btrue
+        go btrue nodes
+    where
+    go accum []     = return accum
+    go accum (n:ns) = do
+        accum' <- accum .&  n
+        deref accum
+        go accum' ns
+
+-- ===Graph drawing===
+
+allMinterms :: Ops s u -> [DDNode s u] -> DDNode s u -> ST s [DDNode s u]
+allMinterms Ops{..} vars node = do
+    ref node
+    allMinterms' node
+    where
+    allMinterms' node
+        | node == bfalse = return []
+        | otherwise      = do
+            mt <- pickOneMinterm node vars
+            remaining <- node .& bnot mt
+            deref node
+            res <- allMinterms' remaining
+            return $ mt : res
+
+concPart :: Ops s u -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> ST s [(DDNode s u, DDNode s u)]
+concPart ops@Ops{..} concVars concCube restCube node = do
+    concOnly <- bexists restCube node
+    allMT <- allMinterms ops concVars concOnly
+    forM allMT $ \mt -> do 
+        rest <- andAbstract concCube mt node
+        return (mt, rest)
+
+primeCover :: Ops s u -> DDNode s u -> ST s [DDNode s u]
+primeCover Ops{..} node = do
+    ref node
+    primeCover' node
+    where
+    primeCover' node
+        | node == bfalse = return []
+        | otherwise = do
+            (lc, _) <- largestCube node
+            pm <- makePrime lc node
+            deref lc
+            next <- node .& bnot pm
+            deref node
+            res <- primeCover' next
+            return $ pm : res
+
+toDot :: Ops s u -> [DDNode s u] -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s String
+toDot ops@Ops{..} stateVars nextVars stateCube untrackedCube labelCube nextCube trans goal init = do
+    let stateNextVars = stateVars ++ nextVars
+    stateNextCube <- stateCube .& nextCube
+    untrackedLabelCube <- untrackedCube .& labelCube
+    transitions <- concPart ops stateNextVars stateNextCube untrackedLabelCube trans
+    culnTuples <- mapM split transitions
+    let transSection = map (uncurryN draw) culnTuples
+    goalNodes <- allMinterms ops stateVars goal
+    let goalSection = concat $ intersperse ";\n" $ map (goalFunc "[color=\"Blue\"]") goalNodes
+    initNodes <- allMinterms ops stateVars init
+    let initSection = concat $ intersperse ";\n" $ map (goalFunc "[style=\"dashed\"]") initNodes
+    check ops
+    return $ "digraph trans {\n" ++ concat (intersperse ";\n" transSection) ++ "\n" ++ goalSection ++ "\n" ++ initSection ++ "}\n"
+    where
+        split (currentNext, untrackedLabel) = do
+            s  <- bexists nextCube currentNext
+            n' <- bexists stateCube currentNext
+            n  <- mapVars n'
+            labCubes <- primeCover ops untrackedLabel
+            labs <- mapM lfunc labCubes
+            return (s, labs, n)
+        lfunc ulc = do
+            u  <- bexists labelCube ulc
+            l  <- bexists untrackedCube ulc
+            return (u, l)
+        draw c uls n = "\"" ++ show (C.toInt c) ++ "\" -> \"" ++ show (C.toInt n) ++ "\" [label=\"" ++ concat (intersperse "; " (map doLabs uls)) ++ "\"]"
+            where
+            doLabs (u, l) = show (C.toInt u) ++ " -- " ++ show (C.toInt l)
+        goalFunc attrib node = show (C.toInt node) ++ " " ++ attrib
 
 -- ===Data structures for keeping track of abstraction state===
 
@@ -207,8 +291,8 @@ dumpState RefineDynamic{..} = unsafeIOToST $ do
     putStrLn $ "Nxt avl ixd: "                  ++ show nextAvlIndex
     putStrLn $ "stateRev: \n"                   ++ format (map (show *** show) $ Map.toList stateRev)
     putStrLn $ "labelRev: \n"                   ++ format (map (show *** show) $ Map.toList labelRev)
-    putStrLn $ "Init preds: \n"                 ++ format (map (show *** show) $ Map.toList initPreds)
-    putStrLn $ "Init vars: \n"                  ++ format (map (show *** show) $ Map.toList initVars)
+    putStrLn $ "Init preds: \n"                 ++ format (map (show *** show . snd) $ Map.toList initPreds)
+    putStrLn $ "Init vars: \n"                  ++ format (map (show *** show . map snd) $ Map.toList initVars)
     putStrLn $ "State and untracked preds: "    ++ show (Map.keys statePreds)
     putStrLn $ "State and untracked vars: "     ++ show (Map.keys stateVars)
     putStrLn $ "label preds: "                  ++ show (Map.keys labelPreds)
@@ -431,6 +515,9 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
     let consistentPlusCU   = btrue
         consistentMinusCUL = bfalse
         consistentPlusCUL  = btrue
+    ref consistentPlusCU
+    ref consistentMinusCUL
+    ref consistentPlusCUL
     --create the sections
     trackedState       <- createSection2 ops $ 
         Map.elems goalStatePreds ++ concat (Map.elems goalStateVars)
@@ -464,6 +551,14 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
             goal = goalExpr,
             init = initExpr
         }
+    let currentNextNodes = vars trackedState ++ vars next
+    setVarMap (vars trackedState) (vars next) 
+    initCube <- nodesToCube $ map fst $ Map.elems initStatePreds ++ concat (Map.elems initStateVars)
+    initNoState <- bexists (cube trackedState) initCube
+    initStates <- bexists initNoState initExpr
+    graph <- toDot ops (vars trackedState) (vars next) (cube trackedState) (cube untrackedState) (cube label) (cube next) updateExpr goalExpr initStates
+    unsafeIOToST $ do
+        writeFile "trans.dot" graph
     return (rd, rs)
 
 --Variable promotion strategies
@@ -631,6 +726,14 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
     tt3 <- hasOutgoings .& t3
     deref hasOutgoings
     deref t3
+    traceST "***************************"
+    traceST "Consistency refinement"
+    traceST $ bddSynopsis ops win'
+    traceST $ bddSynopsis ops tt3
+    traceST $ bddSynopsis ops hasOutgoings
+    traceST $ bddSynopsis ops t3
+    traceST $ bddSynopsis ops t2
+    traceST $ bddSynopsis ops t1
     t4 <- tt3 .& bnot win'
     deref win'
     deref tt3
