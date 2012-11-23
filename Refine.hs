@@ -159,7 +159,7 @@ primeCover Ops{..} node = do
             return $ pm : res
 
 toDot :: Ops s u -> Map String [VarInfo s u] -> Map String [VarInfo s u] -> Map String ([VarInfo s u], VarInfo s u) -> [DDNode s u] -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s String
-toDot ops@Ops{..} svMap uvMap lvMap stateVars nextVars stateCube untrackedCube labelCube nextCube trans goal init = do
+toDot ops@Ops{..} svMap uvMap lvMap stateVars nextVars stateCube untrackedCube labelCube nextCube goal init trans = do
     let stateNextVars = stateVars ++ nextVars
     stateNextCube <- stateCube .& nextCube
     untrackedLabelCube <- untrackedCube .& labelCube
@@ -422,7 +422,7 @@ data UpdateAbsRet s u o sp lp = UpdateAbsRet {
     updateLabelVars  :: Map String ([VarInfo s u], VarInfo s u),
     updateOffset     :: Int,
     --predicate variable, enabling variable
-    updateExpr       :: DDNode s u,
+    updateExpr       :: [DDNode s u],
     updateAbsState   :: o
 }
 
@@ -545,6 +545,8 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
     traceST "***************************************\n"
     traceST $ "calling update on predicates: " ++ show (map fst goalPreds) ++ " and variables: " ++ show (map fst goalVars)
     UpdateAbsRet {..}   <- updateAbs ops initStatePreds initStateVars goalStatePreds goalStateVars Map.empty Map.empty endStateAndNext goalAbsState goalPreds goalVars
+    --TODO below does not deref
+    updateExprConj <- conj ops updateExpr
     traceST $ "Abstraction of variable updates: \nState and untracked preds after update: " ++ format (map (show *** (show . snd)) $ Map.toList updateStatePreds) ++ "\nVars: " ++ format (map (show *** (show . map (show . snd))) $ Map.toList updateStateVars)
     traceST $ "\nLabel preds after update: " ++ format (map (show *** (show . snd . fst)) $ Map.toList updateLabelPreds) ++ "\nVars: " ++ format (map (show *** (show . map (show . snd) . fst)) $ Map.toList updateLabelVars)
     traceST "***************************************\n\n"
@@ -573,7 +575,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
         enablingVars   = map (idx . snd) (Map.elems updateLabelPreds) ++ map (idx . snd) (Map.elems updateLabelVars)
     --construct the RefineDynamic and RefineStatic
     let rd = RefineDynamic {
-            trans           = updateExpr, 
+            trans           = updateExprConj, 
             nextAvlIndex    = updateOffset, 
             statePreds      = updateStatePreds, 
             stateVars       = updateStateVars, 
@@ -599,8 +601,12 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
     let theUMap = Map.filterWithKey f (stateVars rd)
             where
             f k v = not $ null $ (map snd v) `intersect` (inds untrackedState)
-    graph <- toDot ops theMap theUMap (labelVars rd) (vars trackedState) (vars next) (cube trackedState) (cube untrackedState) (cube label) (cube next) updateExpr goalExpr initStates
+    graph <- toDot ops theMap theUMap (labelVars rd) (vars trackedState) (vars next) (cube trackedState) (cube untrackedState) (cube label) (cube next) goalExpr initStates updateExprConj
     unsafeIOToST $ writeFile "trans.dot" graph
+    let func = toDot ops theMap theUMap (labelVars rd) (vars trackedState) (vars next) (cube trackedState) (cube untrackedState) (cube label) (cube next) goalExpr initStates
+    ress <- mapM func updateExpr
+    forM (zip (map fst goalVars) ress) $ \(name, graph) -> do
+        unsafeIOToST $ writeFile name graph
     return (rd, rs)
 
 --Variable promotion strategies
@@ -680,10 +686,11 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
 
     --compute the update functions
     UpdateAbsRet {..}  <- updateAbs ops initPreds initVars statePreds stateVars labelPreds labelVars nextAvlIndex abstractorState undefined undefined 
+    updateExprConj <- conj ops updateExpr
 
     --update the transition relation
-    trans'             <- trans .& updateExpr
-    deref updateExpr  
+    trans'             <- trans .& updateExprConj
+    deref updateExprConj
     deref trans
 
     --update the sections
