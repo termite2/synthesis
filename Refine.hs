@@ -558,6 +558,16 @@ check ops = debugCheck ops >> checkKeys ops
 
 asterixs = "*******************************************"
 
+assign :: Int -> [(a, [Int])] -> ([(a, [Int])], Int)
+assign offset []       = ([], offset)
+assign offset ((nm, vars) : rst) = ((nm, take (length vars) [offset..]) : rest, end)
+    where (rest, end) = assign (offset + length vars) rst
+
+assignPreds :: Int -> [(a, Int)] -> ([(a, Int)], Int)
+assignPreds offset [] = ([], offset)
+assignPreds offset ((nm, var) : rst) = ((nm, offset) : rest, end)
+    where (rest, end) = assignPreds (offset + 1) rst
+
 --Create an initial abstraction and set up the data structures
 initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u o sp lp -> o -> ST s (RefineDynamic s u o sp lp, RefineStatic s u)
 initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
@@ -575,12 +585,11 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
     traceST $ "Abstraction of Goal: \nStatePreds: \n" ++ format (map (show *** (show . snd)) $ Map.toList goalStatePreds) ++ "\nState vars: \n" ++ format (map (show *** (show . map (show . snd))) $ Map.toList goalStateVars)
     traceST "****************************************\n\n"
     let
-        numStateVars    = length $ Map.elems goalStatePreds ++ concat (Map.elems goalStateVars)
-        endStateAndNext = endGoalState + numStateVars
-        goalPreds       = map (second ((+ endGoalState) . idx)) $ Map.toList goalStatePreds
-        goalVars        = map (second (map $ (+ endGoalState) . idx)) $ Map.toList goalStateVars
-    goalPreds <- sequence $ map (func . second ithVar) goalPreds 
-    goalVars  <- sequence $ map (func . second (sequence . map ithVar)) goalVars
+        (goalPreds', ni) = assignPreds endGoalState (map (second idx) (Map.toList goalStatePreds))
+        (goalVars', nni) = assign ni (map (second (map idx)) (Map.toList goalStateVars))
+        endStateAndNext  = nni
+    goalPreds <- sequence $ map (func . second ithVar) goalPreds'
+    goalVars  <- sequence $ map (func . second (sequence . map ithVar)) goalVars'
     --get the abstract update functions for the goal predicates and variables
     traceST "***************************************\n"
     traceST $ "calling update on predicates: " ++ show (map fst goalPreds) ++ " and variables: " ++ show (map fst goalVars)
@@ -643,7 +652,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
             f k v = not $ null $ (map snd v) `intersect` (inds untrackedState)
     graph <- toDot ops theMap theUMap (labelVars rd) (vars trackedState) (vars next) (cube trackedState) (cube untrackedState) (cube label) (cube next) goalExpr initStates updateExprConj
     unsafeIOToST $ writeFile "trans.dot" graph
-    let theVars = [map (id *** (map snd)) $ Map.toList (stateVars rd), map (id *** (map snd . fst)) $ Map.toList (labelVars rd), map (id *** map ((+ endGoalState) . snd)) $ Map.toList goalStateVars]
+    let theVars = [map (id *** (map snd)) $ Map.toList (stateVars rd), map (id *** (map snd . fst)) $ Map.toList (labelVars rd), goalVars']
     ress <- mapM (listPrimeImplicants ops theVars) updateExpr
     forM (zip (map fst goalVars) ress) $ \(name, implicants) -> do
         unsafeIOToST $ writeFile name $ formatPrimeImplicants implicants
