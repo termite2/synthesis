@@ -166,10 +166,25 @@ listPrimeImplicants ops@Ops{..} varss trans = do
     func prime = do
         mapM func2 varss
         where
-        func2 section = stateInterp ops section prime
+        func2 section = interp ops section prime
+
+interp :: Ops s u -> [(String, [Int])] -> DDNode s u -> ST s [(String, [Int])]
+interp Ops{..} theList node = do
+    st <- satCube node 
+    return $ mapMaybe (func st) theList
+    where
+    func bits (name, idxs) 
+        | all (==2) encoding = Nothing
+        | otherwise = Just (name, (map b2IntLSF expanded))
+        where
+        encoding = map (bits !!) idxs
+        expanded = allComb $ map func encoding
+        func 0 = [False]
+        func 1 = [True]
+        func 2 = [False, True]
 
 formatPrimeImplicants :: [[[(String, [Int])]]] -> String
-formatPrimeImplicants = concat . intersperse " ; " . map func 
+formatPrimeImplicants = concat . intersperse "\n" . map func 
     where
     func = concat . intersperse " -- " . map func2
         where
@@ -628,10 +643,10 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
             f k v = not $ null $ (map snd v) `intersect` (inds untrackedState)
     graph <- toDot ops theMap theUMap (labelVars rd) (vars trackedState) (vars next) (cube trackedState) (cube untrackedState) (cube label) (cube next) goalExpr initStates updateExprConj
     unsafeIOToST $ writeFile "trans.dot" graph
-    let func = toDot ops theMap theUMap (labelVars rd) (vars trackedState) (vars next) (cube trackedState) (cube untrackedState) (cube label) (cube next) goalExpr initStates
-    ress <- mapM func updateExpr
-    forM (zip (map fst goalVars) ress) $ \(name, graph) -> do
-        unsafeIOToST $ writeFile name graph
+    let theVars = [map (id *** (map snd)) $ Map.toList (stateVars rd), map (id *** (map snd . fst)) $ Map.toList (labelVars rd), map (id *** map ((+ endGoalState) . snd)) $ Map.toList goalStateVars]
+    ress <- mapM (listPrimeImplicants ops theVars) updateExpr
+    forM (zip (map fst goalVars) ress) $ \(name, implicants) -> do
+        unsafeIOToST $ writeFile name $ formatPrimeImplicants implicants
     return (rd, rs)
 
 --Variable promotion strategies
