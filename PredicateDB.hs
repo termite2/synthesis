@@ -45,6 +45,9 @@ instance Ord p => Ord (AbsVar p) where
     compare (PredVar _)       (NonPredVar _ _)  = LT
     compare (NonPredVar _ _)  (PredVar _)       = GT
 
+instance (Show p) => Show (AbsVar p) where
+    show (PredVar p)      = show p
+    show (NonPredVar n _) = n
 
 data PredDBState p o s u = PredDBState {
     dbManager    :: STDdManager s u,
