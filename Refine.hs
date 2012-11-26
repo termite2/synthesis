@@ -139,6 +139,8 @@ concPart :: Ops s u -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u ->
 concPart ops@Ops{..} concVars concCube restCube node = do
     concOnly <- bexists restCube node
     allMT <- allMinterms ops concVars concOnly
+    support <- mapM supportIndices allMT
+    traceST $ show support
     forM allMT $ \mt -> do 
         rest <- andAbstract concCube mt node
         return (mt, rest)
@@ -196,6 +198,7 @@ formatPrimeImplicants = concat . intersperse "\n" . map func
 stateInterp :: Ops s u -> [(String, [Int])] -> DDNode s u -> ST s [(String, [Int])]
 stateInterp Ops{..} theList node = do
     st <- satCube node
+    traceST $ show st
     return $ map (func st) theList
     where
     func bits (name, idxs) = (name, (map b2IntLSF expanded))
@@ -211,8 +214,8 @@ formatStateInterp = concat . intersperse ", " . map (uncurry func)
     where
     func name values = name ++ ": " ++ show values
 
-toDot :: Ops s u -> Map String [VarInfo s u] -> Map String [VarInfo s u] -> Map String ([VarInfo s u], VarInfo s u) -> [DDNode s u] -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s String
-toDot ops@Ops{..} svMap uvMap lvMap stateVars nextVars stateCube untrackedCube labelCube nextCube goal init trans = do
+toDot :: (Show sp, Show lp) => Ops s u -> Map sp (VarInfo s u) -> Map String [VarInfo s u] -> Map sp (VarInfo s u) -> Map String [VarInfo s u] -> Map lp (VarInfo s u, VarInfo s u) -> Map String ([VarInfo s u], VarInfo s u) -> [DDNode s u] -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s String
+toDot ops@Ops{..} spMap svMap upMap uvMap lpMap lvMap stateVars nextVars stateCube untrackedCube labelCube nextCube goal init trans = do
     let stateNextVars = stateVars ++ nextVars
     stateNextCube <- stateCube .& nextCube
     untrackedLabelCube <- untrackedCube .& labelCube
@@ -229,7 +232,8 @@ toDot ops@Ops{..} svMap uvMap lvMap stateVars nextVars stateCube untrackedCube l
     return $ "digraph trans {\n" ++ concat (intersperse ";\n" transSection) ++ "\n" ++ goalSection ++ "\n" ++ initSection ++ "}\n"
     where
         goalFunc attrib node = do
-            si <- stateInterp ops (map (second (map snd)) $ Map.toList svMap) node
+            let theList = map (second (map snd)) (Map.toList svMap) ++ map (show *** (singleton . snd)) (Map.toList spMap)
+            si <- stateInterp ops theList node
             return $ "\"" ++ (formatStateInterp si) ++ "\" " ++ attrib
         split (currentNext, untrackedLabel) = do
             s  <- bexists nextCube currentNext
@@ -243,24 +247,28 @@ toDot ops@Ops{..} svMap uvMap lvMap stateVars nextVars stateCube untrackedCube l
             l  <- bexists untrackedCube ulc
             return (u, l)
         draw c uls n = do
-            si <- stateInterp ops (map (second (map snd)) $ Map.toList svMap) c
-            ni <- stateInterp ops (map (second (map snd)) $ Map.toList svMap) n
+            let theList = map (second (map snd)) (Map.toList svMap) ++ map (show *** (singleton . snd)) (Map.toList spMap)
+            si <- stateInterp ops theList c
+            ni <- stateInterp ops theList n
             labs <- mapM doLabs uls
             return $ "\"" ++ formatStateInterp si ++ "\" -> \"" ++ formatStateInterp ni ++ "\" [label=\"" ++ concat (intersperse "; " labs) ++ "\"]"
             where
             doLabs (u, l) = do
+                let theList = map (second (map snd)) (Map.toList uvMap) ++ map (show *** (singleton . snd)) (Map.toList upMap)
                 li <- labelInterp l
-                ui <- stateInterp ops (map (second (map snd)) $ Map.toList uvMap) u
+                ui <- stateInterp ops theList u
                 return $ (formatStateInterp ui) ++ " -- " ++ li
             labelInterp node = do
-                let a = map (second (map snd *** snd)) $ Map.toList lvMap
+                let a = map (second (map snd *** snd)) (Map.toList lvMap) ++ map (show *** (singleton . snd *** snd)) (Map.toList lpMap)
                 st <- satCube node
                 return $ concat $ intersperse ", " $ map (func st) a
                 where
-                func bits (name, (idxs, en)) = name ++ ": " ++ show (map b2IntLSF expanded)
+                func bits (name, (idxs, en)) = name ++ ": " ++ show (map b2IntLSF expanded) ++ name ++ ".en: " ++ show (map b2IntLSF eexpanded)
                     where
                     encoding = map (bits !!) idxs
                     expanded = allComb $ map func encoding
+                    eencoding = bits !! en
+                    eexpanded = allComb [func eencoding]
                     func 0 = [False]
                     func 1 = [True]
                     func 2 = [False, True]
@@ -283,8 +291,8 @@ data Variable p s u where
     NonAbs    :: String -> [VarInfo s u] -> Variable p s u
 
 instance (Show p) => Show (Variable p s u) where
-    show (Predicate p v) = "Predicate variable: " ++ show p ++ ", indices: " ++ show (snd v)
-    show (NonAbs n v)  = "Non-abstracted variable: " ++ show n ++ ", indices: " ++ show (map snd v)
+    show (Predicate p v) = "Predicate variable: " ++ show p ++ ", index: " ++ show (snd v)
+    show (NonAbs n v)    = "Non-abstracted variable: " ++ show n ++ ", indices: " ++ show (map snd v)
 
 getPredicates :: [(Variable p s u, a)] -> [(p, a)]
 getPredicates = mapMaybe func 
@@ -565,6 +573,22 @@ assignPreds offset [] = ([], offset)
 assignPreds offset ((nm, var) : rst) = ((nm, offset) : rest, end)
     where (rest, end) = assignPreds (offset + 1) rst
 
+doEnVars :: Ops s u -> DDNode s u -> [(DDNode s u, DDNode s u)] -> ST s (DDNode s u)
+doEnVars Ops{..} trans enVars = do
+        ref trans
+        foldM func trans enVars
+    where
+    func soFar (pred, en) = do
+        e <- bexists pred soFar
+        e1 <- e .& bnot en
+        deref e
+        c <- en .& soFar
+        deref soFar
+        res <- e1 .| c
+        deref c
+        deref e1
+        return res
+
 --Create an initial abstraction and set up the data structures
 initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u o sp lp -> o -> ST s (RefineDynamic s u o sp lp, RefineStatic s u)
 initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
@@ -592,18 +616,17 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
     traceST $ "calling update on predicates: " ++ show (map fst goalPreds) ++ " and variables: " ++ show (map fst goalVars)
     UpdateAbsRet {..}   <- updateAbs ops initStatePreds initStateVars goalStatePreds goalStateVars Map.empty Map.empty endStateAndNext goalAbsState goalPreds goalVars
     --TODO below does not deref
-    updateExprConj <- conj ops updateExpr
+    updateExprConj' <- conj ops updateExpr
+    updateExprConj  <- doEnVars ops updateExprConj' $ map (fst *** fst) $ Map.elems updateLabelPreds
     traceST $ "Abstraction of variable updates: \nState and untracked preds after update: " ++ format (map (show *** (show . snd)) $ Map.toList updateStatePreds) ++ "\nVars: " ++ format (map (show *** (show . map (show . snd))) $ Map.toList updateStateVars)
     traceST $ "\nLabel preds after update: " ++ format (map (show *** (show . snd . fst)) $ Map.toList updateLabelPreds) ++ "\nVars: " ++ format (map (show *** (show . map (show . snd) . fst)) $ Map.toList updateLabelVars)
     traceST "***************************************\n\n"
     --create the consistency constraints
     let consistentPlusCU   = btrue
-        --TODO make this false
-        consistentMinusCUL = btrue
         consistentPlusCUL  = btrue
     ref consistentPlusCU
-    ref consistentMinusCUL
     ref consistentPlusCUL
+    consistentMinusCUL <- conj ops $ map (bnot . fst . snd) $ Map.elems updateLabelPreds
     --create the sections
     trackedState       <- createSection2 ops $ 
         Map.elems goalStatePreds ++ concat (Map.elems goalStateVars)
@@ -645,10 +668,16 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
     let theMap = Map.filterWithKey f (stateVars rd)
             where
             f k v = not $ null $ (map snd v) `intersect` (inds trackedState)
+    let theSPMap = Map.filterWithKey f (statePreds rd)
+            where
+            f k v = snd v `elem` (inds trackedState)
     let theUMap = Map.filterWithKey f (stateVars rd)
             where
             f k v = not $ null $ (map snd v) `intersect` (inds untrackedState)
-    graph <- toDot ops theMap theUMap (labelVars rd) (vars trackedState) (vars next) (cube trackedState) (cube untrackedState) (cube label) (cube next) goalExpr initStates updateExprConj
+    let theupMap = Map.filterWithKey f (statePreds rd)
+            where
+            f k v = snd v `elem` (inds untrackedState)
+    graph <- toDot ops theSPMap theMap theupMap theUMap (labelPreds rd) (labelVars rd) (vars trackedState) (vars next) (cube trackedState) (cube untrackedState) (cube label) (cube next) goalExpr initStates updateExprConj
     unsafeIOToST $ writeFile "trans.dot" graph
     let theVars = [map (id *** (map snd)) $ Map.toList (stateVars rd), map (id *** (map snd . fst)) $ Map.toList (labelVars rd), goalVars']
     ress <- mapM (listPrimeImplicants ops theVars) updateExpr
@@ -711,7 +740,6 @@ pickUntrackedToPromote ops@Ops{..} rd@RefineDynamic{..} RefineStatic{..} win = d
     traceST $ bddSynopsis ops newSU
     deref win'
     deref su
-    traceST $ "boo"
     res <- refineLeastPreds ops rd newSU
     deref newSU
     return res
@@ -773,12 +801,11 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     label              <- addVariables    ops newLabel label
     next               <- addVariables    ops (map swap nextPairs) next
 
-    traceST $ show $ inds trackedState
-    traceST $ show $ inds next
-
     --update the predicate dbs
     let statePreds'     = insertList (error "promote untracked") statePreds
+    let stateVars'      = undefined
     let labelPreds'     = insertList (error "promote untracked") labelPreds
+    let labelVars'      = undefined
     
     --update the untracked preds reverse map
     let stateRev'       = insertList (zip indices undefined) stateRev
@@ -814,10 +841,13 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
         nextAvlIndex       = updateOffset,
         stateRev           = stateRev',
         statePreds         = statePreds',
+        stateVars          = stateVars',
         labelPreds         = labelPreds',
+        labelVars          = labelVars',
         enablingVars       = enablingVars', 
         labelRev           = labelRev',
-        abstractorState    = updateAbsState
+        abstractorState    = updateAbsState,
+        ..
     }
 
 presentVars :: Ops s u -> DDNode s u -> ST s [(Int, Bool)]

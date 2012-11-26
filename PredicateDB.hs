@@ -109,8 +109,8 @@ pdbAllocVar (PredVar p) VarState = do
                 Nothing -> do
                     st <- get
                     newVar <- lift $ bvar m $ dbNextIndex st
-                    modify $ \st -> st {dbNextIndex = dbNextIndex st + 1}
                     modify $ \st -> st {dbStatePreds = Map.insert  p (newVar, dbNextIndex st) (dbStatePreds st)}
+                    modify $ \st -> st {dbNextIndex = dbNextIndex st + 1}
                     return [newVar]
 pdbAllocVar (PredVar p) VarTmp = do
     theMap <- gets dbLabelPreds
@@ -121,8 +121,8 @@ pdbAllocVar (PredVar p) VarTmp = do
             st <- get
             newVar <- lift $ bvar m $ dbNextIndex st
             newEn  <- lift $ bvar m $ dbNextIndex st + 1
-            modify $ \st -> st {dbNextIndex = dbNextIndex st + 2}
             modify $ \st -> st {dbLabelPreds = Map.insert  p ((newVar, dbNextIndex st), (newEn, dbNextIndex st + 1)) (dbLabelPreds st)}
+            modify $ \st -> st {dbNextIndex = dbNextIndex st + 2}
             return [newVar]
 pdbAllocVar (NonPredVar nm sz) VarState = do
     theMap <- gets dbStateVars
@@ -139,8 +139,8 @@ pdbAllocVar (NonPredVar nm sz) VarState = do
                     st <- get
                     let inds = take sz $ iterate (+1) (dbNextIndex st)
                     newVar <- lift $ sequence $ map (bvar m) inds
-                    modify $ \st -> st {dbNextIndex = dbNextIndex st + sz}
                     modify $ \st -> st {dbStateVars = Map.insert nm (zip newVar inds) (dbStateVars st)}
+                    modify $ \st -> st {dbNextIndex = dbNextIndex st + sz}
                     return newVar
 pdbAllocVar (NonPredVar nm sz) VarTmp = do
     theMap <- gets dbLabelVars
@@ -152,8 +152,8 @@ pdbAllocVar (NonPredVar nm sz) VarTmp = do
             let inds = take sz $ iterate (+1) (dbNextIndex st)
             newVar <- lift $ sequence $ map (bvar m) inds
             newEn  <- lift $ bvar m $ dbNextIndex st + sz
-            modify $ \st -> st {dbNextIndex = dbNextIndex st + sz + 1}
             modify $ \st -> st {dbLabelVars = Map.insert nm ((zip newVar inds), (newEn, dbNextIndex st + sz)) (dbLabelVars st)}
+            modify $ \st -> st {dbNextIndex = dbNextIndex st + sz + 1}
             return newVar
 
 -- Allocate temporary logic variable 

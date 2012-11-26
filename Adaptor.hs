@@ -28,8 +28,8 @@ conj m nodes = go (C.bone m) nodes
 
 theGoalAbs m absGame ops ipdb ivdb spdb svdb offset absState = do
     let state = PredDBState m ipdb ivdb spdb svdb (error "shouldn't need label preds") (error "shouldn't need label vars") offset absState
-    ((_, goal):_, PredDBState{..}) <- runStateT (gameGoals absGame) state
-    return $ GoalAbsRet dbStatePreds dbStateVars dbNextIndex goal dbUserState
+    ((_, goal1) : (_, goal2) : _, PredDBState{..}) <- runStateT (gameGoals absGame) state
+    return $ GoalAbsRet dbStatePreds dbStateVars dbNextIndex goal2 dbUserState
 
 theUpdateAbs m absGame ops ipdb ivdb spdb svdb lpdb lvdb offset absState preds vars = do
     let state = PredDBState m ipdb ivdb spdb svdb lpdb lvdb offset absState
