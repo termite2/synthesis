@@ -1,5 +1,5 @@
 {-# LANGUAGE RecordWildCards, ScopedTypeVariables, GADTs #-}
-module Refine (absRefineLoop, VarInfo, GoalAbsRet(..), UpdateAbsRet(..), InitAbsRet(..), Abstractor(..), TheorySolver(..)) where
+module Refine (absRefineLoop, VarInfo, GoalAbsRet(..), UpdateAbsRet(..), InitAbsRet(..), Abstractor(..), TheorySolver(..), EQuantRet(..)) where
 
 import Control.Monad.ST.Lazy
 import qualified Data.Map as Map
@@ -531,10 +531,31 @@ data Abstractor s u o sp lp = Abstractor {
         ST s (InitAbsRet s u o sp)
 }
 
+data EQuantRet sp s u o = EQuantRet {
+    equantStatePreds :: Map sp (VarInfo s u),
+    equantStateVars  :: Map String [VarInfo s u],
+    equantEnd        :: Int,
+    equantExpr       :: DDNode s u
+}
+
 --Theory solving
-data TheorySolver sp lp = TheorySolver {
+data TheorySolver sp lp s u o = TheorySolver {
     unsatCoreState      :: [(sp, Bool)] -> Maybe [(sp, Bool)],
-    unsatCoreStateLabel :: [(sp, Bool)] -> [(lp, Bool)] -> Maybe ([(sp, Bool)], [(lp, Bool)])
+    unsatCoreStateLabel :: [(sp, Bool)] -> [(lp, Bool)] -> Maybe ([(sp, Bool)], [(lp, Bool)]),
+    eQuant              :: [(sp, Bool)] -> [(lp, Bool)] -> 
+                           Ops s u -> 
+                           --init pred map
+                           Map sp (VarInfo s u) -> 
+                           --init var map
+                           Map String [VarInfo s u] -> 
+                           --state pred db
+                           Map sp (VarInfo s u) -> 
+                           --state var db
+                           Map String [VarInfo s u] -> 
+                           --free var offset
+                           Int -> 
+                           --return 
+                           ST s (EQuantRet sp s u o)
 }
 
 createCubeNodes :: Ops s u -> [Int] -> ST s (DDNode s u, [DDNode s u])
@@ -872,7 +893,7 @@ bddSynopsis Ops{..} node = case node==bfalse of
 
 --Refine one of the consistency relations so that we make progress. Does not promote untracked state.
 --TODO: check for existence of label first
-refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver sp lp -> RefineDynamic s u o sp lp -> RefineStatic s u -> DDNode s u -> ST s (Maybe (RefineDynamic s u o sp lp))
+refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver sp lp s u o -> RefineDynamic s u o sp lp -> RefineStatic s u -> DDNode s u -> ST s (Maybe (RefineDynamic s u o sp lp))
 refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win = do
     win' <- win .| goal
     t0 <- mapVars win'
@@ -966,19 +987,36 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                             refineConsistency ops ts (rd {consistentPlusCUL = consistentPlusCUL'}) rs win
                         Nothing -> do
                             --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
-                            traceST "refining consistentMinusCUL"
-                            consistentMinusCUL'' <- makeCubeIdx ops c --TODO wrong
-                            let enTrue  = zip (map ((+1) . fst) labelIndices) (repeat True)
-                                enFalse = zip (enablingVars \\ (map ((+1) . fst) labelIndices)) (repeat False)
-                            enablePreds          <- makeCubeIdx ops $ enTrue ++ enFalse
-                            consistentMinusCUL'  <- consistentMinusCUL'' .& enablePreds
-                            deref consistentMinusCUL'
-                            deref enablePreds
+                            traceST "predicates are consistent. refining consistentMinusCUL..."
+                            EQuantRet {..} <- eQuant cStatePreds cLabelPreds ops initPreds initVars statePreds stateVars nextAvlIndex 
+
+                            let statePreds' = map (first $ fst . fromJustNote "refineConsistency" . flip Map.lookup statePreds) cStatePreds
+                                labelPreds' = map (first $ fromJustNote "refineConsistency" . flip Map.lookup labelPreds) cLabelPreds
+
+                            stateCube <- uncurry computeCube $ unzip statePreds'
+                            let func ((lp, le), pol) = [(fst lp, pol), (fst le, True)]
+                            labelCube <- uncurry computeCube $ unzip $ concatMap func labelPreds'
+
+                            consistentCube' <- stateCube .& labelCube
+                            consistentCube  <- consistentCube' .& equantExpr
+
+                            consistentMinusCUL'  <- consistentMinusCUL .| consistentCube
+
+                            let newUntracked = Map.elems (equantStatePreds Map.\\ statePreds) ++ concat (Map.elems (equantStateVars Map.\\ stateVars))
+                            untrackedState' <- addVariables ops newUntracked untrackedState
+                
                             check ops
-                            return $ Just $ rd {consistentMinusCUL = consistentMinusCUL'}
+                            return $ Just $ rd {
+                                consistentMinusCUL = consistentMinusCUL', 
+                                untrackedState     = untrackedState',
+                                nextAvlIndex       = equantEnd,
+                                stateRev           = error "refineConsistency",
+                                statePreds         = equantStatePreds,
+                                stateVars          = equantStateVars
+                            }
 
 --The abstraction-refinement loop
-absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u o sp lp -> TheorySolver sp lp -> o -> ST s Bool
+absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u o sp lp -> TheorySolver sp lp s u o -> o -> ST s Bool
 absRefineLoop m spec ts abstractorState = do
     let ops@Ops{..} = constructOps m
     (rd, rs) <- initialAbstraction ops spec abstractorState

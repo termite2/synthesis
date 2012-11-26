@@ -53,6 +53,11 @@ theUCLabel solver statePreds labelPreds = case unsatCore solver (statePreds ++ l
     (SatMaybe, _) -> error "Solver returned SatMaybe"
     (SatNo, uc) -> Just $ partition (flip elem (map fst statePreds) . fst) uc
 
+theEQuant m (Solver _ _ equant) statePreds labelPreds ops ipdb ivdb spdb svdb offset = do
+    let state = PredDBState m ipdb ivdb spdb svdb (error "shouldn't need label preds") (error "shouldn't need label vars")  offset (error "should not need abstractor state")
+    (res, PredDBState {..}) <- runStateT (equant (statePreds ++ labelPreds) (error "what is this??")) state
+    return $ EQuantRet dbStatePreds dbStateVars dbNextIndex res 
+
 --Arguments: AbsGame structure, abstractor state
 doEverything :: (Ord p, Show p) => AbsGame p o s u -> o -> Solver p s u -> ST s Bool
 doEverything absGame initialAbsState solver = do
@@ -64,7 +69,8 @@ doEverything absGame initialAbsState solver = do
         }
         theorySolver = TheorySolver {
             unsatCoreState      = theUCState solver,
-            unsatCoreStateLabel = theUCLabel solver
+            unsatCoreStateLabel = theUCLabel solver,
+            eQuant              = theEQuant m solver
         }
     absRefineLoop m abstractor theorySolver initialAbsState
 
