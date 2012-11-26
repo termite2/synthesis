@@ -10,6 +10,7 @@ import Control.Monad
 import Data.List
 import Data.Maybe
 import Data.Tuple.All
+import Data.Tuple
 import Debug.Trace as T
 
 import Safe
@@ -277,22 +278,18 @@ data RefineStatic s u = RefineStatic {
     init :: DDNode s u
 }
 
-data Variable p v where
-    Predicate :: p -> Variable p v
-    NonAbs    :: String -> v -> Variable p v
+data Variable p s u where
+    Predicate :: p -> VarInfo s u -> Variable p s u
+    NonAbs    :: String -> [VarInfo s u] -> Variable p s u
 
-instance (Show p, Show v) => Show (Variable p v) where
-    show (Predicate p) = "Predicate variable: " ++ show p
-    show (NonAbs n v)  = "Non-abstracted variable: " ++ show n
+instance (Show p) => Show (Variable p s u) where
+    show (Predicate p v) = "Predicate variable: " ++ show p ++ ", indices: " ++ show (snd v)
+    show (NonAbs n v)  = "Non-abstracted variable: " ++ show n ++ ", indices: " ++ show (map snd v)
 
-getPredicate :: Variable p v -> Maybe p
-getPredicate (Predicate p) = Just p
-getPredicate (NonAbs n v)  = Nothing
-
-getPredicates :: [(Variable p v, a)] -> [(p, a)]
+getPredicates :: [(Variable p s u, a)] -> [(p, a)]
 getPredicates = mapMaybe func 
     where
-    func (Predicate p, x) = Just (p, x)
+    func (Predicate p _, x) = Just (p, x)
     func _                = Nothing
 
 type VarInfo s u = (DDNode s u, Int)
@@ -314,8 +311,8 @@ data RefineDynamic s u o sp lp = RefineDynamic {
     next               :: Section s u,
     nextAvlIndex       :: Int,
     --mappings from index to variable/predicate
-    stateRev           :: Map Int (Variable sp [DDNode s u]),
-    labelRev           :: Map Int (Variable lp [DDNode s u], Bool),
+    stateRev           :: Map Int (Variable sp s u),
+    labelRev           :: Map Int (Variable lp s u, Bool),
     --below maps are used for update function compilation and constructing
     initPreds          :: Map sp (VarInfo s u),
     initVars           :: Map String [VarInfo s u],
@@ -330,29 +327,29 @@ data RefineDynamic s u o sp lp = RefineDynamic {
 }
 
 --convenience functions for constructing the reverse mappings
-constructStatePredRev :: [(sp, VarInfo s u)] -> Map Int (Variable sp [DDNode s u])
+constructStatePredRev :: [(sp, VarInfo s u)] -> Map Int (Variable sp s u)
 constructStatePredRev pairs = Map.fromList $ map (uncurry func) pairs
     where
-    func pred vi = (idx vi, Predicate pred)
+    func pred vi = (idx vi, Predicate pred vi)
 
-constructStateVarRev  :: [(String, [VarInfo s u])] -> Map Int (Variable sp [DDNode s u])
+constructStateVarRev  :: [(String, [VarInfo s u])] -> Map Int (Variable sp s u)
 constructStateVarRev pairs = Map.fromList $ concatMap (uncurry func) pairs
     where
     func name vars = map func' vars
         where
-        func' var = (idx var, NonAbs name (map node vars))
+        func' var = (idx var, NonAbs name vars)
 
-constructLabelPredRev :: [(lp, (VarInfo s u, VarInfo s u))] -> Map Int (Variable lp [DDNode s u], Bool)
+constructLabelPredRev :: [(lp, (VarInfo s u, VarInfo s u))] -> Map Int (Variable lp s u, Bool)
 constructLabelPredRev pairs = Map.fromList $ concatMap (uncurry func) pairs
     where
-    func pred (vi, evi) = [(idx vi, (Predicate pred, True)), (idx evi, (Predicate pred, False))]
+    func pred (vi, evi) = [(idx vi, (Predicate pred vi, True)), (idx evi, (Predicate pred evi, False))]
 
-constructLabelVarRev  :: [(String, ([VarInfo s u], VarInfo s u))] -> Map Int (Variable lp [DDNode s u], Bool)
+constructLabelVarRev  :: [(String, ([VarInfo s u], VarInfo s u))] -> Map Int (Variable lp s u, Bool)
 constructLabelVarRev pairs = Map.fromList $ concatMap (uncurry func) pairs
     where
-    func name (vi, evi) = (idx evi, (NonAbs name (map node vi), False)) : map func' vi
+    func name (vi, evi) = (idx evi, (NonAbs name vi, False)) : map func' vi
         where
-        func' var = (idx var, (NonAbs name (map node vi), True))
+        func' var = (idx var, (NonAbs name vi, True))
 
 format :: [(String, String)] -> String
 format = concat . map ('\t' :) . intersperse "\n" . map (uncurry (\x y -> x ++ ": " ++ y))
@@ -558,12 +555,12 @@ check ops = debugCheck ops >> checkKeys ops
 
 asterixs = "*******************************************"
 
-assign :: Int -> [(a, [Int])] -> ([(a, [Int])], Int)
+assign :: Int -> [(a, [b])] -> ([(a, [Int])], Int)
 assign offset []       = ([], offset)
 assign offset ((nm, vars) : rst) = ((nm, take (length vars) [offset..]) : rest, end)
     where (rest, end) = assign (offset + length vars) rst
 
-assignPreds :: Int -> [(a, Int)] -> ([(a, Int)], Int)
+assignPreds :: Int -> [(a, b)] -> ([(a, Int)], Int)
 assignPreds offset [] = ([], offset)
 assignPreds offset ((nm, var) : rst) = ((nm, offset) : rest, end)
     where (rest, end) = assignPreds (offset + 1) rst
@@ -601,6 +598,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
     traceST "***************************************\n\n"
     --create the consistency constraints
     let consistentPlusCU   = btrue
+        --TODO make this false
         consistentMinusCUL = btrue
         consistentPlusCUL  = btrue
     ref consistentPlusCU
@@ -726,20 +724,38 @@ makePairs Ops{..} inds = sequence $ map func inds
         return (n, idx)
 
 --Promote untracked state variables to full state variables so that we can make progress towards the goal. Does not refine the consistency relations.
-promoteUntracked :: (Ord lp, Ord sp) => Ops s u -> Abstractor s u o sp lp -> RefineDynamic s u o sp lp -> [Int] -> ST s (RefineDynamic s u o sp lp)
+promoteUntracked :: (Ord lp, Ord sp, Show sp) => Ops s u -> Abstractor s u o sp lp -> RefineDynamic s u o sp lp -> [Int] -> ST s (RefineDynamic s u o sp lp)
 promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     --look up the predicates to promote
-    let refinePreds    = map (fromJustNote "promoteUntracked" . flip Map.lookup stateRev) indices
+    let refineVars    = map (fromJustNote "promoteUntracked: untracked indices not in stateRev" . flip Map.lookup stateRev) indices
+    traceST $ "Promoting: " ++ show refineVars
 
     --create a section consisting of the new variables to promote
-    toPromote          <- makePairs ops indices
+    let toPromoteVars' = mapMaybe func refineVars 
+            where
+            func (Predicate p _) = Nothing
+            func (NonAbs n v)    = Just (n, v)
 
-    --create a section consisting of the newly allocated next states for the promoted variables
-    nextPairs          <- makePairs ops [nextAvlIndex ..  nextAvlIndex + length indices - 1]
-    let nextAvlIndex   = nextAvlIndex + length indices
+    let toPromotePreds' = mapMaybe (uncurry func) $ zip indices refineVars
+            where
+            func idx (Predicate p v) = Just (p, v)
+            func _   (NonAbs _ _)    = Nothing
+
+    let allRefineVars = nub (concat (map snd toPromoteVars')) ++ map snd toPromotePreds'
+    traceST $ show allRefineVars
+
+    let (toPromoteVars, ni)             = assign nextAvlIndex toPromoteVars'
+    let (toPromotePreds, nextAvlIndex') = assignPreds ni toPromotePreds'
+
+    toPromotePreds <- sequence $ map (func . second ithVar) toPromotePreds
+    toPromoteVars  <- sequence $ map (func . second (sequence . map ithVar)) toPromoteVars
+
+    let nextIndices = [nextAvlIndex .. nextAvlIndex' - 1]
+    traceST $ "Adding next indices: " ++ show nextIndices
+    nextPairs <- sequence $ map (func . (id &&& ithVar)) nextIndices
 
     --compute the update functions
-    UpdateAbsRet {..}  <- updateAbs ops initPreds initVars statePreds stateVars labelPreds labelVars nextAvlIndex abstractorState undefined undefined 
+    UpdateAbsRet {..}  <- updateAbs ops initPreds initVars statePreds stateVars labelPreds labelVars nextAvlIndex' abstractorState toPromotePreds toPromoteVars
     updateExprConj <- conj ops updateExpr
 
     --update the transition relation
@@ -747,32 +763,43 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     deref updateExprConj
     deref trans
 
+    let newUntracked = Map.elems (updateStatePreds Map.\\ statePreds) ++ concat (Map.elems (updateStateVars Map.\\ stateVars))
+    let newLabel     = concatMap pairToList (Map.elems (updateLabelPreds Map.\\ labelPreds)) ++ concatMap (uncurry (flip (:))) (Map.elems (updateLabelVars Map.\\ labelVars))
+
     --update the sections
-    trackedState       <- addVariables    ops toPromote trackedState 
-    untrackedState'    <- removeVariables ops toPromote untrackedState
-    untrackedState     <- addVariables    ops undefined untrackedState'
-    label              <- addVariables    ops undefined label
-    next               <- addVariables    ops nextPairs next
+    trackedState       <- addVariables    ops allRefineVars trackedState 
+    untrackedState'    <- removeVariables ops allRefineVars untrackedState
+    untrackedState     <- addVariables    ops newUntracked  untrackedState'
+    label              <- addVariables    ops newLabel label
+    next               <- addVariables    ops (map swap nextPairs) next
+
+    traceST $ show $ inds trackedState
+    traceST $ show $ inds next
 
     --update the predicate dbs
-    let statePreds'     = insertList undefined statePreds
-    let labelPreds'     = insertList undefined labelPreds
+    let statePreds'     = insertList (error "promote untracked") statePreds
+    let labelPreds'     = insertList (error "promote untracked") labelPreds
     
     --update the untracked preds reverse map
-    let stateRev'       = insertList (zip indices refinePreds) stateRev
+    let stateRev'       = insertList (zip indices undefined) stateRev
 
     --update the consistency relations
     consistentPlusCU   <- return consistentPlusCU   
     consistentPlusCUL  <- return consistentPlusCUL 
 
-    newEnFalse <- makeCube ops $ zip undefined (repeat False)
+    --TODO fix
+    {-
+    newEnFalse <- makeCube ops $ zip (error "promote untracked") (repeat False)
     consistentMinusCUL' <- consistentMinusCUL .& newEnFalse
-    deref consistentMinusCUL'
-    deref newEnFalse
+    -}
+    let consistentMinusCUL' = btrue
+    deref consistentMinusCUL
 
-    let enablingVars' = enablingVars ++ undefined
+    --deref newEnFalse
 
-    let labelRev' = insertList (concatMap func undefined) labelRev
+    let enablingVars' = enablingVars -- ++ (error "promote untracked")
+
+    let labelRev' = labelRev --insertList (concatMap func (error "promote untracked")) labelRev
             where func (lp, ((_, i), (_, e))) = [(i, (lp, True)), (e, (lp, False))]
 
     return $ RefineDynamic {
@@ -789,7 +816,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
         statePreds         = statePreds',
         labelPreds         = labelPreds',
         enablingVars       = enablingVars', 
-        labelRev           = undefined,
+        labelRev           = labelRev',
         abstractorState    = updateAbsState
     }
 
