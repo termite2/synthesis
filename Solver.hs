@@ -27,7 +27,9 @@ data Solver p s u = forall o . Solver {
     -- a conjunction of predicates.  May introduce new predicates.
     -- Returns logic relation that represents the formula after 
     -- quantification.
-    equant :: [(p, Bool)] -> [String] -> PredicateDB p o s u (DDNode s u)
+    equant :: [(p, Bool)] -> [String] -> PredicateDB p o s u (DDNode s u),
+
+    predVars :: p -> [(String, VarCategory)]
 }
 
 

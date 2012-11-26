@@ -33,5 +33,5 @@ data AbsGame p o s u = AbsGame {
     -- Output: relation between current-state abstract variables and 
     -- next-state values of input variables
     gameVarUpdateC :: [(AbsVar p, [DDNode s u])] -> PredicateDB p o s u [DDNode s u],
-    gameVarUpdateU :: [(AbsVar p, [DDNode s u])] -> PredicateDB p o s u [DDNode s u]
+    gameVarUpdateU :: [(AbsVar p, [DDNode s u])] -> PredicateDB p o s u [DDNode s u]    
 }

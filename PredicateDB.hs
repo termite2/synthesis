@@ -26,11 +26,6 @@ data VarCategory = VarState
                  | VarTmp
                  deriving (Eq)
 
--- Predicate class.  A predicate can be converted to a string and compared
--- with other predicates.  
-class (Show p, Eq p, Ord p) => Pred p where
-    predOverlap :: p -> p -> Bool   -- True if predicates share a common variable
-
 data AbsVar p = PredVar    {avarPred::p}
               | NonPredVar {avarName::String, avarSize::Int}
 

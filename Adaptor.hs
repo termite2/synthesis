@@ -53,7 +53,7 @@ theUCLabel solver statePreds labelPreds = case unsatCore solver (statePreds ++ l
     (SatMaybe, _) -> error "Solver returned SatMaybe"
     (SatNo, uc) -> Just $ partition (flip elem (map fst statePreds) . fst) uc
 
-theEQuant m (Solver _ _ equant) statePreds labelPreds ops ipdb ivdb spdb svdb offset = do
+theEQuant m (Solver _ _ equant _) statePreds labelPreds ops ipdb ivdb spdb svdb offset = do
     let state = PredDBState m ipdb ivdb spdb svdb (error "shouldn't need label preds") (error "shouldn't need label vars")  offset (error "should not need abstractor state")
     (res, PredDBState {..}) <- runStateT (equant (statePreds ++ labelPreds) (error "what is this??")) state
     return $ EQuantRet dbStatePreds dbStateVars dbNextIndex res 
