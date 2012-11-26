@@ -601,7 +601,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
     traceST "***************************************\n\n"
     --create the consistency constraints
     let consistentPlusCU   = btrue
-        consistentMinusCUL = bfalse
+        consistentMinusCUL = btrue
         consistentPlusCUL  = btrue
     ref consistentPlusCU
     ref consistentMinusCUL
@@ -700,15 +700,20 @@ refineLeastPreds (Ops{..}) (RefineDynamic{..}) newSU
 
 pickUntrackedToPromote :: Ops s u -> RefineDynamic s u o sp lp -> RefineStatic s u -> DDNode s u -> ST s (Maybe [Int])
 pickUntrackedToPromote ops@Ops{..} rd@RefineDynamic{..} RefineStatic{..} win = do
+    traceST "Picking untracked to promote"
     hasOutgoings <- bexists (cube next) trans
     win' <- win .| goal
     su    <- cPre' ops rd hasOutgoings win'
+    traceST $ bddSynopsis ops win
+    traceST $ bddSynopsis ops goal
+    traceST $ bddSynopsis ops win'
+    traceST $ bddSynopsis ops su
     deref hasOutgoings
-    traceST $ "Asdfasdf"
-    newSU <- su .& bnot win'
-    error "halt"
+    newSU <- su .& bnot win
+    traceST $ bddSynopsis ops newSU
     deref win'
     deref su
+    traceST $ "boo"
     res <- refineLeastPreds ops rd newSU
     deref newSU
     return res
@@ -806,7 +811,7 @@ bddSynopsis Ops{..} node = case node==bfalse of
                                True -> "Zero"
                                False -> case node==btrue of
                                             True -> "True"
-                                            False -> "Non-constant"
+                                            False -> "Non-constant: " ++ show (C.toInt node)
 
 --Refine one of the consistency relations so that we make progress. Does not promote untracked state.
 --TODO: check for existence of label first
@@ -957,10 +962,6 @@ absRefineLoop m spec ts abstractorState = do
                                     Nothing -> do
                                         traceST "Game is not winning"
                                         deref winRegion
-                                        --Below line is a hack to make
-                                        --haskell print things because for
-                                        --some reason it doesnt
-                                        error "asdf"
                                         return False
 
 {-
