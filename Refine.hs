@@ -1,5 +1,5 @@
 {-# LANGUAGE RecordWildCards, ScopedTypeVariables, GADTs #-}
-module Refine (absRefineLoop, VarInfo, GoalAbsRet(..), UpdateAbsRet(..), InitAbsRet(..), Abstractor(..), TheorySolver(..), EQuantRet(..)) where
+module Refine (absRefineLoop, VarInfo, GoalAbsRet(..), UpdateAbsRet(..), InitAbsRet(..), Abstractor(..), TheorySolver(..), EQuantRet(..), traceST) where
 
 import Control.Monad.ST.Lazy
 import qualified Data.Map as Map
@@ -997,8 +997,8 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                             let func ((lp, le), pol) = [(fst lp, pol), (fst le, True)]
                             labelCube <- uncurry computeCube $ unzip $ concatMap func labelPreds'
 
-                            consistentCube' <- stateCube .& labelCube
-                            consistentCube  <- consistentCube' .& equantExpr
+                            --consistentCube' <- stateCube .& labelCube
+                            consistentCube  <- labelCube .& equantExpr
 
                             consistentMinusCUL'  <- consistentMinusCUL .| consistentCube
 
