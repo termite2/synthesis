@@ -142,7 +142,6 @@ concPart ops@Ops{..} concVars concCube restCube node = do
     concOnly <- bexists restCube node
     allMT <- allMinterms ops concVars concOnly
     support <- mapM supportIndices allMT
-    traceST $ show support
     forM allMT $ \mt -> do 
         rest <- andAbstract concCube mt node
         return (mt, rest)
@@ -200,7 +199,6 @@ formatPrimeImplicants = concat . intersperse "\n" . map func
 stateInterp :: Ops s u -> [(String, [Int])] -> DDNode s u -> ST s [(String, [Int])]
 stateInterp Ops{..} theList node = do
     st <- satCube node
-    traceST $ show st
     return $ map (func st) theList
     where
     func bits (name, idxs) = (name, (map b2IntLSF expanded))
@@ -754,13 +752,8 @@ pickUntrackedToPromote ops@Ops{..} rd@RefineDynamic{..} RefineStatic{..} win = d
     hasOutgoings <- bexists (cube next) trans
     win' <- win .| goal
     su    <- cPre' ops rd hasOutgoings win'
-    traceST $ bddSynopsis ops win
-    traceST $ bddSynopsis ops goal
-    traceST $ bddSynopsis ops win'
-    traceST $ bddSynopsis ops su
     deref hasOutgoings
     newSU <- su .& bnot win
-    traceST $ bddSynopsis ops newSU
     deref win'
     deref su
     res <- refineLeastPreds ops rd newSU
@@ -793,7 +786,6 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
             func _   (NonAbs _ _)    = Nothing
 
     let allRefineVars = nub (concat (map snd toPromoteVars')) ++ map snd toPromotePreds'
-    traceST $ show allRefineVars
 
     let (toPromoteVars, ni)             = assign nextAvlIndex toPromoteVars'
     let (toPromotePreds, nextAvlIndex') = assignPreds ni toPromotePreds'
@@ -911,12 +903,6 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
     deref t3
     traceST "***************************"
     traceST "Consistency refinement"
-    traceST $ bddSynopsis ops win'
-    traceST $ bddSynopsis ops tt3
-    traceST $ bddSynopsis ops hasOutgoings
-    traceST $ bddSynopsis ops t3
-    traceST $ bddSynopsis ops t2
-    traceST $ bddSynopsis ops t1
     t4 <- tt3 .& bnot win
     --deref win'
     --deref tt3
@@ -979,7 +965,6 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                                     func idx polarity = case fromJustNote "refineConsistency3" $ Map.lookup idx labelRev of
                                         (_, False)   -> Nothing
                                         (pred, True) -> Just (pred, polarity)
-                            traceST $ "state preds for solver: " ++ show cStatePreds
                             traceST $ "label preds for solver: " ++ show cLabelPreds
                             case unsatCoreStateLabel cStatePreds cLabelPreds of
                                 Just (statePairs, labelPairs) -> do
@@ -1011,12 +996,6 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                                     consistentCube  <- labelCube .& equantExpr
 
                                     consistentMinusCUL'  <- consistentMinusCUL .| consistentCube
-                                    traceST $ "refineinfo: " 
-                                    traceST $ bddSynopsis ops labelCube
-                                    traceST $ bddSynopsis ops equantExpr 
-                                    traceST $ bddSynopsis ops consistentCube
-                                    traceST $ bddSynopsis ops consistentMinusCUL'
-                                    traceST $ "end refine info"
 
                                     let newUntracked = Map.elems (equantStatePreds Map.\\ statePreds) ++ concat (Map.elems (equantStateVars Map.\\ stateVars))
                                     untrackedState' <- addVariables ops newUntracked untrackedState
@@ -1064,7 +1043,7 @@ absRefineLoop m spec ts abstractorState = do
                         res <- refineConsistency ops ts rd rs winRegion 
                         case res of
                             Just newRD -> do
-                                traceST "Refined consistency relations. Resolving"
+                                traceST "Refined consistency relations. Re-solving..."
                                 refineLoop' newRD winRegion
                             Nothing -> do
                                 traceST "Could not refine consistency relations. Attempting to refine untracked state variables"
