@@ -47,6 +47,7 @@ deleteList = flip $ foldl (flip Map.delete)
 data Ops s u = Ops {
     band, bor, bxor, bxnor, bimp, bnand, bnor :: DDNode s u -> DDNode s u -> ST s (DDNode s u),
     (.&), (.|), (.->)                         :: DDNode s u -> DDNode s u -> ST s (DDNode s u),
+    bite                                      :: DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u),
     bnot                                      :: DDNode s u -> DDNode s u,
     btrue, bfalse                             :: DDNode s u,
     bforall, bexists                          :: DDNode s u -> DDNode s u -> ST s (DDNode s u),
@@ -83,6 +84,7 @@ constructOps m = Ops {..}
     (.&)                   = C.band             m
     (.|)                   = C.bor              m
     (.->) x y              = C.bor              m (C.bnot x) y
+    bite                   = C.bite             m
     bnot                   = C.bnot              
     btrue                  = C.bone             m
     bfalse                 = C.bzero            m
@@ -905,7 +907,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
     deref t2
     hasOutgoings <- bexists (cube next) trans
     tt3 <- hasOutgoings .& t3
-    deref hasOutgoings
+    --deref hasOutgoings
     deref t3
     traceST "***************************"
     traceST "Consistency refinement"
@@ -915,9 +917,9 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
     traceST $ bddSynopsis ops t3
     traceST $ bddSynopsis ops t2
     traceST $ bddSynopsis ops t1
-    t4 <- tt3 .& bnot win'
-    deref win'
-    deref tt3
+    t4 <- tt3 .& bnot win
+    --deref win'
+    --deref tt3
     case t4==bfalse of 
         True  -> do
             --no refinement of consistency relations will make progress
@@ -954,66 +956,84 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                     check ops
                     return $ Just $ rd {consistentPlusCU = consistentPlusCU', consistentPlusCUL = consistentPlusCUL'}
                 Nothing -> do
-                    --consistentPlusCU cannot be refined but maybe consistentPlusCUL or consistentMinusCUL can be
                     traceST "consistentPlusCU could not be refined"
-                    (t6, sz) <- largestCube t4
-                    t7 <- makePrime t6 t4
-                    deref t4
-                    deref t6
-                    c <- presentVars ops t7
-                    deref t7
-                    let (stateIndices, labelIndices) = partition (\(p, x) -> elem p (inds trackedState) || elem p (inds untrackedState)) c
-                    let cStatePreds = getPredicates $ map (first $ fromJustNote "refineConsistency2" . flip Map.lookup stateRev) stateIndices
-                    let cLabelPreds = getPredicates $ catMaybes $ map (uncurry func) labelIndices
-                            where
-                            func idx polarity = case fromJustNote "refineConsistency3" $ Map.lookup idx labelRev of
-                                (_, False)   -> Nothing
-                                (pred, True) -> Just (pred, polarity)
-                    traceST $ "state preds for solver: " ++ show cStatePreds
-                    traceST $ "label preds for solver: " ++ show cLabelPreds
-                    case unsatCoreStateLabel cStatePreds cLabelPreds of
-                        Just (statePairs, labelPairs) -> do
-                            --consistentPlusCUL can be refined
-                            traceST "refining consistentPlusCUL"
-                            inconsistentState <- makeCube ops $ map (first (node . fromJustNote "refineConsistency" . flip Map.lookup statePreds)) statePairs
-                            inconsistentLabel <- makeCube ops $ map (first (node . sel1 . fromJustNote "refineConsistency" . flip Map.lookup labelPreds)) labelPairs
-                            inconsistent <- inconsistentState .& inconsistentLabel
-                            deref inconsistentState
-                            deref inconsistentLabel
-                            consistentPlusCUL' <- consistentPlusCUL .& bnot inconsistent
-                            deref inconsistent
-                            deref consistentPlusCUL
+                    --consistentPlusCU cannot be refined but maybe consistentPlusCUL or consistentMinusCUL can be
+                    cpr <- cPre' ops rd hasOutgoings win'
+                    t4 <- tt3 .& bnot cpr
+                    case t4==bfalse of
+                        True -> do
+                            traceST "consistentPlusCUL could not be refined"
                             check ops
-                            refineConsistency ops ts (rd {consistentPlusCUL = consistentPlusCUL'}) rs win
-                        Nothing -> do
-                            --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
-                            traceST "predicates are consistent. refining consistentMinusCUL..."
-                            EQuantRet {..} <- eQuant cStatePreds cLabelPreds ops initPreds initVars statePreds stateVars nextAvlIndex 
+                            return Nothing
+                        False -> do
+                            (t6, sz) <- largestCube t4
+                            t7 <- makePrime t6 t4
+                            deref t4
+                            deref t6
+                            c <- presentVars ops t7
+                            deref t7
+                            let (stateIndices, labelIndices) = partition (\(p, x) -> elem p (inds trackedState) || elem p (inds untrackedState)) c
+                            let cStatePreds = getPredicates $ map (first $ fromJustNote "refineConsistency2" . flip Map.lookup stateRev) stateIndices
+                            let cLabelPreds = getPredicates $ catMaybes $ map (uncurry func) labelIndices
+                                    where
+                                    func idx polarity = case fromJustNote "refineConsistency3" $ Map.lookup idx labelRev of
+                                        (_, False)   -> Nothing
+                                        (pred, True) -> Just (pred, polarity)
+                            traceST $ "state preds for solver: " ++ show cStatePreds
+                            traceST $ "label preds for solver: " ++ show cLabelPreds
+                            case unsatCoreStateLabel cStatePreds cLabelPreds of
+                                Just (statePairs, labelPairs) -> do
+                                    --consistentPlusCUL can be refined
+                                    traceST "refining consistentPlusCUL"
+                                    inconsistentState <- makeCube ops $ map (first (node . fromJustNote "refineConsistency" . flip Map.lookup statePreds)) statePairs
+                                    inconsistentLabel <- makeCube ops $ map (first (node . sel1 . fromJustNote "refineConsistency" . flip Map.lookup labelPreds)) labelPairs
+                                    inconsistent <- inconsistentState .& inconsistentLabel
+                                    deref inconsistentState
+                                    deref inconsistentLabel
+                                    consistentPlusCUL' <- consistentPlusCUL .& bnot inconsistent
+                                    deref inconsistent
+                                    deref consistentPlusCUL
+                                    check ops
+                                    refineConsistency ops ts (rd {consistentPlusCUL = consistentPlusCUL'}) rs win
+                                Nothing -> do
+                                    --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
+                                    traceST "predicates are consistent. refining consistentMinusCUL..."
+                                    EQuantRet {..} <- eQuant cStatePreds cLabelPreds ops initPreds initVars statePreds stateVars nextAvlIndex 
 
-                            let statePreds' = map (first $ fst . fromJustNote "refineConsistency" . flip Map.lookup statePreds) cStatePreds
-                                labelPreds' = map (first $ fromJustNote "refineConsistency" . flip Map.lookup labelPreds) cLabelPreds
+                                    let statePreds' = map (first $ fst . fromJustNote "refineConsistency" . flip Map.lookup statePreds) cStatePreds
+                                        labelPreds' = map (first $ fromJustNote "refineConsistency" . flip Map.lookup labelPreds) cLabelPreds
 
-                            stateCube <- uncurry computeCube $ unzip statePreds'
-                            let func ((lp, le), pol) = [(fst lp, pol), (fst le, True)]
-                            labelCube <- uncurry computeCube $ unzip $ concatMap func labelPreds'
+                                    stateCube <- uncurry computeCube $ unzip statePreds'
+                                    let func ((lp, le), pol) = [(fst lp, pol), (fst le, True)]
+                                    labelCube <- uncurry computeCube $ unzip $ concatMap func labelPreds'
 
-                            --consistentCube' <- stateCube .& labelCube
-                            consistentCube  <- labelCube .& equantExpr
+                                    --consistentCube' <- stateCube .& labelCube
+                                    consistentCube  <- labelCube .& equantExpr
 
-                            consistentMinusCUL'  <- consistentMinusCUL .| consistentCube
+                                    consistentMinusCUL'  <- consistentMinusCUL .| consistentCube
+                                    traceST $ "refineinfo: " 
+                                    traceST $ bddSynopsis ops labelCube
+                                    traceST $ bddSynopsis ops equantExpr 
+                                    traceST $ bddSynopsis ops consistentCube
+                                    traceST $ bddSynopsis ops consistentMinusCUL'
+                                    traceST $ "end refine info"
 
-                            let newUntracked = Map.elems (equantStatePreds Map.\\ statePreds) ++ concat (Map.elems (equantStateVars Map.\\ stateVars))
-                            untrackedState' <- addVariables ops newUntracked untrackedState
-                
-                            check ops
-                            return $ Just $ rd {
-                                consistentMinusCUL = consistentMinusCUL', 
-                                untrackedState     = untrackedState',
-                                nextAvlIndex       = equantEnd,
-                                stateRev           = error "refineConsistency",
-                                statePreds         = equantStatePreds,
-                                stateVars          = equantStateVars
-                            }
+                                    let newUntracked = Map.elems (equantStatePreds Map.\\ statePreds) ++ concat (Map.elems (equantStateVars Map.\\ stateVars))
+                                    untrackedState' <- addVariables ops newUntracked untrackedState
+
+                                    let statePredsRev  = constructStatePredRev $ Map.toList equantStatePreds
+                                        stateVarsRev   = constructStateVarRev  $ Map.toList equantStateVars
+                                        stateRev'      = Map.union statePredsRev stateVarsRev
+                        
+                                    check ops
+                                    return $ Just $ rd {
+                                        consistentMinusCUL = consistentMinusCUL', 
+                                        untrackedState     = untrackedState',
+                                        nextAvlIndex       = equantEnd,
+                                        stateRev           = stateRev',
+                                        statePreds         = equantStatePreds,
+                                        stateVars          = equantStateVars
+                                    }
 
 --The abstraction-refinement loop
 absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u o sp lp -> TheorySolver sp lp s u o -> o -> ST s Bool
