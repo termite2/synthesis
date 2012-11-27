@@ -879,10 +879,8 @@ refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolv
 refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win = do
     win' <- win .| goal
     t0 <- mapVars win'
-    t1 <- trans .-> t0
+    t2 <- liftM bnot $ andAbstract (cube next) trans (bnot t0)
     deref t0
-    t2 <- bforall (cube next) t1
-    deref t1
     t3 <- consistentPlusCUL .& t2
     deref t2
     hasOutgoings <- bexists (cube next) trans
