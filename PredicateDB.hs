@@ -24,7 +24,7 @@ import Refine
 
 data VarCategory = VarState
                  | VarTmp
-                 deriving (Eq, Show)
+                 deriving (Eq, Ord, Show)
 
 data AbsVar p = PredVar    {avarPred::p}
               | NonPredVar {avarName::String, avarSize::Int}
