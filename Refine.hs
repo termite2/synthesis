@@ -818,15 +818,10 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     next               <- addVariables    ops (map swap nextPairs) next
 
     --update the untracked preds reverse map
-    let stateRev'       = insertList (zip indices undefined) stateRev
+    let stateRev'       = constructStatePredRev (Map.toList updateStatePreds) `Map.union` constructStateVarRev (Map.toList updateStateVars)
 
-    --TODO fix
-    {-
-    newEnFalse <- makeCube ops $ zip (error "promote untracked") (repeat False)
-    consistentMinusCUL' <- consistentMinusCUL .& newEnFalse
-    -}
     consistentMinusCUL'' <- conj ops $ map (bnot . fst . snd) $ Map.elems $ updateLabelPreds Map.\\ labelPreds
-    let consistentMinusCUL' = consistentMinusCUL
+    consistentMinusCUL'  <- consistentMinusCUL .& consistentMinusCUL''
 
     --deref newEnFalse
 
