@@ -110,6 +110,7 @@ constructOps m = Ops {..}
     checkKeys              = C.checkKeys        m
     pickOneMinterm         = C.pickOneMinterm   m
 
+-- ==BDD utility functions==
 conj :: Ops s u -> [DDNode s u] -> ST s (DDNode s u)
 conj Ops{..} nodes = do
         ref btrue
@@ -120,8 +121,6 @@ conj Ops{..} nodes = do
         accum' <- accum .&  n
         deref accum
         go accum' ns
-
--- ===Graph drawing===
 
 allMinterms :: Ops s u -> [DDNode s u] -> DDNode s u -> ST s [DDNode s u]
 allMinterms Ops{..} vars node = do
@@ -161,6 +160,8 @@ primeCover Ops{..} node = do
             deref node
             res <- primeCover' next
             return $ pm : res
+
+-- ===BDD interpretation ===
 
 listPrimeImplicants :: Ops s u -> [[(String, [Int])]] -> DDNode s u -> ST s [[[(String, [Int])]]]
 listPrimeImplicants ops@Ops{..} varss trans = do
@@ -213,6 +214,8 @@ formatStateInterp :: [(String, [Int])] -> String
 formatStateInterp = concat . intersperse ", " . map (uncurry func)
     where
     func name values = name ++ ": " ++ show values
+
+-- ===Graph drawing ===
 
 toDot :: (Show sp, Show lp) => Ops s u -> Map sp (VarInfo s u) -> Map String [VarInfo s u] -> Map sp (VarInfo s u) -> Map String [VarInfo s u] -> Map lp (VarInfo s u, VarInfo s u) -> Map String ([VarInfo s u], VarInfo s u) -> [DDNode s u] -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s String
 toDot ops@Ops{..} spMap svMap upMap uvMap lpMap lvMap stateVars nextVars stateCube untrackedCube labelCube nextCube goal init trans = do
