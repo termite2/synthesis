@@ -799,7 +799,8 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
 
     --compute the update functions
     UpdateAbsRet {..}  <- updateAbs ops initPreds initVars statePreds stateVars labelPreds labelVars nextAvlIndex' abstractorState toPromotePreds toPromoteVars
-    updateExprConj <- conj ops updateExpr
+    updateExprConj' <- conj ops updateExpr
+    updateExprConj  <- doEnVars ops updateExprConj' $ map (fst *** fst) $ Map.elems updateLabelPreds
 
     --update the transition relation
     trans'             <- trans .& updateExprConj
@@ -816,33 +817,22 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     label              <- addVariables    ops newLabel label
     next               <- addVariables    ops (map swap nextPairs) next
 
-    --update the predicate dbs
-    let statePreds'     = insertList (error "promote untracked") statePreds
-    let stateVars'      = undefined
-    let labelPreds'     = insertList (error "promote untracked") labelPreds
-    let labelVars'      = undefined
-    
     --update the untracked preds reverse map
     let stateRev'       = insertList (zip indices undefined) stateRev
-
-    --update the consistency relations
-    consistentPlusCU   <- return consistentPlusCU   
-    consistentPlusCUL  <- return consistentPlusCUL 
 
     --TODO fix
     {-
     newEnFalse <- makeCube ops $ zip (error "promote untracked") (repeat False)
     consistentMinusCUL' <- consistentMinusCUL .& newEnFalse
     -}
-    let consistentMinusCUL' = btrue
-    deref consistentMinusCUL
+    consistentMinusCUL'' <- conj ops $ map (bnot . fst . snd) $ Map.elems $ updateLabelPreds Map.\\ labelPreds
+    let consistentMinusCUL' = consistentMinusCUL
 
     --deref newEnFalse
 
-    let enablingVars' = enablingVars -- ++ (error "promote untracked")
+    let enablingVars' = map (idx . snd) (Map.elems updateLabelPreds) ++ map (idx . snd) (Map.elems updateLabelVars)
 
-    let labelRev' = labelRev --insertList (concatMap func (error "promote untracked")) labelRev
-            where func (lp, ((_, i), (_, e))) = [(i, (lp, True)), (e, (lp, False))]
+    let labelRev' = constructLabelPredRev (Map.toList updateLabelPreds) `Map.union` constructLabelVarRev (Map.toList updateLabelVars)
 
     return $ RefineDynamic {
         trans              = trans',
@@ -855,10 +845,10 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
         next               = next,
         nextAvlIndex       = updateOffset,
         stateRev           = stateRev',
-        statePreds         = statePreds',
-        stateVars          = stateVars',
-        labelPreds         = labelPreds',
-        labelVars          = labelVars',
+        statePreds         = updateStatePreds,
+        stateVars          = updateStateVars,
+        labelPreds         = updateLabelPreds,
+        labelVars          = updateLabelVars,
         enablingVars       = enablingVars', 
         labelRev           = labelRev',
         abstractorState    = updateAbsState,
