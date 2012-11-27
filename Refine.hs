@@ -276,6 +276,113 @@ toDot ops@Ops{..} spMap svMap upMap uvMap lpMap lvMap stateVars nextVars stateCu
                     func 1 = [True]
                     func 2 = [False, True]
 
+-- ===Input data structures===
+data GoalAbsRet s u o sp = GoalAbsRet {
+    goalStatePreds :: Map sp (VarInfo s u),
+    goalStateVars  :: Map String [VarInfo s u],
+    endGoalState   :: Int,
+    goalExpr       :: DDNode s u,
+    goalAbsState   :: o
+}
+
+data UpdateAbsRet s u o sp lp = UpdateAbsRet {
+    updateStatePreds :: Map sp (VarInfo s u),
+    updateStateVars  :: Map String [VarInfo s u],
+    updateLabelPreds :: Map lp (VarInfo s u, VarInfo s u),
+    updateLabelVars  :: Map String ([VarInfo s u], VarInfo s u),
+    updateOffset     :: Int,
+    --predicate variable, enabling variable
+    updateExpr       :: [DDNode s u],
+    updateAbsState   :: o
+}
+
+data InitAbsRet s u o sp = InitAbsRet {
+    initStatePreds :: Map sp (VarInfo s u),
+    initStateVars  :: Map String [VarInfo s u],
+    initExpr       :: DDNode s u,
+    initOffset     :: Int,
+    initAbsState   :: o
+}
+
+--Input to the refinement algorithm. Represents the spec.
+data Abstractor s u o sp lp = Abstractor {
+    goalAbs :: 
+        Ops s u -> 
+        --init pred map
+        Map sp (VarInfo s u) -> 
+        --init var map 
+        Map String [VarInfo s u] -> 
+        --state pred db
+        Map sp (VarInfo s u) -> 
+        --variable DB
+        Map String [VarInfo s u] -> 
+        --free var offset
+        Int -> 
+        --Abstractor state
+        o -> 
+        --return
+        ST s (GoalAbsRet s u o sp),
+    updateAbs :: 
+        Ops s u -> 
+        --init pred map 
+        Map sp (VarInfo s u) -> 
+        --init var map 
+        Map String [VarInfo s u] -> 
+        --state predicate db
+        Map sp (VarInfo s u) -> 
+        --state variable db
+        Map String [VarInfo s u] -> 
+        --label
+        Map lp (VarInfo s u, VarInfo s u) -> 
+        --Label var db
+        Map String ([VarInfo s u], VarInfo s u) -> 
+        --Free var offset
+        Int ->
+        --Abstractor state
+        o -> 
+        --Predicates being updated, next state node pairs
+        [(sp, DDNode s u)] -> 
+        --State variables being updated, next state nodes pairs
+        [(String, [DDNode s u])] -> 
+        --return
+        ST s (UpdateAbsRet s u o sp lp),
+    initAbs :: 
+        Ops s u -> 
+        --Free var offset
+        Int -> 
+        --Abstractor state
+        o -> 
+        --return
+        ST s (InitAbsRet s u o sp)
+}
+
+data EQuantRet sp s u o = EQuantRet {
+    equantStatePreds :: Map sp (VarInfo s u),
+    equantStateVars  :: Map String [VarInfo s u],
+    equantEnd        :: Int,
+    equantExpr       :: DDNode s u
+}
+
+--Theory solving
+data TheorySolver sp lp s u o = TheorySolver {
+    unsatCoreState      :: [(sp, Bool)] -> Maybe [(sp, Bool)],
+    unsatCoreStateLabel :: [(sp, Bool)] -> [(lp, Bool)] -> Maybe ([(sp, Bool)], [(lp, Bool)]),
+    eQuant              :: [(sp, Bool)] -> [(lp, Bool)] -> 
+                           Ops s u -> 
+                           --init pred map
+                           Map sp (VarInfo s u) -> 
+                           --init var map
+                           Map String [VarInfo s u] -> 
+                           --state pred db
+                           Map sp (VarInfo s u) -> 
+                           --state var db
+                           Map String [VarInfo s u] -> 
+                           --free var offset
+                           Int -> 
+                           --return 
+                           ST s (EQuantRet sp s u o)
+}
+
 -- ===Data structures for keeping track of abstraction state===
 
 data Section s u = Section {
@@ -454,112 +561,6 @@ addVariables Ops{..} nodeInds Section{..} = do
     deref cube''
     deref cube
     return $ Section cube' vars' inds'
-
-data GoalAbsRet s u o sp = GoalAbsRet {
-    goalStatePreds :: Map sp (VarInfo s u),
-    goalStateVars  :: Map String [VarInfo s u],
-    endGoalState   :: Int,
-    goalExpr       :: DDNode s u,
-    goalAbsState   :: o
-}
-
-data UpdateAbsRet s u o sp lp = UpdateAbsRet {
-    updateStatePreds :: Map sp (VarInfo s u),
-    updateStateVars  :: Map String [VarInfo s u],
-    updateLabelPreds :: Map lp (VarInfo s u, VarInfo s u),
-    updateLabelVars  :: Map String ([VarInfo s u], VarInfo s u),
-    updateOffset     :: Int,
-    --predicate variable, enabling variable
-    updateExpr       :: [DDNode s u],
-    updateAbsState   :: o
-}
-
-data InitAbsRet s u o sp = InitAbsRet {
-    initStatePreds :: Map sp (VarInfo s u),
-    initStateVars  :: Map String [VarInfo s u],
-    initExpr       :: DDNode s u,
-    initOffset     :: Int,
-    initAbsState   :: o
-}
-
---Input to the refinement algorithm. Represents the spec.
-data Abstractor s u o sp lp = Abstractor {
-    goalAbs :: 
-        Ops s u -> 
-        --init pred map
-        Map sp (VarInfo s u) -> 
-        --init var map 
-        Map String [VarInfo s u] -> 
-        --state pred db
-        Map sp (VarInfo s u) -> 
-        --variable DB
-        Map String [VarInfo s u] -> 
-        --free var offset
-        Int -> 
-        --Abstractor state
-        o -> 
-        --return
-        ST s (GoalAbsRet s u o sp),
-    updateAbs :: 
-        Ops s u -> 
-        --init pred map 
-        Map sp (VarInfo s u) -> 
-        --init var map 
-        Map String [VarInfo s u] -> 
-        --state predicate db
-        Map sp (VarInfo s u) -> 
-        --state variable db
-        Map String [VarInfo s u] -> 
-        --label
-        Map lp (VarInfo s u, VarInfo s u) -> 
-        --Label var db
-        Map String ([VarInfo s u], VarInfo s u) -> 
-        --Free var offset
-        Int ->
-        --Abstractor state
-        o -> 
-        --Predicates being updated, next state node pairs
-        [(sp, DDNode s u)] -> 
-        --State variables being updated, next state nodes pairs
-        [(String, [DDNode s u])] -> 
-        --return
-        ST s (UpdateAbsRet s u o sp lp),
-    initAbs :: 
-        Ops s u -> 
-        --Free var offset
-        Int -> 
-        --Abstractor state
-        o -> 
-        --return
-        ST s (InitAbsRet s u o sp)
-}
-
-data EQuantRet sp s u o = EQuantRet {
-    equantStatePreds :: Map sp (VarInfo s u),
-    equantStateVars  :: Map String [VarInfo s u],
-    equantEnd        :: Int,
-    equantExpr       :: DDNode s u
-}
-
---Theory solving
-data TheorySolver sp lp s u o = TheorySolver {
-    unsatCoreState      :: [(sp, Bool)] -> Maybe [(sp, Bool)],
-    unsatCoreStateLabel :: [(sp, Bool)] -> [(lp, Bool)] -> Maybe ([(sp, Bool)], [(lp, Bool)]),
-    eQuant              :: [(sp, Bool)] -> [(lp, Bool)] -> 
-                           Ops s u -> 
-                           --init pred map
-                           Map sp (VarInfo s u) -> 
-                           --init var map
-                           Map String [VarInfo s u] -> 
-                           --state pred db
-                           Map sp (VarInfo s u) -> 
-                           --state var db
-                           Map String [VarInfo s u] -> 
-                           --free var offset
-                           Int -> 
-                           --return 
-                           ST s (EQuantRet sp s u o)
-}
 
 createCubeNodes :: Ops s u -> [Int] -> ST s (DDNode s u, [DDNode s u])
 createCubeNodes Ops{..} inds = do
