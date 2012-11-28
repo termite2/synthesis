@@ -1,6 +1,3 @@
-{-# LANGUAGE ExistentialQuantification#-}
-
-
 -- Interface to SMT solver
 
 module Solver(SatResult(..),
@@ -14,7 +11,7 @@ data SatResult = SatYes
                | SatMaybe
                deriving (Eq)
 
-data Solver p s u = forall o . Solver {
+data Solver p o s u = Solver {
 
     -- Check satisfiability of a conjunction of predicates
     checkSat :: [(p, Bool)] -> SatResult,

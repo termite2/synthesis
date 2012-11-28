@@ -376,7 +376,8 @@ data EQuantRet sp s u o = EQuantRet {
     equantStatePreds :: Map sp (VarInfo s u),
     equantStateVars  :: Map String [VarInfo s u],
     equantEnd        :: Int,
-    equantExpr       :: DDNode s u
+    equantExpr       :: DDNode s u,
+    equantAbsState   :: o
 }
 
 --Theory solving
@@ -395,6 +396,8 @@ data TheorySolver sp lp s u o = TheorySolver {
                            Map String [VarInfo s u] -> 
                            --free var offset
                            Int -> 
+                           --Abstractor state
+                           o -> 
                            --return 
                            ST s (EQuantRet sp s u o)
 }
@@ -977,7 +980,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                                 Nothing -> do
                                     --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
                                     traceST "predicates are consistent. refining consistentMinusCUL..."
-                                    EQuantRet {..} <- eQuant cStatePreds cLabelPreds ops initPreds initVars statePreds stateVars nextAvlIndex 
+                                    EQuantRet {..} <- eQuant cStatePreds cLabelPreds ops initPreds initVars statePreds stateVars nextAvlIndex abstractorState
 
                                     let statePreds' = map (first $ fst . fromJustNote "refineConsistency" . flip Map.lookup statePreds) cStatePreds
                                         labelPreds' = map (first $ fromJustNote "refineConsistency" . flip Map.lookup labelPreds) cLabelPreds
@@ -1008,7 +1011,8 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                                         nextAvlIndex       = equantEnd,
                                         stateRev           = stateRev',
                                         statePreds         = equantStatePreds,
-                                        stateVars          = equantStateVars
+                                        stateVars          = equantStateVars,
+                                        abstractorState    = equantAbsState
                                     }
 
 --The abstraction-refinement loop
@@ -1063,11 +1067,3 @@ absRefineLoop m spec ts abstractorState = do
                                         traceST $ show refs
                                         return False
 
-{-
---Top level interface
-absRefine :: (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> UnsatCore p -> (sp -> p) -> (lp -> p) -> (p -> sp) -> (p -> sp) -> ST s Bool
-absRefine m spec uc ps pl sp lp = absRefineLoop m spec $ TheorySolver ucs ucl
-    where
-    ucs = undefined
-    ucl = undefined
--}
