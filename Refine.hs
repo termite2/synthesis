@@ -2,6 +2,7 @@
 module Refine (absRefineLoop, VarInfo, GoalAbsRet(..), UpdateAbsRet(..), InitAbsRet(..), Abstractor(..), TheorySolver(..), EQuantRet(..), traceST) where
 
 import Control.Monad.ST.Lazy
+import Data.STRef.Lazy
 import qualified Data.Map as Map
 import Data.Map (Map)
 import Control.Arrow
@@ -233,6 +234,27 @@ formatStateInterp = concat . intersperse ", " . map (uncurry func)
 
 -- ===Graph drawing ===
 
+toDot' :: (Show sp, Show lp, Ord sp) => Ops s u -> RefineDynamic s u o sp lp -> RefineStatic s u -> DDNode s u -> String -> ST s ()
+toDot' ops@Ops{..} RefineDynamic{..} RefineStatic{..} rel fname = do
+    setVarMap (vars trackedState) (vars next) 
+    initCube <- nodesToCube $ map fst $ Map.elems initPreds ++ concat (Map.elems initVars)
+    initNoState <- bexists (cube trackedState) initCube
+    initStates <- bexists initNoState init
+    let theMap = Map.filterWithKey f stateVars
+            where
+            f k v = not $ null $ (map snd v) `intersect` (inds trackedState)
+    let theSPMap = Map.filterWithKey f statePreds
+            where
+            f k v = snd v `elem` (inds trackedState)
+    let theUMap = Map.filterWithKey f stateVars
+            where
+            f k v = not $ null $ (map snd v) `intersect` (inds untrackedState)
+    let theupMap = Map.filterWithKey f statePreds
+            where
+            f k v = snd v `elem` (inds untrackedState)
+    graph <- toDot ops theSPMap theMap theupMap theUMap labelPreds labelVars (vars trackedState) (vars next) (cube trackedState) (cube untrackedState) (cube label) (cube next) goal initStates rel
+    unsafeIOToST $ writeFile fname graph
+
 toDot :: (Show sp, Show lp) => Ops s u -> Map sp (VarInfo s u) -> Map String [VarInfo s u] -> Map sp (VarInfo s u) -> Map String [VarInfo s u] -> Map lp (VarInfo s u, VarInfo s u) -> Map String ([VarInfo s u], VarInfo s u) -> [DDNode s u] -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s String
 toDot ops@Ops{..} spMap svMap upMap uvMap lpMap lvMap stateVars nextVars stateCube untrackedCube labelCube nextCube goal init trans = do
     let stateNextVars = stateVars ++ nextVars
@@ -418,6 +440,11 @@ data RefineStatic s u = RefineStatic {
 data Variable p s u where
     Predicate :: p -> VarInfo s u -> Variable p s u
     NonAbs    :: String -> [VarInfo s u] -> Variable p s u
+
+instance Eq p => Eq (Variable p s u) where
+    (Predicate p _) == (Predicate q _) = p==q
+    (NonAbs n _)    == (NonAbs m _)    = n==m
+    _               == _               = False
 
 instance (Show p) => Show (Variable p s u) where
     show (Predicate p v) = "Predicate variable: " ++ show p ++ ", index: " ++ show (snd v)
@@ -705,29 +732,6 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
             goal = goalExpr,
             init = initExpr
         }
-    let currentNextNodes = vars trackedState ++ vars next
-    setVarMap (vars trackedState) (vars next) 
-    initCube <- nodesToCube $ map fst $ Map.elems initStatePreds ++ concat (Map.elems initStateVars)
-    initNoState <- bexists (cube trackedState) initCube
-    initStates <- bexists initNoState initExpr
-    let theMap = Map.filterWithKey f (stateVars rd)
-            where
-            f k v = not $ null $ (map snd v) `intersect` (inds trackedState)
-    let theSPMap = Map.filterWithKey f (statePreds rd)
-            where
-            f k v = snd v `elem` (inds trackedState)
-    let theUMap = Map.filterWithKey f (stateVars rd)
-            where
-            f k v = not $ null $ (map snd v) `intersect` (inds untrackedState)
-    let theupMap = Map.filterWithKey f (statePreds rd)
-            where
-            f k v = snd v `elem` (inds untrackedState)
-    graph <- toDot ops theSPMap theMap theupMap theUMap (labelPreds rd) (labelVars rd) (vars trackedState) (vars next) (cube trackedState) (cube untrackedState) (cube label) (cube next) goalExpr initStates updateExprConj
-    unsafeIOToST $ writeFile "trans.dot" graph
-    let theVars = [map (id *** (map snd)) $ Map.toList (stateVars rd), map (id *** (map snd . fst)) $ Map.toList (labelVars rd), goalVars']
-    ress <- mapM (listPrimeImplicants ops theVars) updateExpr
-    forM (zip (map fst goalVars) ress) $ \(name, implicants) -> do
-        unsafeIOToST $ writeFile name $ formatPrimeImplicants implicants
     return (rd, rs)
 
 --Variable promotion strategies
@@ -792,10 +796,10 @@ makePairs Ops{..} inds = sequence $ map func inds
         return (n, idx)
 
 --Promote untracked state variables to full state variables so that we can make progress towards the goal. Does not refine the consistency relations.
-promoteUntracked :: (Ord lp, Ord sp, Show sp) => Ops s u -> Abstractor s u o sp lp -> RefineDynamic s u o sp lp -> [Int] -> ST s (RefineDynamic s u o sp lp)
+promoteUntracked :: (Ord lp, Ord sp, Show sp, Show lp) => Ops s u -> Abstractor s u o sp lp -> RefineDynamic s u o sp lp -> [Int] -> ST s (RefineDynamic s u o sp lp)
 promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     --look up the predicates to promote
-    let refineVars    = map (fromJustNote "promoteUntracked: untracked indices not in stateRev" . flip Map.lookup stateRev) indices
+    let refineVars    = nub $ map (fromJustNote "promoteUntracked: untracked indices not in stateRev" . flip Map.lookup stateRev) indices
     traceST $ "Promoting: " ++ show refineVars
 
     --create a section consisting of the new variables to promote
@@ -809,7 +813,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
             func idx (Predicate p v) = Just (p, v)
             func _   (NonAbs _ _)    = Nothing
 
-    let allRefineVars = nub (concat (map snd toPromoteVars')) ++ map snd toPromotePreds'
+    let allRefineVars = concat (map snd toPromoteVars') ++ map snd toPromotePreds'
 
     let (toPromoteVars, ni)             = assign nextAvlIndex toPromoteVars'
     let (toPromotePreds, nextAvlIndex') = assignPreds ni toPromotePreds'
@@ -823,7 +827,10 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
 
     --compute the update functions
     UpdateAbsRet {..}  <- updateAbs ops initPreds initVars statePreds stateVars labelPreds labelVars nextAvlIndex' abstractorState toPromotePreds toPromoteVars
+
     updateExprConj' <- conj ops updateExpr
+    traceST $  "update synopsys: " ++ bddSynopsis ops (head updateExpr)
+    --toDot' ops rd (RefineStatic bfalse bfalse) updateExprConj' "promoteu.dot"
     mapM deref updateExpr
     updateExprConj  <- doEnVars ops updateExprConj' $ map (fst *** fst) $ Map.elems updateLabelPreds
     deref updateExprConj'
@@ -857,7 +864,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
 
     let labelRev' = constructLabelPredRev (Map.toList updateLabelPreds) `Map.union` constructLabelVarRev (Map.toList updateLabelVars)
 
-    return $ RefineDynamic {
+    let rd = RefineDynamic {
         trans              = trans',
         consistentPlusCU   = consistentPlusCU,
         consistentMinusCUL = consistentMinusCUL',
@@ -877,6 +884,13 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
         abstractorState    = updateAbsState,
         ..
     }
+
+    --toDot' ops rd (RefineStatic bfalse bfalse) (head updateExpr) "premote.dot"
+    --toDot' ops rd (RefineStatic bfalse bfalse) (head updateExpr) "promote.dot"
+    --toDot' ops rd (RefineStatic bfalse bfalse) trans' "promotee.dot"
+
+    return rd
+
 
 --Refine one of the consistency relations so that we make progress. Does not promote untracked state.
 refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver sp lp s u o -> RefineDynamic s u o sp lp -> RefineStatic s u -> DDNode s u -> ST s (Maybe (RefineDynamic s u o sp lp))
@@ -1021,15 +1035,20 @@ absRefineLoop m spec ts abstractorState = do
     let ops@Ops{..} = constructOps m
     (rd, rs) <- initialAbstraction ops spec abstractorState
     traceST "Refinement state after initial abstraction: " 
-    dumpState rd
     traceST $ "Goal is: " ++ (bddSynopsis ops $ goal rs)
     traceST $ "Init is: " ++ (bddSynopsis ops $ Refine.init rs)
-    refineLoop ops rs rd bfalse
+    reff <- newSTRef (0 :: Int)
+    refineLoop reff ops rs rd bfalse
     where
-        refineLoop :: Ops s u -> RefineStatic s u -> RefineDynamic s u o sp lp -> DDNode s u -> ST s Bool
-        refineLoop ops@Ops{..} rs@RefineStatic{..} = refineLoop'
+        refineLoop :: STRef s Int -> Ops s u -> RefineStatic s u -> RefineDynamic s u o sp lp -> DDNode s u -> ST s Bool
+        refineLoop reff ops@Ops{..} rs@RefineStatic{..} = refineLoop'
             where 
             refineLoop' rd@RefineDynamic{..} lastWin = do
+                dumpState rd
+                num <- readSTRef reff
+                modifySTRef reff (+1)
+                et <- trans .& consistentMinusCUL
+                toDot' ops rd rs et ("trans" ++ show num ++ ".dot")
                 setVarMap (vars trackedState) (vars next) 
                 winRegion <- solveGame ops rs rd lastWin
                 deref lastWin
