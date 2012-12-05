@@ -269,7 +269,7 @@ toDot ops@Ops{..} spMap svMap upMap uvMap lpMap lvMap stateVars nextVars stateCu
     initNodes <- allMinterms ops stateVars init
     is <- mapM (goalFunc "[style=\"dashed\"]") initNodes
     let initSection = concat $ intersperse ";\n" is 
-    check ops
+    check "toDot1" ops
     return $ "digraph trans {\n" ++ concat (intersperse ";\n" transSection) ++ "\n" ++ goalSection ++ "\n" ++ initSection ++ "}\n"
     where
         goalFunc attrib node = do
@@ -630,7 +630,8 @@ func (x, y) = do
     y <- y
     return (x, y)
 
-check ops = debugCheck ops >> checkKeys ops
+--check msg ops = unsafeIOToST (putStrLn ("checking bdd consistency" ++ msg)) >> debugCheck ops >> checkKeys ops
+check msp ops = return ()
 
 asterixs = "*******************************************"
 
@@ -663,16 +664,16 @@ doEnVars Ops{..} trans enVars = do
 --Create an initial abstraction and set up the data structures
 initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u o sp lp -> o -> ST s (RefineDynamic s u o sp lp, RefineStatic s u)
 initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
-    check ops
+    check "initialAbstraction1" ops
     --abstract init
     InitAbsRet {..}     <- initAbs ops 0 abstractorState
-    check ops
+    check "initialAbstraction2" ops
     traceST "*******************************************\n"
     traceST $ "Abstraction of Init: \nState Preds: \n" ++ format (map (show *** (show . snd)) $ Map.toList initStatePreds) ++ "\nState Vars: \n" ++ format (map (show *** (show . map (show . snd))) $ Map.toList initStateVars)
     traceST "******************************************\n\n"
     --abstract the goal
     GoalAbsRet {..}     <- goalAbs ops initStatePreds initStateVars Map.empty Map.empty initOffset initAbsState 
-    check ops
+    check "initialAbstraction3" ops
     traceST "*****************************************\n"
     traceST $ "Abstraction of Goal: \nStatePreds: \n" ++ format (map (show *** (show . snd)) $ Map.toList goalStatePreds) ++ "\nState vars: \n" ++ format (map (show *** (show . map (show . snd))) $ Map.toList goalStateVars)
     traceST "****************************************\n\n"
@@ -743,23 +744,26 @@ refineAny Ops{..} RefineDynamic{..} newSU = (fmap (Just . singleton)) $ findM (s
 
 --Refine the least number of untracked state predicates possible to make progress
 refineLeastPreds :: forall s u o sp lp. Ops s u -> RefineDynamic s u o sp lp -> DDNode s u -> ST s (Maybe [Int])
-refineLeastPreds (Ops{..}) (RefineDynamic{..}) newSU 
+refineLeastPreds ops@Ops{..} RefineDynamic{..} newSU 
     | newSU == bfalse = return Nothing
     | otherwise       = do
         ref newSU
         (size, vars, remaining) <- sizeVarsNext newSU
         (size, vars) <- doLoop size vars remaining
+        check "after doLoop" ops
         return $ Just vars
     where
     sizeVarsNext :: DDNode s u -> ST s (Int, [Int], DDNode s u)
     sizeVarsNext remaining = do
+        check "before sizeVarsNext" ops
         (lc, sz) <- largestCube remaining
         prime <- makePrime lc newSU
-        deref remaining
         deref lc
         (size, vars) <- analyseCube prime
         nextRemaining <- band remaining $ bnot prime
+        deref remaining
         deref prime
+        check "after sizeVarsNext" ops
         return (size, vars, nextRemaining)
     doLoop :: Int -> [Int] -> DDNode s u -> ST s (Int, [Int])
     doLoop size vars remaining 
@@ -769,9 +773,11 @@ refineLeastPreds (Ops{..}) (RefineDynamic{..}) newSU
             if (size' < size) then doLoop size' vars' remaining' else doLoop size vars remaining'
     analyseCube :: DDNode s u -> ST s (Int, [Int])
     analyseCube cube' = do
+        check "before analyseCube" ops
         untrackedCube <- bexists (cube trackedState) cube'
         support <- supportIndices untrackedCube
         deref untrackedCube
+        check "after analyseCube" ops
         return (length support, support)
 
 pickUntrackedToPromote :: Ops s u -> RefineDynamic s u o sp lp -> RefineStatic s u -> DDNode s u -> ST s (Maybe [Int])
@@ -784,7 +790,9 @@ pickUntrackedToPromote ops@Ops{..} rd@RefineDynamic{..} RefineStatic{..} win = d
     newSU <- su .& bnot win
     deref win'
     deref su
+    check "before refineLeastPreds" ops
     res <- refineLeastPreds ops rd newSU
+    check "after refineLeastPreds" ops
     deref newSU
     return res
 
@@ -895,6 +903,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
 --Refine one of the consistency relations so that we make progress. Does not promote untracked state.
 refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver sp lp s u o -> RefineDynamic s u o sp lp -> RefineStatic s u -> DDNode s u -> ST s (Maybe (RefineDynamic s u o sp lp))
 refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win = do
+    check "refineConsistency start" ops
     win' <- win .| goal
     t0 <- mapVars win'
     t2 <- liftM bnot $ andAbstract (cube next) trans (bnot t0)
@@ -908,6 +917,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
     traceST "***************************"
     traceST "Consistency refinement"
     t4 <- tt3 .& bnot win
+    check "refineConsistency end1" ops
     --Alive : win', hasOutgoings, tt3, t4
     case t4==bfalse of 
         True  -> do
@@ -915,9 +925,10 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
             --there are no <c, u, l> tuples that are winning with the overapproximation of consistentCUL
             traceST "no consistency refinement possible"
             mapM deref [win', hasOutgoings, tt3, t4]
-            check ops
+            check "refineConsistency1" ops
             return Nothing
         False -> do
+            check "refineConsistency start2" ops
             --There may be a refinement
             --extract a <s, u> pair that will make progress if one exists
             traceST "consistency refinement may be possible"
@@ -933,6 +944,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
             traceST $ "Tuple that will make progress: " ++ show stateUntrackedProgress
             let preds = getPredicates stateUntrackedProgress
             traceST $ "Preds being checked for consistency: " ++ show preds
+            check "refineConsistency end2" ops
             --Alive : win', hasOutgoings, tt3 
             case unsatCoreState preds of
                 Just pairs -> do
@@ -945,7 +957,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                     consistentPlusCUL' <- consistentPlusCUL .& bnot inconsistent
                     deref consistentPlusCUL'
                     deref inconsistent
-                    check ops
+                    check "refineConsistency2" ops
                     return $ Just $ rd {consistentPlusCU = consistentPlusCU', consistentPlusCUL = consistentPlusCUL'}
                 Nothing -> do
                     traceST "consistentPlusCU could not be refined"
@@ -959,9 +971,10 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                         True -> do
                             traceST "consistentPlusCUL could not be refined"
                             deref t4
-                            check ops
+                            check "refineConsistency3" ops
                             return Nothing
                         False -> do
+                            check "refineConsistency start3" ops
                             (t6, sz) <- largestCube t4
                             t7 <- makePrime t6 t4
                             deref t4
@@ -976,6 +989,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                                         (_, False)   -> Nothing
                                         (pred, True) -> Just (pred, polarity)
                             traceST $ "label preds for solver: " ++ show cLabelPreds
+                            check "refineConsistency end3" ops
                             --Alive : nothing
                             case unsatCoreStateLabel cStatePreds cLabelPreds of
                                 Just (statePairs, labelPairs) -> do
@@ -989,7 +1003,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                                     consistentPlusCUL' <- consistentPlusCUL .& bnot inconsistent
                                     deref inconsistent
                                     deref consistentPlusCUL
-                                    check ops
+                                    check "refineConsistency4" ops
                                     refineConsistency ops ts (rd {consistentPlusCUL = consistentPlusCUL'}) rs win
                                 Nothing -> do
                                     --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
@@ -1018,7 +1032,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                                         stateVarsRev   = constructStateVarRev  $ Map.toList equantStateVars
                                         stateRev'      = Map.union statePredsRev stateVarsRev
                         
-                                    check ops
+                                    check "refineConsistency5" ops
                                     return $ Just $ rd {
                                         consistentMinusCUL = consistentMinusCUL', 
                                         untrackedState     = untrackedState',
@@ -1038,28 +1052,32 @@ absRefineLoop m spec ts abstractorState = do
     traceST $ "Goal is: " ++ (bddSynopsis ops $ goal rs)
     traceST $ "Init is: " ++ (bddSynopsis ops $ Refine.init rs)
     reff <- newSTRef (0 :: Int)
+    check "after initialAbstractions" ops
     refineLoop reff ops rs rd bfalse
     where
         refineLoop :: STRef s Int -> Ops s u -> RefineStatic s u -> RefineDynamic s u o sp lp -> DDNode s u -> ST s Bool
         refineLoop reff ops@Ops{..} rs@RefineStatic{..} = refineLoop'
             where 
             refineLoop' rd@RefineDynamic{..} lastWin = do
+                check "start refine loop" ops
                 dumpState rd
                 num <- readSTRef reff
                 modifySTRef reff (+1)
                 et <- trans .& consistentMinusCUL
-                toDot' ops rd rs et ("trans" ++ show num ++ ".dot")
+                --toDot' ops rd rs et ("trans" ++ show num ++ ".dot")
                 setVarMap (vars trackedState) (vars next) 
+                check "before solve game" ops
                 winRegion <- solveGame ops rs rd lastWin
                 deref lastWin
                 traceST "Game solved"
                 winning   <- init `leq` winRegion 
+                check "after solve game" ops
                 --Alive: winRegion, rd, rs
                 case winning of
                     True -> do
                         traceST "winning"
                         deref winRegion
-                        check ops
+                        check "absRefineLoop1" ops
                         refs <- checkZeroRef 
                         traceST $ show refs
                         return True
@@ -1072,7 +1090,9 @@ absRefineLoop m spec ts abstractorState = do
                                 refineLoop' newRD winRegion
                             Nothing -> do
                                 traceST "Could not refine consistency relations. Attempting to refine untracked state variables"
+                                check "before pick untracked" ops
                                 res <- pickUntrackedToPromote ops rd rs winRegion
+                                check "after pick untracked" ops
                                 case res of 
                                     Just vars -> do
                                         traceST "Found untracked variables to promote. Promoting them..."
@@ -1081,7 +1101,7 @@ absRefineLoop m spec ts abstractorState = do
                                     Nothing -> do
                                         traceST "Game is not winning"
                                         deref winRegion
-                                        check ops
+                                        check "absRefineLoop2" ops
                                         refs <- checkZeroRef
                                         traceST $ show refs
                                         return False
