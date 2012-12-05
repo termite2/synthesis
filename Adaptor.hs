@@ -12,6 +12,7 @@ import Debug.Trace
 
 import CuddST
 import CuddExplicitDeref as C
+import CuddReorder
 
 import Refine
 import AbsGame
@@ -65,6 +66,10 @@ theEQuant m (Solver _ _ equant predVars) statePreds labelPreds ops ipdb ivdb spd
 doEverything :: (Ord p, Show p) => AbsGame p o s u -> o -> Solver p o s u -> ST s Bool
 doEverything absGame initialAbsState solver = do
     m <- cuddInitSTDefaults 
+    cuddAutodynEnable m CuddReorderGroupSift
+    regStdPreReordHook m
+    regStdPostReordHook m
+    cuddEnableReorderingReporting m
     let abstractor = Abstractor {
             goalAbs   = theGoalAbs m absGame,
             updateAbs = theUpdateAbs m absGame,
