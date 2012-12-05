@@ -737,10 +737,15 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
 
 --Variable promotion strategies
 
-{-
-refineAny :: Ops s u -> RefineDynamic s u sp lp -> DDNode s u -> ST s (Maybe [Int])
-refineAny Ops{..} RefineDynamic{..} newSU = (fmap (Just . singleton)) $ findM (supportIndex newSU) $ inds untrackedState
--}
+refineStrategy = refineAny
+
+refineAny :: Ops s u -> RefineDynamic s u o sp lp -> DDNode s u -> ST s (Maybe [Int])
+refineAny Ops{..} RefineDynamic{..} newSU = do
+    si <- supportIndices newSU
+    let untrackedInds = si `intersect` inds untrackedState
+    return $ case untrackedInds of
+        []  -> Nothing
+        x:_ -> Just [x]
 
 --Refine the least number of untracked state predicates possible to make progress
 refineLeastPreds :: forall s u o sp lp. Ops s u -> RefineDynamic s u o sp lp -> DDNode s u -> ST s (Maybe [Int])
@@ -791,7 +796,7 @@ pickUntrackedToPromote ops@Ops{..} rd@RefineDynamic{..} RefineStatic{..} win = d
     deref win'
     deref su
     check "before refineLeastPreds" ops
-    res <- refineLeastPreds ops rd newSU
+    res <- refineStrategy ops rd newSU
     check "after refineLeastPreds" ops
     deref newSU
     return res
