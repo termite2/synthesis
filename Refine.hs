@@ -518,6 +518,9 @@ constructLabelVarRev pairs = Map.fromList $ concatMap (uncurry func) pairs
 format :: [(String, String)] -> String
 format = concat . map ('\t' :) . intersperse "\n" . map (uncurry (\x y -> x ++ ": " ++ y))
 
+format2 :: [String] -> String
+format2 = concat . map ('\t' :) . intersperse "\n"
+
 --debug dump
 dumpState :: (Show sp, Show lp) => RefineDynamic s u o sp lp -> ST s ()
 dumpState RefineDynamic{..} = unsafeIOToST $ do
@@ -531,10 +534,10 @@ dumpState RefineDynamic{..} = unsafeIOToST $ do
     putStrLn $ "labelRev: \n"                   ++ format (map (show *** show) $ Map.toList labelRev)
     putStrLn $ "Init preds: \n"                 ++ format (map (show *** show . snd) $ Map.toList initPreds)
     putStrLn $ "Init vars: \n"                  ++ format (map (show *** show . map snd) $ Map.toList initVars)
-    putStrLn $ "State and untracked preds: "    ++ show (Map.keys statePreds)
-    putStrLn $ "State and untracked vars: "     ++ show (Map.keys stateVars)
-    putStrLn $ "label preds: "                  ++ show (Map.keys labelPreds)
-    putStrLn $ "label vars: "                   ++ show (Map.keys labelVars)
+    putStrLn $ "State and untracked preds: "    ++ format2 (map show (Map.keys statePreds))
+    putStrLn $ "State and untracked vars: "     ++ format2 (map show (Map.keys stateVars))
+    putStrLn $ "label preds: "                  ++ format2 (map show (Map.keys labelPreds))
+    putStrLn $ "label vars: "                   ++ format2 (map show (Map.keys labelVars))
     putStrLn $ "enabling vars: "                ++ show enablingVars
     putStrLn $ "*********************************************************\n"
 
@@ -746,6 +749,18 @@ refineAny Ops{..} RefineDynamic{..} newSU = do
     return $ case untrackedInds of
         []  -> Nothing
         x:_ -> Just [x]
+
+refineFirstPrime :: Ops s u -> RefineDynamic s u o sp lp -> DDNode s u -> ST s (Maybe [Int])
+refineFirstPrime Ops{..} RefineDynamic{..} newSU = do
+    (lc, sz) <- largestCube newSU
+    prime    <- makePrime lc newSU
+    deref lc
+    si       <- supportIndices prime
+    deref prime
+    let untrackedInds = si `intersect` inds untrackedState
+    return $ case untrackedInds of
+        [] -> Nothing
+        x  -> Just x
 
 --Refine the least number of untracked state predicates possible to make progress
 refineLeastPreds :: forall s u o sp lp. Ops s u -> RefineDynamic s u o sp lp -> DDNode s u -> ST s (Maybe [Int])
@@ -1068,8 +1083,6 @@ absRefineLoop m spec ts abstractorState = do
                 dumpState rd
                 num <- readSTRef reff
                 modifySTRef reff (+1)
-                et <- trans .& consistentMinusCUL
-                --toDot' ops rd rs et ("trans" ++ show num ++ ".dot")
                 setVarMap (vars trackedState) (vars next) 
                 check "before solve game" ops
                 winRegion <- solveGame ops rs rd lastWin
