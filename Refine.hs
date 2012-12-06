@@ -5,6 +5,8 @@ import Control.Monad.ST.Lazy
 import Data.STRef.Lazy
 import qualified Data.Map as Map
 import Data.Map (Map)
+import qualified Data.Set as Set
+import Data.Set (Set)
 import Control.Arrow
 import Data.List
 import Control.Monad
@@ -18,6 +20,8 @@ import Safe
 
 import qualified CuddExplicitDeref as C
 import CuddExplicitDeref (DDNode, STDdManager)
+import qualified CuddST as C
+import qualified CuddReorder as C
 import Util
 
 -- ===Utility functions===
@@ -70,7 +74,12 @@ data Ops s u = Ops {
     debugCheck                                :: ST s (),
     checkKeys                                 :: ST s (),
     pickOneMinterm                            :: DDNode s u -> [DDNode s u] -> ST s (DDNode s u),
-    checkZeroRef                              :: ST s (Int)
+    checkZeroRef                              :: ST s Int,
+    readSize                                  :: ST s Int,
+    readInvPerm                               :: Int -> ST s Int,
+    readPerm                                  :: Int -> ST s Int,
+    shuffleHeap                               :: [Int] -> ST s (),
+    makeTreeNode                              :: Int -> Int -> Int -> ST s ()
 }
 
 constructOps :: STDdManager s u -> Ops s u
@@ -112,6 +121,11 @@ constructOps m = Ops {..}
     checkKeys              = C.checkKeys        m
     pickOneMinterm         = C.pickOneMinterm   m
     checkZeroRef           = C.checkZeroRef     m
+    readSize               = C.readSize         m
+    readInvPerm            = C.readInvPerm      m
+    readPerm               = C.readPerm         m
+    shuffleHeap            = C.cuddShuffleHeapST m
+    makeTreeNode x y z     = void $ C.cuddMakeTreeNode m x y z
 
 -- ==BDD utility functions==
 conj :: Ops s u -> [DDNode s u] -> ST s (DDNode s u)
@@ -664,6 +678,15 @@ doEnVars Ops{..} trans enVars = do
         deref e1
         return res
 
+listInsertDrop :: (Ord a) => [a] -> [(a, a)] -> [a]
+listInsertDrop list items = listInsertDrop' list
+    where
+    mp = Map.fromList items
+    listInsertDrop' [] = []
+    listInsertDrop' (x:xs) = case Map.lookup x mp of
+        Nothing ->  x : listInsertDrop' xs
+        Just y -> x : y : listInsertDrop' xs
+
 --Create an initial abstraction and set up the data structures
 initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u o sp lp -> o -> ST s (RefineDynamic s u o sp lp, RefineStatic s u)
 initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
@@ -684,8 +707,23 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
         (goalPreds', ni) = assignPreds endGoalState (map (second idx) (Map.toList goalStatePreds))
         (goalVars', nni) = assign ni (map (second (map idx)) (Map.toList goalStateVars))
         endStateAndNext  = nni
+
+    size <- readSize
+    perm <- mapM readInvPerm [0..size-1]
+
+    trackedState <- createSection2 ops $ Map.elems goalStatePreds ++ concat (Map.elems goalStateVars)
+    next         <- createSection ops [endGoalState .. endStateAndNext-1]
+
     goalPreds <- sequence $ map (func . second ithVar) goalPreds'
     goalVars  <- sequence $ map (func . second (sequence . map ithVar)) goalVars'
+
+    let order = concat $ transpose [inds trackedState, inds next]
+    let order' = listInsertDrop perm $ zip (inds trackedState) (inds next)
+    traceST $ show order'
+
+    shuffleHeap order'
+    mapM (\pos -> makeTreeNode pos 2 0) (inds trackedState)
+
     --get the abstract update functions for the goal predicates and variables
     traceST "***************************************\n"
     traceST $ "calling update on predicates: " ++ show (map fst goalPreds) ++ " and variables: " ++ show (map fst goalVars)
@@ -704,13 +742,10 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
     ref consistentPlusCUL
     consistentMinusCUL <- conj ops $ map (bnot . fst . snd) $ Map.elems updateLabelPreds
     --create the sections
-    trackedState       <- createSection2 ops $ 
-        Map.elems goalStatePreds ++ concat (Map.elems goalStateVars)
     untrackedState     <- createSection2 ops $ 
         Map.elems (updateStatePreds Map.\\ goalStatePreds) ++ concat (Map.elems (updateStateVars Map.\\ goalStateVars))
     label              <- createSection2 ops $ 
         concatMap pairToList (Map.elems updateLabelPreds) ++ concat (Map.elems updateLabelVars)
-    next               <- createSection ops [endGoalState .. endStateAndNext-1]
     --construct the reverse mappings and enabling variables list
     let statePredsRev  = constructStatePredRev $ Map.toList updateStatePreds
         stateVarsRev   = constructStateVarRev  $ Map.toList updateStateVars
@@ -846,10 +881,21 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     let (toPromoteVars, ni)             = assign nextAvlIndex toPromoteVars'
     let (toPromotePreds, nextAvlIndex') = assignPreds ni toPromotePreds'
 
+    let nextIndices = [nextAvlIndex .. nextAvlIndex' - 1]
+
+    size <- readSize
+    perm <- mapM readInvPerm [0..size-1]
+    let stateInds = map snd $ allRefineVars
+    let nextInds  = nextIndices
+    let order = concat $ transpose [stateInds, nextInds]
+    let order' = listInsertDrop perm (zip stateInds nextInds)
+    traceST $ show order'
+    shuffleHeap order'
+    mapM (\pos -> makeTreeNode pos 2 0) stateInds
+
     toPromotePreds <- sequence $ map (func . second ithVar) toPromotePreds
     toPromoteVars  <- sequence $ map (func . second (sequence . map ithVar)) toPromoteVars
 
-    let nextIndices = [nextAvlIndex .. nextAvlIndex' - 1]
     traceST $ "Adding next indices: " ++ show nextIndices
     nextPairs <- sequence $ map (func . (id &&& ithVar)) nextIndices
 
