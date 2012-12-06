@@ -534,10 +534,10 @@ dumpState RefineDynamic{..} = unsafeIOToST $ do
     putStrLn $ "labelRev: \n"                   ++ format (map (show *** show) $ Map.toList labelRev)
     putStrLn $ "Init preds: \n"                 ++ format (map (show *** show . snd) $ Map.toList initPreds)
     putStrLn $ "Init vars: \n"                  ++ format (map (show *** show . map snd) $ Map.toList initVars)
-    putStrLn $ "State and untracked preds: "    ++ format2 (map show (Map.keys statePreds))
-    putStrLn $ "State and untracked vars: "     ++ format2 (map show (Map.keys stateVars))
-    putStrLn $ "label preds: "                  ++ format2 (map show (Map.keys labelPreds))
-    putStrLn $ "label vars: "                   ++ format2 (map show (Map.keys labelVars))
+    putStrLn $ "State and untracked preds: \n"  ++ format2 (map show (Map.keys statePreds))
+    putStrLn $ "State and untracked vars: \n"   ++ format2 (map show (Map.keys stateVars))
+    putStrLn $ "label preds: \n"                ++ format2 (map show (Map.keys labelPreds))
+    putStrLn $ "label vars: \n"                 ++ format2 (map show (Map.keys labelVars))
     putStrLn $ "enabling vars: "                ++ show enablingVars
     putStrLn $ "*********************************************************\n"
 
