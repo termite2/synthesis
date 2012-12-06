@@ -255,7 +255,7 @@ toDot' ops@Ops{..} RefineDynamic{..} RefineStatic{..} rel fname = do
     graph <- toDot ops theSPMap theMap theupMap theUMap labelPreds labelVars (vars trackedState) (vars next) (cube trackedState) (cube untrackedState) (cube label) (cube next) goal initStates rel
     unsafeIOToST $ writeFile fname graph
 
-toDot :: (Show sp, Show lp) => Ops s u -> Map sp (VarInfo s u) -> Map String [VarInfo s u] -> Map sp (VarInfo s u) -> Map String [VarInfo s u] -> Map lp (VarInfo s u, VarInfo s u) -> Map String ([VarInfo s u], VarInfo s u) -> [DDNode s u] -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s String
+toDot :: (Show sp, Show lp) => Ops s u -> Map sp (VarInfo s u) -> Map String [VarInfo s u] -> Map sp (VarInfo s u) -> Map String [VarInfo s u] -> Map lp (VarInfo s u, VarInfo s u) -> Map String [VarInfo s u] -> [DDNode s u] -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s String
 toDot ops@Ops{..} spMap svMap upMap uvMap lpMap lvMap stateVars nextVars stateCube untrackedCube labelCube nextCube goal init trans = do
     let stateNextVars = stateVars ++ nextVars
     stateNextCube <- stateCube .& nextCube
@@ -300,7 +300,7 @@ toDot ops@Ops{..} spMap svMap upMap uvMap lpMap lvMap stateVars nextVars stateCu
                 ui <- stateInterp ops theList u
                 return $ (formatStateInterp ui) ++ " -- " ++ li
             labelInterp node = do
-                let a = map (second (map snd *** snd)) (Map.toList lvMap) ++ map (show *** (singleton . snd *** snd)) (Map.toList lpMap)
+                let a = undefined --map (second (map snd *** snd)) (Map.toList lvMap) ++ map (show *** (singleton . snd *** snd)) (Map.toList lpMap)
                 st <- satCube node
                 return $ concat $ intersperse ", " $ map (func st) a
                 where
@@ -327,7 +327,7 @@ data UpdateAbsRet s u o sp lp = UpdateAbsRet {
     updateStatePreds :: Map sp (VarInfo s u),
     updateStateVars  :: Map String [VarInfo s u],
     updateLabelPreds :: Map lp (VarInfo s u, VarInfo s u),
-    updateLabelVars  :: Map String ([VarInfo s u], VarInfo s u),
+    updateLabelVars  :: Map String [VarInfo s u], 
     updateOffset     :: Int,
     --predicate variable, enabling variable
     updateExpr       :: [DDNode s u],
@@ -373,7 +373,7 @@ data Abstractor s u o sp lp = Abstractor {
         --label
         Map lp (VarInfo s u, VarInfo s u) -> 
         --Label var db
-        Map String ([VarInfo s u], VarInfo s u) -> 
+        Map String [VarInfo s u] -> 
         --Free var offset
         Int ->
         --Abstractor state
@@ -483,7 +483,7 @@ data RefineDynamic s u o sp lp = RefineDynamic {
     statePreds         :: Map sp (VarInfo s u),
     stateVars          :: Map String [VarInfo s u],
     labelPreds         :: Map lp (VarInfo s u, VarInfo s u),
-    labelVars          :: Map String ([VarInfo s u], VarInfo s u),
+    labelVars          :: Map String [VarInfo s u],
     --All enabling vars in existance
     enablingVars       :: [Int],
     --abstractor state
@@ -508,10 +508,10 @@ constructLabelPredRev pairs = Map.fromList $ concatMap (uncurry func) pairs
     where
     func pred (vi, evi) = [(idx vi, (Predicate pred vi, True)), (idx evi, (Predicate pred evi, False))]
 
-constructLabelVarRev  :: [(String, ([VarInfo s u], VarInfo s u))] -> Map Int (Variable lp s u, Bool)
+constructLabelVarRev  :: [(String, [VarInfo s u])] -> Map Int (Variable lp s u, Bool)
 constructLabelVarRev pairs = Map.fromList $ concatMap (uncurry func) pairs
     where
-    func name (vi, evi) = (idx evi, (NonAbs name vi, False)) : map func' vi
+    func name vi = map func' vi
         where
         func' var = (idx var, (NonAbs name vi, True))
 
@@ -695,7 +695,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
     updateExprConj  <- doEnVars ops updateExprConj' $ map (fst *** fst) $ Map.elems updateLabelPreds
     deref updateExprConj'
     traceST $ "Abstraction of variable updates: \nState and untracked preds after update: " ++ format (map (show *** (show . snd)) $ Map.toList updateStatePreds) ++ "\nVars: " ++ format (map (show *** (show . map (show . snd))) $ Map.toList updateStateVars)
-    traceST $ "\nLabel preds after update: " ++ format (map (show *** (show . snd . fst)) $ Map.toList updateLabelPreds) ++ "\nVars: " ++ format (map (show *** (show . map (show . snd) . fst)) $ Map.toList updateLabelVars)
+    traceST $ "\nLabel preds after update: " ++ format (map (show *** (show . snd . fst)) $ Map.toList updateLabelPreds) ++ "\nVars: " ++ format (map (show *** (show . map (show . snd) )) $ Map.toList updateLabelVars)
     traceST "***************************************\n\n"
     --create the consistency constraints
     let consistentPlusCU   = btrue
@@ -709,7 +709,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
     untrackedState     <- createSection2 ops $ 
         Map.elems (updateStatePreds Map.\\ goalStatePreds) ++ concat (Map.elems (updateStateVars Map.\\ goalStateVars))
     label              <- createSection2 ops $ 
-        concatMap pairToList (Map.elems updateLabelPreds) ++ concatMap (uncurry (flip (:))) (Map.elems updateLabelVars)
+        concatMap pairToList (Map.elems updateLabelPreds) ++ concat (Map.elems updateLabelVars)
     next               <- createSection ops [endGoalState .. endStateAndNext-1]
     --construct the reverse mappings and enabling variables list
     let statePredsRev  = constructStatePredRev $ Map.toList updateStatePreds
@@ -718,7 +718,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} abstractorState = do
         labelPredsRev  = constructLabelPredRev $ Map.toList updateLabelPreds
         labelVarsRev   = constructLabelVarRev  $ Map.toList updateLabelVars
         labelRev       = Map.union labelPredsRev labelVarsRev
-        enablingVars   = map (idx . snd) (Map.elems updateLabelPreds) ++ map (idx . snd) (Map.elems updateLabelVars)
+        enablingVars   = map (idx . snd) (Map.elems updateLabelPreds)
     --construct the RefineDynamic and RefineStatic
     let rd = RefineDynamic {
             trans           = updateExprConj, 
@@ -869,7 +869,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     deref trans
 
     let newUntracked = Map.elems (updateStatePreds Map.\\ statePreds) ++ concat (Map.elems (updateStateVars Map.\\ stateVars))
-    let newLabel     = concatMap pairToList (Map.elems (updateLabelPreds Map.\\ labelPreds)) ++ concatMap (uncurry (flip (:))) (Map.elems (updateLabelVars Map.\\ labelVars))
+    let newLabel     = concatMap pairToList (Map.elems (updateLabelPreds Map.\\ labelPreds)) ++ concat (Map.elems (updateLabelVars Map.\\ labelVars))
 
     --update the sections
     trackedState       <- addVariables    ops allRefineVars trackedState 
@@ -888,7 +888,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
 
     --deref newEnFalse
 
-    let enablingVars' = map (idx . snd) (Map.elems updateLabelPreds) ++ map (idx . snd) (Map.elems updateLabelVars)
+    let enablingVars' = map (idx . snd) (Map.elems updateLabelPreds) 
 
     let labelRev' = constructLabelPredRev (Map.toList updateLabelPreds) `Map.union` constructLabelVarRev (Map.toList updateLabelVars)
 

@@ -51,7 +51,7 @@ data PredDBState p o s u = PredDBState {
     dbStatePreds :: Map p (VarInfo s u),
     dbStateVars  :: Map String [VarInfo s u],
     dbLabelPreds :: Map p (VarInfo s u, VarInfo s u),
-    dbLabelVars  :: Map String ([VarInfo s u], VarInfo s u),
+    dbLabelVars  :: Map String [VarInfo s u],
     dbNextIndex  :: Int,
     dbUserState  :: o
 }
@@ -89,7 +89,7 @@ pdbLookupVar (PredVar pred) = do
 pdbLookupVar (NonPredVar name _) = do
     sp <- gets dbStateVars
     lp <- gets dbLabelVars
-    return $ Map.lookup name $ Map.union (fmap (map fst) sp) (fmap (map fst . fst) lp)
+    return $ Map.lookup name $ Map.union (fmap (map fst) sp) (fmap (map fst) lp)
 
 -- Lookup or allocate variable
 pdbAllocVar :: (Ord p) => AbsVar p -> VarCategory -> PredicateDB p o s u [DDNode s u]
@@ -144,14 +144,13 @@ pdbAllocVar (NonPredVar nm sz) VarTmp = do
     theMap <- gets dbLabelVars
     m      <- gets dbManager
     case Map.lookup nm theMap of
-        Just var -> return $ map fst $ fst var
+        Just var -> return $ map fst var
         Nothing -> do
             st <- get
             let inds = take sz $ iterate (+1) (dbNextIndex st)
             newVar <- lift $ sequence $ map (bvar m) inds
-            newEn  <- lift $ bvar m $ dbNextIndex st + sz
-            modify $ \st -> st {dbLabelVars = Map.insert nm ((zip newVar inds), (newEn, dbNextIndex st + sz)) (dbLabelVars st)}
-            modify $ \st -> st {dbNextIndex = dbNextIndex st + sz + 1}
+            modify $ \st -> st {dbLabelVars = Map.insert nm (zip newVar inds) (dbLabelVars st)}
+            modify $ \st -> st {dbNextIndex = dbNextIndex st + sz}
             return newVar
 
 -- Allocate temporary logic variable 
