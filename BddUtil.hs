@@ -1,0 +1,81 @@
+{-# LANGUAGE RecordWildCards #-}
+
+module BddUtil (
+    conj,
+    allMinterms,
+    concPart,
+    primeCover,
+    presentVars,
+    makeCube,
+    bddSynopsis
+    ) where
+
+import Control.Monad
+import Control.Arrow
+
+import BddRecord
+import qualified CuddExplicitDeref as C
+
+conj :: Ops s u -> [DDNode s u] -> ST s (DDNode s u)
+conj Ops{..} nodes = do
+        ref btrue
+        go btrue nodes
+    where
+    go accum []     = return accum
+    go accum (n:ns) = do
+        accum' <- accum .&  n
+        deref accum
+        go accum' ns
+
+allMinterms :: Ops s u -> [DDNode s u] -> DDNode s u -> ST s [DDNode s u]
+allMinterms Ops{..} vars node = do
+    ref node
+    allMinterms' node
+    where
+    allMinterms' node
+        | node == bfalse = return []
+        | otherwise      = do
+            mt <- pickOneMinterm node vars
+            remaining <- node .& bnot mt
+            deref node
+            res <- allMinterms' remaining
+            return $ mt : res
+
+concPart :: Ops s u -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> ST s [(DDNode s u, DDNode s u)]
+concPart ops@Ops{..} concVars concCube restCube node = do
+    concOnly <- bexists restCube node
+    allMT <- allMinterms ops concVars concOnly
+    support <- mapM supportIndices allMT
+    forM allMT $ \mt -> do 
+        rest <- andAbstract concCube mt node
+        return (mt, rest)
+
+primeCover :: Ops s u -> DDNode s u -> ST s [DDNode s u]
+primeCover Ops{..} node = do
+    ref node
+    primeCover' node
+    where
+    primeCover' node
+        | node == bfalse = return []
+        | otherwise = do
+            (lc, _) <- largestCube node
+            pm <- makePrime lc node
+            deref lc
+            next <- node .& bnot pm
+            deref node
+            res <- primeCover' next
+            return $ pm : res
+
+presentVars :: Ops s u -> DDNode s u -> ST s [(Int, Bool)]
+presentVars Ops{..} x = do
+    res <- satCube x
+    return $ map (second (/=0)) $ filter ((/=2) . snd) $ zip [0..] res
+
+makeCube :: Ops s u -> [(DDNode s u, Bool)] -> ST s (DDNode s u)
+makeCube Ops{..} = uncurry computeCube . unzip
+
+bddSynopsis Ops{..} node = case node==bfalse of
+    True -> "Zero"
+    False -> case node==btrue of
+        True -> "True"
+        False -> "Non-constant: " ++ show (C.toInt node)
