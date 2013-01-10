@@ -26,20 +26,15 @@ findWithDefaultProcessM modF key theMap funcAbsent funcPresent = maybe funcAbsen
         funcPresent v
         return $ modF v
 
-getState :: MonadState s m => (s -> m a) -> m a
-getState func = do
-    st <- get
-    func st
-
-getStatePart :: MonadState s m => (s -> s') -> (s' -> m a) -> m a
-getStatePart getFunc func = getState (func . getFunc)
-
 modifyM :: Monad m => (s -> m s) -> StateT s m ()
 modifyM f = get >>= (lift . f) >>= put
 
 infixl 1 =>=
 (=>=) :: Monad m => m a -> (a -> m ()) -> m a
-a =>= b = undefined
+a =>= b = do
+    res <- a
+    b res
+    return res
 
 monadOut :: Monad m => (a, m b) -> m (a, b)
 monadOut (x, y) = do
@@ -153,11 +148,51 @@ allocInitVar ops v size = liftM fst $ do
     return val
 
 -- === goal helpers ===
-allocStatePred :: Ord sp => Ops s u -> sp -> StateT (DB s u sp lp) (ST s) (DDNode s u)
-allocStatePred ops pred = liftM fst $ alloc ops =>= uncurry (addPredToState ops pred)
+data NewVars s u sp = NewVars {
+    _allocatedStatePreds :: [(sp, DDNode s u)],
+    _allocatedStateVars  :: [(String, [DDNode s u])]
+}
 
-allocStateVar :: Ops s u -> String -> Int -> StateT (DB s u sp lp) (ST s) [DDNode s u]
-allocStateVar ops name size = liftM fst $ allocN ops size =>= uncurry (addVarToState ops name)
+makeLenses ''NewVars
+
+data GoalState s u sp lp = GoalState {
+    _nv :: NewVars s u sp,
+    _db :: DB s u sp lp,
+    _oi :: [(Int, Int)]
+}
+
+makeLenses ''GoalState
+
+listInsertDrop :: (Ord a) => [a] -> [(a, a)] -> [a]
+listInsertDrop list items = listInsertDrop' list
+    where
+    mp = Map.fromList items
+    st = Set.fromList $ map snd items
+    listInsertDrop' [] = []
+    listInsertDrop' (x:xs) = case Map.lookup x mp of
+        Nothing -> case Set.member x st of
+            False -> x : listInsertDrop' xs
+            True  -> listInsertDrop' xs
+        Just y -> x : y : listInsertDrop' xs
+
+doOrder :: Ops s u -> [(Int, Int)] -> ST s ()
+doOrder Ops {..} pairs = do
+    size <- readSize
+    perm <- mapM readInvPerm [0..size-1]
+    let order = listInsertDrop perm pairs
+    shuffleHeap order 
+    mapM_ (\pos -> makeTreeNode pos 2 0) (map fst pairs)
+
+liftToGoalState :: StateT (DB s u sp lp) (ST s) a -> StateT (GoalState s u sp lp) (ST s) a
+liftToGoalState (StateT func) = StateT $ \st -> do
+    (res, st') <- func (_db st) 
+    return (res, GoalState (_nv st) st' (_oi st))
+
+allocStatePred :: Ord sp => Ops s u -> sp -> StateT (GoalState s u sp lp) (ST s) (DDNode s u)
+allocStatePred ops pred = liftM fst $ liftToGoalState (alloc ops) =>= uncurry (addPredToState ops pred)
+
+allocStateVar :: Ops s u -> String -> Int -> StateT (GoalState s u sp lp) (ST s) [DDNode s u]
+allocStateVar ops name size = liftM fst $ liftToGoalState (allocN ops size) =>= uncurry (addVarToState ops name)
 
 type Update a = a -> a
 
@@ -169,23 +204,44 @@ addStatePredSymbol pred var idx =
 addStateVarSymbol :: String -> [DDNode s u] -> [Int] -> Update (SymbolInfo s u sp lp)
 addStateVarSymbol name vars idxs = 
     stateVars %~ Map.insert name (zip vars idxs) >>>
-    undefined --stateRev  %~ Map.insert idx (Non name (zip vars idxs))
+    stateRev  %~ flip (foldl func) idxs 
+        where func theMap idx = Map.insert idx (NonAbs name (zip vars idxs)) theMap
 
-addPredToState :: Ord sp => Ops s u -> sp -> DDNode s u -> Int -> StateT (DB s u sp lp) (ST s) ()
-addPredToState Ops{..} pred var idx = do
-    symbolTable %= addStatePredSymbol pred var idx
-    sections . trackedNodes %= (var :) 
-    sections . trackedInds  %= (idx :)
-    modifyM $ sections . trackedCube %%~ band var
+addPredToStateSection :: Ops s u -> sp -> DDNode s u -> Int -> StateT (GoalState s u sp lp) (ST s) ()
+addPredToStateSection ops@Ops{..} pred var idx = do
+    db . sections . trackedNodes %= (var :) 
+    db . sections . trackedInds  %= (idx :)
+    modifyM $ db . sections . trackedCube %%~ band var
+    (nextVar, nextIdx) <- liftToGoalState $ alloc ops
+    db . sections . nextNodes %= (nextVar :)
+    modifyM $ db . sections . nextCube %%~ band nextVar
+    oi %= ((idx, nextIdx) :)
+    nv . allocatedStatePreds %= ((pred, nextVar) :)
 
-addVarToState :: Ops s u -> String -> [DDNode s u] -> [Int] -> StateT (DB s u sp lp) (ST s) ()
-addVarToState Ops{..} name vars idxs = do
-    symbolTable %= addStateVarSymbol name vars idxs
-    sections . trackedNodes %= (vars ++)
-    sections . trackedInds  %= (idxs ++)
-    modifyM $ sections . trackedCube %%~ \c -> do
+addVarToStateSection :: Ops s u -> String -> [DDNode s u] -> [Int] -> StateT (GoalState s u sp lp )(ST s) ()
+addVarToStateSection ops@Ops{..} name vars idxs = do
+    db . sections . trackedNodes %= (vars ++)
+    db . sections . trackedInds  %= (idxs ++)
+    modifyM $ db . sections . trackedCube %%~ \c -> do
         cb <- nodesToCube vars
         band c cb
+    (nextVars, nextIdxs) <- liftToGoalState $ allocN ops (length vars)
+    db . sections . nextNodes %= (nextVars ++)
+    modifyM $ db . sections . nextCube %%~ \c -> do
+        cb <- nodesToCube nextVars
+        band c cb
+    oi %= (zip idxs nextIdxs ++) 
+    nv . allocatedStateVars %= ((name, nextVars) :)
+
+addPredToState :: Ord sp => Ops s u -> sp -> DDNode s u -> Int -> StateT (GoalState s u sp lp) (ST s) ()
+addPredToState ops@Ops{..} pred var idx = do
+    db . symbolTable %= addStatePredSymbol pred var idx
+    addPredToStateSection ops pred var idx
+
+addVarToState :: Ops s u -> String -> [DDNode s u] -> [Int] -> StateT (GoalState s u sp lp) (ST s) ()
+addVarToState ops@Ops{..} name vars idxs = do
+    db . symbolTable %= addStateVarSymbol name vars idxs
+    addVarToStateSection ops name vars idxs
 
 -- === update helpers ===
 allocUntrackedPred :: (Ord sp) => Ops s u -> sp -> StateT (DB s u sp lp) (ST s) (DDNode s u)
@@ -213,7 +269,10 @@ allocLabelPred ops@Ops{..} pred = do
     (var, idx)  <- alloc ops 
     (en, enIdx) <- alloc ops
     symbolTable . labelPreds %= Map.insert pred ((var, idx), (en, enIdx))
-    symbolTable . labelRev   %= undefined
+    symbolTable . labelRev   %= (
+        Map.insert idx (Predicate pred (var, idx), False)  >>> 
+        Map.insert enIdx (Predicate pred (var, idx), True)
+        )
     modifyM $ sections . labelCube %%~ \c -> do
         r1 <- c .& var
         r1 .& en
@@ -223,16 +282,35 @@ allocLabelVar :: Ops s u -> String -> Int -> StateT (DB s u sp lp) (ST s) [DDNod
 allocLabelVar ops@Ops{..} var size = do
     (vars, idxs) <- allocN ops size
     symbolTable . labelVars %= Map.insert var (zip vars idxs)
-    symbolTable . labelRev  %= undefined
+    symbolTable . labelRev  %= flip (foldl (func vars idxs)) idxs
     modifyM $ sections . labelCube %%~ \c -> do
         cb <- nodesToCube vars
         cb .& c
     return vars
+        where func vars idxs theMap idx = Map.insert idx (NonAbs var (zip vars idxs), False) theMap
 
 -- === Variable promotion helpers ===
+promoteUntrackedVar :: Ops s u -> Variable sp s u -> StateT (GoalState s u sp lp) (ST s) ()
+promoteUntrackedVar ops@Ops{..} (Predicate pred (var, idx)) = do
+    --add to state
+    addPredToStateSection ops pred var idx
+    --remove from untracked
+    db . sections . untrackedInds %= (delete idx)
+    modifyM $ db . sections . untrackedCube %%~ bexists var
+promoteUntrackedVar ops@Ops{..} (NonAbs var vi) = do
+    let (vars, idxs) = unzip vi
+    addVarToStateSection ops var vars idxs
+    --remove from untracked
+    db . sections . untrackedInds %= (\\ idxs)
+    modifyM $ db . sections . untrackedCube %%~ \c -> do
+        cb <- nodesToCube vars
+        bexists cb c
 
-promoteUntrackedVar :: Ops s u -> [Variable sp s u] -> StateT (DB s u sp lp) (ST s) ([(sp, [DDNode s u])], [(String, DDNode s u)])
-promoteUntrackedVar = undefined
+promoteUntrackedVars :: Ops s u -> [Variable sp s u] -> StateT (DB s u sp lp) (ST s) (NewVars s u sp)
+promoteUntrackedVars ops vars = StateT $ \st -> do
+    (_, GoalState{..}) <- runStateT (mapM_ (promoteUntrackedVar ops) vars) (GoalState (NewVars [] []) st [])
+    doOrder ops _oi
+    return (_nv, _db)
 
 withTmp' :: Ops s u -> (DDNode s u -> StateT (DB s u sp lp) (ST s) a) -> StateT (DB s u sp lp) (ST s) a
 withTmp' Ops{..} func = do
@@ -241,62 +319,35 @@ withTmp' Ops{..} func = do
     avlOffset += 1
     func var
 
-{-
-data GoalState s u sp lp = GoalState {
-    db                  :: DB s u sp lp,
-    allocatedStatePreds :: Set sp, 
-    allocatedStateVars  :: Map String Int
-}
-
-
 --Construct the VarOps for compiling particular parts of the spec
-goalOps :: Ops s u -> VarOps (GoalState s u sp lp) (BAPred sp lp) BAVar s u
-goalOps ops = VarOps {withTmp = withTmp' ops, ..}
+goalOps :: Ord sp => Ops s u -> VarOps (GoalState s u sp lp) (BAPred sp lp) BAVar s u
+goalOps ops = VarOps {withTmp = undefined {-withTmp' ops -}, ..}
     where
-    getPred (StatePred pred)      = do
-        getStatePart (symbolTable . db) func
-        modify $ \st -> st {allocatedStatePreds = Set.insert pred (allocatedStatePreds st)}
-        where 
-        func st = findWithDefaultM getNode pred (statePreds st) $ findWithDefaultProcessM getNode pred (initPreds st) (allocStatePred ops pred) (uncurry $ promotePredToState pred)
-    getPred _                         = error "Requested non-state variable when compiling goal section"
+    getPred (StatePred pred) = do
+        SymbolInfo{..} <- use $ db . symbolTable
+        findWithDefaultM getNode pred _statePreds $ findWithDefaultProcessM getNode pred _initPreds (allocStatePred ops pred) (uncurry $ addPredToState ops pred)
+    getPred _ = error "Requested non-state variable when compiling goal section"
     getVar  (StateVar var size) = do
-        getStatePart (symbolTable . db) func
-        modify $ \st -> st {allocatedStateVars = Map.insert var size (allocatedStateVars st)}
-        where 
-        func st = findWithDefaultM (map getNode) var (stateVars st) $ findWithDefaultProcessM (map getNode) var (initVars st) (allocStateVar ops var size) (promoteVarToState var)
-    getVar  _                         = error "Requested non-state variable when compiling goal section"
+        SymbolInfo{..} <- use $ db . symbolTable
+        findWithDefaultM (map getNode) var _stateVars $ findWithDefaultProcessM (map getNode) var _initVars (allocStateVar ops var size) (uncurry (addVarToState ops var) . unzip)
+    getVar  _ = error "Requested non-state variable when compiling goal section"
 
-data DoGoalRet s u sp = DoGoalRet {
-    goalNextPredicates :: [(sp, DDNode s u)],
-    goalNextVariables  :: [(String, DDNode s u)],
-    goalExpr           :: DDNode s u
-}
-
---TODO add the next states to the sections
-doGoal :: Ops s u -> (VarOps pdb p v s u -> StateT pdb (ST s) (DDNode s u)) -> StateT (DB s u sp lp) (ST s) (DoGoalRet s u sp)
-doGoal ops complFunc = do
-    (goalExpr, goalNextPredicates, goalNextVariables) <- StateT $ \st -> do
-        (node, GoalState{..}) <- runStateT (complFunc (goalOps ops)) (GoalState st Set.empty Map.empty)
-        return ((node, goalNextPredicates, goalNextVariables), db)
-    goalNextPredicates' <- sequence $ map monadOut $ map (id &&& alloc ops)  $ Set.elems goalNextPredicates
-    goalNextVariables'  <- sequence $ map monadOut $ map (id *** allocN ops) $ Map.toList goalNextVariables
-    return $ DoGoalRet {
-        goalNextPredicates = map (second getNode) goalNextPredicates',
-        goalNextVariables  = map (second getNode) goalNextVariables'
-    }
-
--}
+doGoal :: Ord sp => Ops s u -> (VarOps (GoalState s u sp lp) (BAPred sp lp) BAVar s u -> StateT (GoalState s u sp lp) (ST s) (DDNode s u)) -> StateT (DB s u sp lp) (ST s) (DDNode s u, [(sp, DDNode s u)], [(String, [DDNode s u])])
+doGoal ops complFunc = StateT $ \st -> do
+    (res, GoalState{..}) <- runStateT (complFunc $ goalOps ops) (GoalState (NewVars [] []) st [])
+    doOrder ops _oi
+    return ((res, _allocatedStatePreds _nv, _allocatedStateVars _nv), _db)
 
 initOps :: Ord sp => Ops s u -> VarOps (DB s u sp lp) (BAPred sp lp) BAVar s u
 initOps ops = VarOps {withTmp = withTmp' ops, ..}
     where
     getPred (StatePred pred) = do
-        st <- get
-        findWithDefaultM getNode pred (st ^. symbolTable . initPreds) (allocInitPred ops pred)
+        SymbolInfo{..} <- use symbolTable
+        findWithDefaultM getNode pred _initPreds (allocInitPred ops pred)
     getPred _ = error "Requested non-state variable when compiling init section"
     getVar  (StateVar var size) = do
-        st <- get
-        findWithDefaultM (map getNode) var (st ^. symbolTable . initVars) (allocInitVar ops var size)
+        SymbolInfo{..} <- use symbolTable
+        findWithDefaultM (map getNode) var _initVars (allocInitVar ops var size)
     getVar _ = error "Requested non-state variable when compiling init section"
 
 doInit :: Ord sp => Ops s u -> (VarOps (DB s u sp lp) (BAPred sp lp) BAVar s u -> StateT (DB s u sp lp) (ST s) (DDNode s u)) -> StateT (DB s u sp lp) (ST s) (DDNode s u)
@@ -321,11 +372,3 @@ updateOps ops = VarOps {withTmp = withTmp' ops, ..}
 doUpdate :: (Ord sp, Ord lp) => Ops s u -> (VarOps (DB s u sp lp) (BAPred sp lp) BAVar s u -> StateT (DB s u sp lp) (ST s) (DDNode s u)) -> StateT (DB s u sp lp) (ST s) (DDNode s u)
 doUpdate ops complFunc = complFunc (updateOps ops)
 
-{-
-promote :: Ops s u -> (sp, VarInfo s u) -> (String, [VarInfo s u]) -> ST s ((sp, VarInfo s u), (String, [VarInfo s u]))
-promote preds vars = do
-    predRet <- sequence $ map (monadOut . (id *** const (alloc ops))) preds
-    varRet  <- sequence $ map (monadOut . (id *** alloc ops . length)) vars
-    promoteStuff
-
--}
