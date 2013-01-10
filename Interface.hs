@@ -74,6 +74,7 @@ data SymbolInfo s u sp lp = SymbolInfo {
 }
 
 makeLenses ''SymbolInfo
+initialSymbolTable = SymbolInfo Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty 
 
 --Sections
 data SectionInfo s u = SectionInfo {
@@ -88,6 +89,7 @@ data SectionInfo s u = SectionInfo {
 }
 
 makeLenses ''SectionInfo
+initialSectionInfo Ops{..} = SectionInfo btrue [] [] btrue [] btrue btrue []
 
 --Variable/predicate database
 data DB s u sp lp = DB {
@@ -97,6 +99,7 @@ data DB s u sp lp = DB {
 }
 
 makeLenses ''DB
+initialDB ops = DB initialSymbolTable (initialSectionInfo ops) 0
 
 --types that appear in the backend syntax tree
 data BAPred sp lp where
@@ -332,11 +335,11 @@ goalOps ops = VarOps {withTmp = undefined {-withTmp' ops -}, ..}
         findWithDefaultM (map getNode) var _stateVars $ findWithDefaultProcessM (map getNode) var _initVars (allocStateVar ops var size) (uncurry (addVarToState ops var) . unzip)
     getVar  _ = error "Requested non-state variable when compiling goal section"
 
-doGoal :: Ord sp => Ops s u -> (VarOps (GoalState s u sp lp) (BAPred sp lp) BAVar s u -> StateT (GoalState s u sp lp) (ST s) (DDNode s u)) -> StateT (DB s u sp lp) (ST s) (DDNode s u, [(sp, DDNode s u)], [(String, [DDNode s u])])
+doGoal :: Ord sp => Ops s u -> (VarOps (GoalState s u sp lp) (BAPred sp lp) BAVar s u -> StateT (GoalState s u sp lp) (ST s) (DDNode s u)) -> StateT (DB s u sp lp) (ST s) (DDNode s u, NewVars s u sp)
 doGoal ops complFunc = StateT $ \st -> do
     (res, GoalState{..}) <- runStateT (complFunc $ goalOps ops) (GoalState (NewVars [] []) st [])
     doOrder ops _oi
-    return ((res, _allocatedStatePreds _nv, _allocatedStateVars _nv), _db)
+    return ((res, _nv), _db)
 
 initOps :: Ord sp => Ops s u -> VarOps (DB s u sp lp) (BAPred sp lp) BAVar s u
 initOps ops = VarOps {withTmp = withTmp' ops, ..}
