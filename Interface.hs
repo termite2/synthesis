@@ -141,6 +141,18 @@ allocN Ops{..} size = do
     return (res, indices)
 
 --Do the variable allocation and symbol table tracking
+addToCube :: Ops s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+addToCube Ops{..} add cb = do
+    res <- add .& cb
+    deref cb
+    return res
+
+addToCubeDeref :: Ops s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+addToCubeDeref Ops{..} add cb = do
+    res <- add .& cb
+    deref add
+    deref cb
+    return res
 
 --initial state helpers
 allocInitPred :: Ord sp => Ops s u -> sp -> StateT (DB s u sp lp) (ST s) (DDNode s u)
@@ -219,10 +231,10 @@ addPredToStateSection :: Ops s u -> sp -> DDNode s u -> Int -> StateT (GoalState
 addPredToStateSection ops@Ops{..} pred var idx = do
     db . sections . trackedNodes %= (var :) 
     db . sections . trackedInds  %= (idx :)
-    modifyM $ db . sections . trackedCube %%~ band var
+    modifyM $ db . sections . trackedCube %%~ addToCube ops var
     (nextVar, nextIdx) <- liftToGoalState $ alloc ops
     db . sections . nextNodes %= (nextVar :)
-    modifyM $ db . sections . nextCube %%~ band nextVar
+    modifyM $ db . sections . nextCube %%~ addToCube ops nextVar
     oi %= ((idx, nextIdx) :)
     nv . allocatedStatePreds %= ((pred, nextVar) :)
 
@@ -232,12 +244,12 @@ addVarToStateSection ops@Ops{..} name vars idxs = do
     db . sections . trackedInds  %= (idxs ++)
     modifyM $ db . sections . trackedCube %%~ \c -> do
         cb <- nodesToCube vars
-        band c cb
+        addToCubeDeref ops c cb
     (nextVars, nextIdxs) <- liftToGoalState $ allocN ops (length vars)
     db . sections . nextNodes %= (nextVars ++)
     modifyM $ db . sections . nextCube %%~ \c -> do
         cb <- nodesToCube nextVars
-        band c cb
+        addToCubeDeref ops c cb
     oi %= (zip idxs nextIdxs ++) 
     nv . allocatedStateVars %= ((name, nextVars) :)
 
@@ -259,18 +271,18 @@ allocUntrackedVar :: Ops s u -> String -> Int -> StateT (DB s u sp lp) (ST s) [D
 allocUntrackedVar ops var size = liftM fst $ allocN ops size =>= uncurry (addVarToUntracked ops var)
 
 addPredToUntracked :: Ord sp => Ops s u -> sp -> DDNode s u -> Int -> StateT (DB s u sp lp) (ST s) ()
-addPredToUntracked Ops{..} pred var idx = do
+addPredToUntracked ops@Ops{..} pred var idx = do
     symbolTable %= addStatePredSymbol pred var idx
     sections . untrackedInds %= (idx :)
-    modifyM $ sections . untrackedCube %%~ band var
+    modifyM $ sections . untrackedCube %%~ addToCube ops var
 
 addVarToUntracked  :: Ops s u -> String -> [DDNode s u] -> [Int] -> StateT (DB s u sp lp) (ST s) ()
-addVarToUntracked Ops {..} name vars idxs = do
+addVarToUntracked ops@Ops {..} name vars idxs = do
     symbolTable %= addStateVarSymbol name vars idxs
     sections . untrackedInds %= (idxs ++)
     modifyM $ sections . untrackedCube %%~ \c -> do
         cb <- nodesToCube vars
-        band c cb
+        addToCubeDeref ops c cb
 
 allocLabelPred :: Ord lp => Ops s u -> lp -> StateT (DB s u sp lp) (ST s) (DDNode s u)
 allocLabelPred ops@Ops{..} pred = do
@@ -282,8 +294,8 @@ allocLabelPred ops@Ops{..} pred = do
         Map.insert enIdx (Predicate pred (var, idx), True)
         )
     modifyM $ sections . labelCube %%~ \c -> do
-        r1 <- c .& var
-        r1 .& en
+        r1 <- addToCube ops var c
+        addToCube ops en r1
     return var
 
 allocLabelVar :: Ops s u -> String -> Int -> StateT (DB s u sp lp) (ST s) [DDNode s u]
@@ -293,7 +305,7 @@ allocLabelVar ops@Ops{..} var size = do
     symbolTable . labelRev  %= flip (foldl (func vars idxs)) idxs
     modifyM $ sections . labelCube %%~ \c -> do
         cb <- nodesToCube vars
-        cb .& c
+        addToCubeDeref ops cb c
     return vars
         where func vars idxs theMap idx = Map.insert idx (NonAbs var (zip vars idxs), False) theMap
 
@@ -301,7 +313,7 @@ allocOutcomePred :: Ord lp => Ops s u -> lp -> StateT (DB s u sp lp) (ST s) (DDN
 allocOutcomePred ops@Ops{..} pred = do
     (var, idx) <- alloc ops
     symbolTable . outcomePreds %= Map.insert pred (var, idx)
-    modifyM $ sections . outcomeCube %%~ band var
+    modifyM $ sections . outcomeCube %%~ addToCube ops var
     return var
 
 allocOutcomeVar :: Ops s u -> String -> Int -> StateT (DB s u sp lp) (ST s) [DDNode s u]
@@ -310,7 +322,7 @@ allocOutcomeVar ops@Ops{..} name size = do
     symbolTable . outcomeVars %= Map.insert name (zip vars idxs)
     modifyM $ sections . outcomeCube %%~ \c -> do
         cb <- nodesToCube vars
-        cb .& c
+        addToCubeDeref ops cb c
     return vars
 
 -- === Variable promotion helpers ===

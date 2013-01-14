@@ -123,7 +123,7 @@ doEnVars Ops{..} trans enVars = do
 
 --Variable promotion strategies
 
-refineStrategy = refineAny
+refineStrategy = refineLeastPreds
 
 refineAny :: Ops s u -> SectionInfo  s u -> RefineDynamic s u -> DDNode s u -> ST s (Maybe [Int])
 refineAny Ops{..} SectionInfo{..} RefineDynamic{..} newSU = do
@@ -180,7 +180,6 @@ refineLeastPreds ops@Ops{..} SectionInfo{..} RefineDynamic{..} newSU
 
 pickUntrackedToPromote :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> ST s (Maybe [Int])
 pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} RefineStatic{..} win = do
-    traceST "Picking untracked to promote"
     hasOutgoings <- bexists _nextCube trans
     win' <- win .| goal
     su    <- cPre' ops si rd hasOutgoings win'
@@ -435,7 +434,6 @@ absRefineLoop m spec ts abstractorState =
                                     res <- lift $ pickUntrackedToPromote ops si rd rs winRegion
                                     case res of 
                                         Just vars -> do
-                                            lift $ traceST "Found untracked variables to promote. Promoting them..."
                                             newRD <- promoteUntracked ops spec rd vars 
                                             refineLoop' newRD winRegion
                                         Nothing -> lift $ do
