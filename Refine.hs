@@ -102,7 +102,7 @@ solveGame ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..
 
 -- ===Abstraction refinement===
 
-check msg ops = unsafeIOToST (putStrLn ("checking bdd consistency" ++ msg)) >> debugCheck ops >> checkKeys ops
+check msg ops = unsafeIOToST (putStrLn ("checking bdd consistency" ++ msg ++ "\n")) >> debugCheck ops >> checkKeys ops
 --check msg ops = return ()
 
 doEnVars :: Ops s u -> DDNode s u -> [(DDNode s u, DDNode s u)] -> ST s (DDNode s u)
@@ -203,7 +203,10 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     (goalExpr, NewVars{..}) <- doGoal ops goalAbs
     lift $ check "After compiling goal" ops
     --get the abstract update functions for the goal predicates and variables
-    updateExprConj' <- doUpdate ops (updateAbs _allocatedStatePreds _allocatedStateVars)
+    updateExprConj'' <- doUpdate ops (updateAbs _allocatedStatePreds _allocatedStateVars)
+    outcomeCube <- gets $ _outcomeCube . _sections
+    updateExprConj' <- lift $ bexists outcomeCube updateExprConj''
+    lift $ deref updateExprConj''
     labelPreds <- gets $ _labelPreds . _symbolTable
     updateExprConj  <- lift $ doEnVars ops updateExprConj' $ map (fst *** fst) $ Map.elems labelPreds
     lift $ deref updateExprConj'
@@ -236,7 +239,10 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     labelPredsPreUpdate <- gets $ _labelPreds . _symbolTable
 
     --compute the update functions
-    updateExprConj' <- doUpdate ops $ updateAbs _allocatedStatePreds _allocatedStateVars
+    updateExprConj'' <- doUpdate ops $ updateAbs _allocatedStatePreds _allocatedStateVars
+    outcomeCube <- gets $ _outcomeCube . _sections
+    updateExprConj' <- lift $ bexists outcomeCube updateExprConj''
+    lift $ deref updateExprConj''
 
     labelPreds <- gets $ _labelPreds . _symbolTable
     updateExprConj <- lift $ doEnVars ops updateExprConj' $ map (fst *** fst) $ Map.elems labelPreds

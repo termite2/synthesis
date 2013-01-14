@@ -88,13 +88,15 @@ data SymbolInfo s u sp lp = SymbolInfo {
     _stateVars          :: Map String [VarInfo s u],
     _labelPreds         :: Map lp (VarInfo s u, VarInfo s u),
     _labelVars          :: Map String [VarInfo s u],
+    _outcomePreds       :: Map lp (VarInfo s u),
+    _outcomeVars        :: Map String [VarInfo s u],
     --mappings from index to variable/predicate
     _stateRev           :: Map Int (Variable sp s u),
     _labelRev           :: Map Int (Variable lp s u, Bool)
 }
 
 makeLenses ''SymbolInfo
-initialSymbolTable = SymbolInfo Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty 
+initialSymbolTable = SymbolInfo Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty
 
 --Sections
 data SectionInfo s u = SectionInfo {
@@ -104,12 +106,13 @@ data SectionInfo s u = SectionInfo {
     _untrackedCube :: DDNode s u,
     _untrackedInds :: [Int],
     _labelCube     :: DDNode s u,
+    _outcomeCube   :: DDNode s u,
     _nextCube      :: DDNode s u,
     _nextNodes     :: [DDNode s u]
 }
 
 makeLenses ''SectionInfo
-initialSectionInfo Ops{..} = SectionInfo btrue [] [] btrue [] btrue btrue []
+initialSectionInfo Ops{..} = SectionInfo btrue [] [] btrue [] btrue btrue btrue []
 
 --Variable/predicate database
 data DB s u sp lp = DB {
@@ -294,6 +297,22 @@ allocLabelVar ops@Ops{..} var size = do
     return vars
         where func vars idxs theMap idx = Map.insert idx (NonAbs var (zip vars idxs), False) theMap
 
+allocOutcomePred :: Ord lp => Ops s u -> lp -> StateT (DB s u sp lp) (ST s) (DDNode s u)
+allocOutcomePred ops@Ops{..} pred = do
+    (var, idx) <- alloc ops
+    symbolTable . outcomePreds %= Map.insert pred (var, idx)
+    modifyM $ sections . outcomeCube %%~ band var
+    return var
+
+allocOutcomeVar :: Ops s u -> String -> Int -> StateT (DB s u sp lp) (ST s) [DDNode s u]
+allocOutcomeVar ops@Ops{..} name size = do
+    (vars, idxs) <- allocN ops size
+    symbolTable . outcomeVars %= Map.insert name (zip vars idxs)
+    modifyM $ sections . outcomeCube %%~ \c -> do
+        cb <- nodesToCube vars
+        cb .& c
+    return vars
+
 -- === Variable promotion helpers ===
 promoteUntrackedVar :: Ops s u -> Variable sp s u -> StateT (GoalState s u sp lp) (ST s) ()
 promoteUntrackedVar ops@Ops{..} (Predicate pred (var, idx)) = do
@@ -367,12 +386,18 @@ updateOps ops = VarOps {withTmp = withTmp' ops, ..}
     getPred (LabelPred pred) = do
         SymbolInfo{..} <- use symbolTable
         findWithDefaultM (fst . fst) pred _labelPreds $ allocLabelPred ops pred
+    getPred (OutPred pred) = do
+        SymbolInfo{..} <- use symbolTable
+        findWithDefaultM fst pred _outcomePreds $ allocOutcomePred ops pred
     getVar  (StateVar var size) = do
         SymbolInfo{..} <- use symbolTable
         findWithDefaultM (map getNode) var _stateVars $ findWithDefaultProcessM (map getNode) var _initVars (allocUntrackedVar ops var size) (uncurry (addVarToUntracked ops var) . unzip)
     getVar  (LabelVar var size) = do
         SymbolInfo{..} <- use symbolTable
         findWithDefaultM (map getNode) var _labelVars $ allocLabelVar ops var size
+    getVar  (OutVar var size) = do
+        SymbolInfo{..} <- use symbolTable
+        findWithDefaultM (map getNode) var _outcomeVars $ allocOutcomeVar ops var size
 
 doUpdate :: (Ord sp, Ord lp) => Ops s u -> (VarOps (DB s u sp lp) (BAPred sp lp) BAVar s u -> StateT (DB s u sp lp) (ST s) (DDNode s u)) -> StateT (DB s u sp lp) (ST s) (DDNode s u)
 doUpdate ops complFunc = complFunc (updateOps ops)
