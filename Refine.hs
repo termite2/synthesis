@@ -102,8 +102,8 @@ solveGame ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..
 
 -- ===Abstraction refinement===
 
---check msg ops = unsafeIOToST (putStrLn ("checking bdd consistency" ++ msg)) >> debugCheck ops >> checkKeys ops
-check msg ops = return ()
+check msg ops = unsafeIOToST (putStrLn ("checking bdd consistency" ++ msg)) >> debugCheck ops >> checkKeys ops
+--check msg ops = return ()
 
 doEnVars :: Ops s u -> DDNode s u -> [(DDNode s u, DDNode s u)] -> ST s (DDNode s u)
 doEnVars Ops{..} trans enVars = do
@@ -153,12 +153,10 @@ refineLeastPreds ops@Ops{..} SectionInfo{..} RefineDynamic{..} newSU
         ref newSU
         (size, vars, remaining) <- sizeVarsNext newSU
         (size, vars) <- doLoop size vars remaining
-        check "after doLoop" ops
         return $ Just vars
     where
     sizeVarsNext :: DDNode s u -> ST s (Int, [Int], DDNode s u)
     sizeVarsNext remaining = do
-        check "before sizeVarsNext" ops
         (lc, sz) <- largestCube remaining
         prime <- makePrime lc newSU
         deref lc
@@ -166,7 +164,6 @@ refineLeastPreds ops@Ops{..} SectionInfo{..} RefineDynamic{..} newSU
         nextRemaining <- band remaining $ bnot prime
         deref remaining
         deref prime
-        check "after sizeVarsNext" ops
         return (size, vars, nextRemaining)
     doLoop :: Int -> [Int] -> DDNode s u -> ST s (Int, [Int])
     doLoop size vars remaining 
@@ -176,11 +173,9 @@ refineLeastPreds ops@Ops{..} SectionInfo{..} RefineDynamic{..} newSU
             if (size' < size) then doLoop size' vars' remaining' else doLoop size vars remaining'
     analyseCube :: DDNode s u -> ST s (Int, [Int])
     analyseCube cube' = do
-        check "before analyseCube" ops
         untrackedCube <- bexists _trackedCube cube'
         support <- supportIndices _untrackedCube
         deref untrackedCube
-        check "after analyseCube" ops
         return (length support, support)
 
 pickUntrackedToPromote :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> ST s (Maybe [Int])
@@ -193,22 +188,20 @@ pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} Refin
     newSU <- su .& bnot win
     deref win'
     deref su
-    check "before refineLeastPreds" ops
     res <- refineStrategy ops si rd newSU
-    check "after refineLeastPreds" ops
     deref newSU
     return res
 
 --Create an initial abstraction and set up the data structures
 initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u sp lp -> StateT (DB s u sp lp) (ST s) (RefineDynamic s u, RefineStatic s u)
 initialAbstraction ops@Ops{..} Abstractor{..} = do
-    check "InitialAbstraction start" ops
+    lift $ check "InitialAbstraction start" ops
     --abstract init
     initExpr <- doInit ops initAbs
-    check "After compiling init" ops
+    lift $ check "After compiling init" ops
     --abstract the goal
     (goalExpr, NewVars{..}) <- doGoal ops goalAbs
-    check "After compiling goal" ops
+    lift $ check "After compiling goal" ops
     --get the abstract update functions for the goal predicates and variables
     updateExprConj' <- doUpdate ops (updateAbs _allocatedStatePreds _allocatedStateVars)
     labelPreds <- gets $ _labelPreds . _symbolTable

@@ -15,6 +15,26 @@ import Control.Lens
 
 import BddRecord
 
+--types that appear in the backend syntax tree
+data BAPred sp lp where
+    StatePred :: sp -> BAPred sp lp
+    LabelPred :: lp -> BAPred sp lp
+    OutPred   :: lp -> BAPred sp lp
+    deriving (Show, Eq, Ord)
+
+data BAVar where
+    StateVar :: String -> Int -> BAVar 
+    LabelVar :: String -> Int -> BAVar
+    OutVar   :: String -> Int -> BAVar
+    deriving (Show, Eq, Ord)
+
+--Operations that are given to the backend for compilation. 
+data VarOps pdb p v s u = VarOps {
+    getPred :: p -> StateT pdb (ST s) (DDNode s u),
+    getVar  :: v -> StateT pdb (ST s) [DDNode s u],
+    withTmp :: forall a. (DDNode s u -> StateT pdb (ST s) a) -> StateT pdb (ST s) a
+}
+
 --Generic utility functions
 findWithDefaultM :: (Monad m, Ord k) => (v -> v') -> k -> Map k v -> m v' -> m v'
 findWithDefaultM modF key theMap func = maybe func (return . modF) $ Map.lookup key theMap 
@@ -101,24 +121,6 @@ data DB s u sp lp = DB {
 makeLenses ''DB
 initialDB ops = DB initialSymbolTable (initialSectionInfo ops) 0
 
---types that appear in the backend syntax tree
-data BAPred sp lp where
-    StatePred :: sp -> BAPred sp lp
-    LabelPred :: lp -> BAPred sp lp
-    OutPred   :: lp -> BAPred sp lp
-
-data BAVar where
-    StateVar :: String -> Int -> BAVar 
-    LabelVar :: String -> Int -> BAVar
-    OutVar   :: String -> Int -> BAVar
-
---Operations that are given to the backend for compilation. 
-data VarOps pdb p v s u = VarOps {
-    getPred :: p -> StateT pdb (ST s) (DDNode s u),
-    getVar  :: v -> StateT pdb (ST s) [DDNode s u],
-    withTmp :: forall a. (DDNode s u -> StateT pdb (ST s) a) -> StateT pdb (ST s) a
-}
-
 --Generic variable allocations
 alloc :: Ops s u -> StateT (DB s u sp lp) (ST s) (DDNode s u, Int)
 alloc Ops{..} = do
@@ -130,7 +132,7 @@ alloc Ops{..} = do
 allocN :: Ops s u -> Int -> StateT (DB s u sp lp) (ST s) ([DDNode s u], [Int])
 allocN Ops{..} size = do
     offset <- use avlOffset
-    let indices = iterate (+1) offset
+    let indices = take size $ iterate (+1) offset
     res    <- lift $ mapM ithVar indices
     avlOffset += size
     return (res, indices)
