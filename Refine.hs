@@ -276,6 +276,11 @@ getPredicates = mapMaybe func
 refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
 refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win = do
     SymbolInfo{..} <- gets _symbolTable 
+    let stp = map (show *** (:[]) . getIdx) $ Map.toList _statePreds
+    let stv = map (show *** map getIdx) $ Map.toList _stateVars
+    let lv  = map (show *** map getIdx)  $ Map.toList _labelVars
+    let a   = map (show *** (:[]) . getIdx . fst) $ Map.toList _labelPreds
+    let b   = map (show *** (:[]) . getIdx . snd) $ Map.toList _labelPreds
     si@SectionInfo{..} <- gets $ _sections
     win' <- lift $ win .| goal
     t0 <- lift $ mapVars win'
@@ -284,6 +289,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
     t3 <- lift $ consistentPlusCUL .& t2
     lift $ deref t2
     hasOutgoings <- lift $ bexists _nextCube trans
+    --(state, untracked, label) tuples that are winning assuming the liberal consistentPlus
     tt3 <- lift $ hasOutgoings .& t3
     --deref hasOutgoings
     lift $ deref t3
@@ -308,7 +314,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
             c <- lift $ presentVars ops t7 
             lift $ deref t7
             let stateUntrackedProgress = map (first $ fromJustNote "refineConsistency1" . flip Map.lookup _stateRev) c
-            lift $ traceST $ "Tuple that will make progress: " ++ show stateUntrackedProgress
+            lift $ traceST $ "Tuple that will make progress: " ++ show (nub stateUntrackedProgress)
             let preds = getPredicates stateUntrackedProgress
             lift $ traceST $ "Preds being checked for consistency: " ++ show preds
             lift $ check "refineConsistency end2" ops
@@ -329,6 +335,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                 Nothing -> do
                     lift $ traceST "consistentPlusCU could not be refined"
                     --consistentPlusCU cannot be refined but maybe consistentPlusCUL or consistentMinusCUL can be
+                    --(state, untracked) pairs that are winning assuming the restricted consistentPlus
                     cpr <- lift $ cPre' ops si rd hasOutgoings win'
                     lift $ mapM deref [win', hasOutgoings]
                     t4 <- lift $ tt3 .& bnot cpr
@@ -346,6 +353,11 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                             t7 <- lift $ makePrime t6 t4
                             lift $ deref t4
                             lift $ deref t6
+                            {-
+                            lift $ traceST "********"
+                            res <- lift $ listPrimeImplicants ops [stp, stv, lv, a, b] t7
+                            lift $ traceST $ formatPrimeImplicants res
+                            -}
                             c <- lift $ presentVars ops t7
                             lift $ deref t7
                             let (stateIndices, labelIndices) = partition (\(p, x) -> elem p _trackedInds || elem p _untrackedInds) c
@@ -353,8 +365,9 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                             let cLabelPreds = getPredicates $ catMaybes $ map (uncurry func) labelIndices
                                     where
                                     func idx polarity = case fromJustNote "refineConsistency3" $ Map.lookup idx _labelRev of
-                                        (_, False)   -> Nothing
-                                        (pred, True) -> Just (pred, polarity)
+                                        (_, True)   -> Nothing
+                                        (pred, False) -> Just (pred, polarity)
+                            --TODO below preds dont seem to be the most general
                             lift $ traceST $ "label preds for solver: " ++ show cLabelPreds
                             lift $ check "refineConsistency end3" ops
                             --Alive : nothing
@@ -383,12 +396,26 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                                     let func ((lp, le), pol) = [(fst lp, pol), (fst le, True)]
                                     labelCube <- lift $ uncurry computeCube $ unzip $ concatMap func labelPreds'
 
-                                    consistentCube  <- lift $ labelCube .& eQuantExpr
-                                    lift $ mapM deref [labelCube, eQuantExpr]
+                                    let otherEnabling = map (getNode. snd . snd) $ filter (\(p, _) -> not $ p `elem` map fst cLabelPreds) $ Map.toList _labelPreds
+                                    otherCube <- lift $ uncurry computeCube $ unzip $ zip otherEnabling (repeat False)
+
+{-
+                                    res <- lift $ listPrimeImplicants ops [a, b] labelCube
+                                    lift $ traceST $ formatPrimeImplicants res
+-}
+
+                                    consistentCube' <- lift $ labelCube .& eQuantExpr
+                                    consistentCube  <- lift $ consistentCube' .& otherCube
+                                    lift $ mapM deref [labelCube, eQuantExpr, consistentCube', otherCube]
 
                                     consistentMinusCUL'  <- lift $ consistentMinusCUL .| consistentCube
                                     lift $ deref consistentCube
                                     lift $ deref consistentMinusCUL
+
+                                    lift $ traceST $ "consistentMinus"
+                                    res <- lift $ listPrimeImplicants ops [a, b] consistentMinusCUL'
+                                    lift $ traceST $ formatPrimeImplicants res
+
 
                                     return $ Just $ rd {
                                         consistentMinusCUL = consistentMinusCUL'

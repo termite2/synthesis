@@ -132,6 +132,12 @@ alloc Ops{..} = do
     avlOffset += 1
     return (res, offset)
 
+allocPair :: Ops s u -> StateT (DB s u sp lp) (ST s) ((DDNode s u, Int), (DDNode s u, Int))
+allocPair ops@Ops{..} = do
+    r1 <- alloc ops
+    r2 <- alloc ops
+    return (r1, r2)
+
 allocN :: Ops s u -> Int -> StateT (DB s u sp lp) (ST s) ([DDNode s u], [Int])
 allocN Ops{..} size = do
     offset <- use avlOffset
@@ -139,6 +145,16 @@ allocN Ops{..} size = do
     res    <- lift $ mapM ithVar indices
     avlOffset += size
     return (res, indices)
+
+allocNPair :: Ops s u -> Int -> StateT (DB s u sp lp) (ST s ) (([DDNode s u], [Int]), ([DDNode s u], [Int]))
+allocNPair Ops{..} size = do
+    offset <- use avlOffset
+    let indices1 = take size $ iterate (+2) offset
+    let indices2 = take size $ iterate (+2) (offset + 1)
+    res1    <- lift $ mapM ithVar indices1
+    res2    <- lift $ mapM ithVar indices2
+    avlOffset += size * 2
+    return ((res1, indices1), (res2, indices2))
 
 --Do the variable allocation and symbol table tracking
 addToCube :: Ops s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
