@@ -10,7 +10,6 @@ import Data.Set (Set)
 import Control.Arrow
 import Data.List
 import Control.Monad
-import Data.List
 import Data.Maybe
 import Data.Tuple.All
 import Data.Tuple
@@ -25,19 +24,13 @@ import BddRecord
 import BddUtil
 import BddInterp
 import Interface
+import RefineCommon
 
 --Input to the refinement algorithm. Represents the spec.
 data Abstractor s u sp lp = Abstractor {
     goalAbs   :: forall pdb. VarOps pdb (BAPred sp lp) BAVar s u -> StateT pdb (ST s) (DDNode s u),
     updateAbs :: forall pdb. [(sp, DDNode s u)] -> [(String, [DDNode s u])] -> VarOps pdb (BAPred sp lp) BAVar s u -> StateT pdb (ST s) (DDNode s u),
     initAbs   :: forall pdb. VarOps pdb (BAPred sp lp) BAVar s u -> StateT pdb (ST s) (DDNode s u)
-}
-
---Theory solving
-data TheorySolver s u sp lp = TheorySolver {
-    unsatCoreState      :: [(sp, Bool)] -> Maybe [(sp, Bool)],
-    unsatCoreStateLabel :: [(sp, Bool)] -> [(lp, Bool)] -> Maybe ([(sp, Bool)], [(lp, Bool)]),
-    eQuant              :: forall pdb. [(sp, Bool)] -> [(lp, Bool)] -> VarOps pdb (BAPred sp lp) BAVar s u -> StateT pdb (ST s) (DDNode s u)
 }
 
 -- ===Data structures for keeping track of abstraction state===
@@ -65,7 +58,7 @@ cPre' Ops{..} SectionInfo{..} RefineDynamic{..} hasOutgoings target = do
     deref t1
     t3 <- consistentMinusCUL .& t2
     deref t2
-    t4 <- bexists _labelCube t3
+    t4 <- bexists _labelCube t3 --TODO combine this into an andabstract
     deref t3
     t5 <- consistentPlusCU .-> t4
     deref t4
@@ -78,14 +71,6 @@ cPre ops@Ops {..} si@SectionInfo{..} rd@RefineDynamic{..} hasOutgoings target = 
     deref su
     return t6
 
-fixedPoint :: Ops s u -> (DDNode s u -> ST s (DDNode s u)) -> DDNode s u -> ST s (DDNode s u)
-fixedPoint (ops @ Ops {..}) func start = do
-    res <- func start
-    deref start 
-    case (res==start) of --this is safe 
-        True -> return start
-        False -> fixedPoint ops func res
-        
 solveGame :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> ST s (DDNode s u)
 solveGame ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} target = do 
     hasOutgoings <- bexists _nextCube trans
@@ -105,78 +90,9 @@ solveGame ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..
 --check msg ops = unsafeIOToST (putStrLn ("checking bdd consistency" ++ msg ++ "\n")) >> debugCheck ops >> checkKeys ops
 check msg ops = return ()
 
-doEnVars :: Ops s u -> DDNode s u -> [(DDNode s u, DDNode s u)] -> ST s (DDNode s u)
-doEnVars Ops{..} trans enVars = do
-        ref trans
-        foldM func trans enVars
-    where
-    func soFar (pred, en) = do
-        e <- bexists pred soFar
-        e1 <- e .& bnot en
-        deref e
-        c <- en .& soFar
-        deref soFar
-        res <- e1 .| c
-        deref c
-        deref e1
-        return res
-
 --Variable promotion strategies
 
 refineStrategy = refineLeastPreds
-
-refineAny :: Ops s u -> SectionInfo  s u -> RefineDynamic s u -> DDNode s u -> ST s (Maybe [Int])
-refineAny Ops{..} SectionInfo{..} RefineDynamic{..} newSU = do
-    si <- supportIndices newSU
-    let ui = si `intersect` _untrackedInds
-    return $ case ui of
-        []  -> Nothing
-        x:_ -> Just [x]
-
-refineFirstPrime :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> ST s (Maybe [Int])
-refineFirstPrime Ops{..} SectionInfo{..} RefineDynamic{..} newSU = do
-    (lc, sz) <- largestCube newSU
-    prime    <- makePrime lc newSU
-    deref lc
-    si       <- supportIndices prime
-    deref prime
-    let ui = si `intersect` _untrackedInds
-    return $ case ui of
-        [] -> Nothing
-        x  -> Just x
-
---Refine the least number of untracked state predicates possible to make progress
-refineLeastPreds :: forall s u o sp lp. Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> ST s (Maybe [Int])
-refineLeastPreds ops@Ops{..} SectionInfo{..} RefineDynamic{..} newSU 
-    | newSU == bfalse = return Nothing
-    | otherwise       = do
-        ref newSU
-        (size, vars, remaining) <- sizeVarsNext newSU
-        (size, vars) <- doLoop size vars remaining
-        return $ Just vars
-    where
-    sizeVarsNext :: DDNode s u -> ST s (Int, [Int], DDNode s u)
-    sizeVarsNext remaining = do
-        (lc, sz) <- largestCube remaining
-        prime <- makePrime lc newSU
-        deref lc
-        (size, vars) <- analyseCube prime
-        nextRemaining <- band remaining $ bnot prime
-        deref remaining
-        deref prime
-        return (size, vars, nextRemaining)
-    doLoop :: Int -> [Int] -> DDNode s u -> ST s (Int, [Int])
-    doLoop size vars remaining 
-        | remaining == bfalse = return (size, vars)
-        | otherwise           = do
-            (size', vars', remaining') <- sizeVarsNext remaining
-            if (size' < size) then doLoop size' vars' remaining' else doLoop size vars remaining'
-    analyseCube :: DDNode s u -> ST s (Int, [Int])
-    analyseCube cube' = do
-        untrackedCube <- bexists _trackedCube cube'
-        support <- supportIndices _untrackedCube
-        deref untrackedCube
-        return (length support, support)
 
 pickUntrackedToPromote :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> ST s (Maybe [Int])
 pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} RefineStatic{..} win = do
@@ -187,7 +103,7 @@ pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} Refin
     newSU <- su .& bnot win
     deref win'
     deref su
-    res <- refineStrategy ops si rd newSU
+    res <- refineStrategy ops si newSU
     deref newSU
     return res
 
@@ -412,10 +328,11 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                                     lift $ deref consistentCube
                                     lift $ deref consistentMinusCUL
 
+{-
                                     lift $ traceST $ "consistentMinus"
                                     res <- lift $ listPrimeImplicants ops [a, b] consistentMinusCUL'
                                     lift $ traceST $ formatPrimeImplicants res
-
+                                    -}
 
                                     return $ Just $ rd {
                                         consistentMinusCUL = consistentMinusCUL'
