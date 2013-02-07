@@ -7,7 +7,9 @@ module BddUtil (
     primeCover,
     presentVars,
     makeCube,
-    bddSynopsis
+    bddSynopsis,
+    largePrime,
+    presentInLargePrime
     ) where
 
 import Control.Monad
@@ -79,3 +81,17 @@ bddSynopsis Ops{..} node = case node==bfalse of
     False -> case node==btrue of
         True -> "True"
         False -> "Non-constant: " ++ show (C.toInt node)
+
+largePrime :: Ops s u -> DDNode s u -> ST s (DDNode s u)
+largePrime Ops{..} set = do
+    (lc, sz) <- largestCube set
+    pm <- makePrime lc set
+    deref lc
+    return pm
+
+presentInLargePrime :: Ops s u -> DDNode s u -> ST s [(Int, Bool)]
+presentInLargePrime ops@Ops{..} set = do
+    pm  <- largePrime ops set
+    res <- presentVars ops pm
+    deref pm
+    return res

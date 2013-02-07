@@ -202,11 +202,8 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
         False -> do
             --There may be a refinement
             --extract a <s, u, l> pair that will make progress if one exists
-            (lc, sz) <- lift $ largestCube toCheckConsistency
-            pm <- lift $ makePrime lc toCheckConsistency
-            lift $ mapM deref [lc, toCheckConsistency]
-            c <- lift $ presentVars ops pm
-            lift $ deref pm
+            c <- lift $ presentInLargePrime ops toCheckConsistency
+            lift $ deref toCheckConsistency
 
             let (stateIndices, labelIndices) = partition (\(p, x) -> elem p _trackedInds || elem p _untrackedInds) c
             let cStatePreds = getPredicates $ map (first $ fromJustNote "refineConsistency2" . flip Map.lookup _stateRev) stateIndices

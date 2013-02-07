@@ -217,12 +217,8 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
             --extract a <s, u> pair that will make progress if one exists
             t5 <- lift $ bexists _labelCube t4
             lift $ deref t4
-            (t6, sz) <- lift $ largestCube t5
-            t7 <- lift $ makePrime t6 t5
+            c <- lift $ presentInLargePrime ops t5
             lift $ deref t5
-            lift $ deref t6
-            c <- lift $ presentVars ops t7 
-            lift $ deref t7
             let stateUntrackedProgress = map (first $ fromJustNote "refineConsistency1" . flip Map.lookup _stateRev) c
             lift $ traceST $ "Tuple that will make progress: " ++ show (nub stateUntrackedProgress)
             let preds = getPredicates stateUntrackedProgress
@@ -259,17 +255,8 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                             return Nothing
                         False -> do
                             lift $ check "refineConsistency start3" ops
-                            (t6, sz) <- lift $ largestCube t4
-                            t7 <- lift $ makePrime t6 t4
+                            c <- lift $ presentInLargePrime ops t4
                             lift $ deref t4
-                            lift $ deref t6
-                            {-
-                            lift $ traceST "********"
-                            res <- lift $ listPrimeImplicants ops [stp, stv, lv, a, b] t7
-                            lift $ traceST $ formatPrimeImplicants res
-                            -}
-                            c <- lift $ presentVars ops t7
-                            lift $ deref t7
                             let (stateIndices, labelIndices) = partition (\(p, x) -> elem p _trackedInds || elem p _untrackedInds) c
                             let cStatePreds = getPredicates $ map (first $ fromJustNote "refineConsistency2" . flip Map.lookup _stateRev) stateIndices
                             let cLabelPreds = getPredicates $ catMaybes $ map (uncurry func) labelIndices
@@ -309,11 +296,6 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                                     let otherEnabling = map (getNode. snd . snd) $ filter (\(p, _) -> not $ p `elem` map fst cLabelPreds) $ Map.toList _labelPreds
                                     otherCube <- lift $ uncurry computeCube $ unzip $ zip otherEnabling (repeat False)
 
-{-
-                                    res <- lift $ listPrimeImplicants ops [a, b] labelCube
-                                    lift $ traceST $ formatPrimeImplicants res
--}
-
                                     consistentCube' <- lift $ labelCube .& eQuantExpr
                                     consistentCube  <- lift $ consistentCube' .& otherCube
                                     lift $ mapM deref [labelCube, eQuantExpr, consistentCube', otherCube]
@@ -321,12 +303,6 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                                     consistentMinusCUL'  <- lift $ consistentMinusCUL .| consistentCube
                                     lift $ deref consistentCube
                                     lift $ deref consistentMinusCUL
-
-{-
-                                    lift $ traceST $ "consistentMinus"
-                                    res <- lift $ listPrimeImplicants ops [a, b] consistentMinusCUL'
-                                    lift $ traceST $ formatPrimeImplicants res
-                                    -}
 
                                     return $ Just $ rd {
                                         consistentMinusCUL = consistentMinusCUL'
