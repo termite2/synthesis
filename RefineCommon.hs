@@ -11,7 +11,8 @@ module RefineCommon (
     indicesToStatePreds,
     indicesToLabelPreds,
     partitionStateLabelPreds,
-    stateLabelInconsistent
+    stateLabelInconsistent,
+    stateLabelConsistent
     ) where
 
 import Control.Monad.State
@@ -151,3 +152,17 @@ stateLabelInconsistent ops@Ops{..} SymbolInfo{..} statePairs labelPairs = do
     where
     getStates = getNode . fromJustNote "refineConsistency" . flip Map.lookup _statePreds
     getLabels = getNode . sel1 . fromJustNote "refineConsistency" . flip Map.lookup _labelPreds
+
+stateLabelConsistent :: (Ord sp, Ord lp) => Ops s u -> SymbolInfo s u sp lp -> [(sp, Bool)] -> [(lp, Bool)] -> ST s (DDNode s u) 
+stateLabelConsistent Ops{..} SymbolInfo{..} cStatePreds cLabelPreds = do
+    labelCube <- uncurry computeCube $ unzip $ concatMap func labelPreds'
+    otherCube <- uncurry computeCube $ unzip $ zip otherEnabling (repeat False)
+    res <- labelCube .& otherCube
+    mapM deref [labelCube, otherCube]
+    return res
+    where
+    otherEnabling = map (getNode. snd . snd) $ filter (\(p, _) -> not $ p `elem` map fst cLabelPreds) $ Map.toList _labelPreds
+    statePreds' = map (first $ fst . fromJustNote "refineConsistency" . flip Map.lookup _statePreds) cStatePreds
+    labelPreds' = map (first $ fromJustNote "refineConsistency" . flip Map.lookup _labelPreds) cLabelPreds
+    func ((lp, le), pol) = [(fst lp, pol), (fst le, True)]
+

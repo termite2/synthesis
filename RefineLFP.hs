@@ -215,18 +215,11 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                     lift $ traceST "predicates are consistent. refining consistentMinusCUL..."
                     eQuantExpr <- doUpdate ops (eQuant cStatePreds cLabelPreds)
 
-                    let statePreds' = map (first $ fst . fromJustNote "refineConsistency" . flip Map.lookup _statePreds) cStatePreds
-                        labelPreds' = map (first $ fromJustNote "refineConsistency" . flip Map.lookup _labelPreds) cLabelPreds
+                    --TODO why is cStatePreds needed here
+                    consistentCube' <- lift $ stateLabelConsistent ops syi cStatePreds cLabelPreds 
 
-                    let func ((lp, le), pol) = [(fst lp, pol), (fst le, True)]
-                    labelCube <- lift $ uncurry computeCube $ unzip $ concatMap func labelPreds'
-
-                    let otherEnabling = map (getNode. snd . snd) $ filter (\(p, _) -> not $ p `elem` map fst cLabelPreds) $ Map.toList _labelPreds
-                    otherCube <- lift $ uncurry computeCube $ unzip $ zip otherEnabling (repeat False)
-
-                    consistentCube' <- lift $ labelCube .& eQuantExpr
-                    consistentCube  <- lift $ consistentCube' .& otherCube
-                    lift $ mapM deref [labelCube, eQuantExpr, consistentCube', otherCube]
+                    consistentCube  <- lift $ consistentCube' .& eQuantExpr
+                    lift $ mapM deref [eQuantExpr, consistentCube']
 
                     consistentMinusCUL'  <- lift $ consistentMinusCUL .| consistentCube
                     lift $ deref consistentCube
