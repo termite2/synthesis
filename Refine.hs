@@ -62,7 +62,7 @@ cPre'' Ops{..} SectionInfo{..} RefineDynamic{..} hasOutgoings target = do
 cPre' :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 cPre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} hasOutgoings target = do
     t2 <- cPre'' ops si rd hasOutgoings target
-    t4 <- andAbstract _labelCube t2 consistentPlusCUL
+    t4 <- andAbstract _labelCube t2 consistentMinusCUL
     deref t2
     t5 <- consistentPlusCU .-> t4
     deref t4
