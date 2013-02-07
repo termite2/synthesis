@@ -146,19 +146,17 @@ stateLabelInconsistent :: (Ord sp, Ord lp) => Ops s u -> SymbolInfo s u sp lp ->
 stateLabelInconsistent ops@Ops{..} SymbolInfo{..} statePairs labelPairs = do
     inconsistentState <- makeCube ops $ map (first getStates) statePairs
     inconsistentLabel <- makeCube ops $ map (first getLabels) labelPairs
-    inconsistent <- inconsistentState .& inconsistentLabel
-    mapM deref [inconsistentState, inconsistentLabel]
+    inconsistent      <- andDeref ops inconsistentState inconsistentLabel
     return inconsistent
     where
     getStates = getNode . fromJustNote "refineConsistency" . flip Map.lookup _statePreds
     getLabels = getNode . sel1 . fromJustNote "refineConsistency" . flip Map.lookup _labelPreds
 
 stateLabelConsistent :: (Ord sp, Ord lp) => Ops s u -> SymbolInfo s u sp lp -> [(sp, Bool)] -> [(lp, Bool)] -> ST s (DDNode s u) 
-stateLabelConsistent Ops{..} SymbolInfo{..} cStatePreds cLabelPreds = do
+stateLabelConsistent ops@Ops{..} SymbolInfo{..} cStatePreds cLabelPreds = do
     labelCube <- uncurry computeCube $ unzip $ concatMap func labelPreds'
     otherCube <- uncurry computeCube $ unzip $ zip otherEnabling (repeat False)
-    res <- labelCube .& otherCube
-    mapM deref [labelCube, otherCube]
+    res       <- andDeref ops labelCube otherCube
     return res
     where
     otherEnabling = map (getNode. snd . snd) $ filter (\(p, _) -> not $ p `elem` map fst cLabelPreds) $ Map.toList _labelPreds

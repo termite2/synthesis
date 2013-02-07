@@ -9,7 +9,11 @@ module BddUtil (
     makeCube,
     bddSynopsis,
     largePrime,
-    presentInLargePrime
+    presentInLargePrime,
+    andDeref,
+    orDeref,
+    subtractBdd,
+    addBdd
     ) where
 
 import Control.Monad
@@ -95,3 +99,28 @@ presentInLargePrime ops@Ops{..} set = do
     res <- presentVars ops pm
     deref pm
     return res
+
+andDeref :: Ops s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+andDeref Ops{..} x y = do
+    res <- x .& y
+    mapM deref [x, y]
+    return res
+
+orDeref :: Ops s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+orDeref Ops{..} x y = do
+    res <- x .| y
+    mapM deref [x, y]
+    return res
+
+subtractBdd :: Ops s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+subtractBdd Ops{..} thing toSub = do
+    res <- thing .& toSub
+    deref thing
+    return res
+
+addBdd :: Ops s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+addBdd Ops{..} thing toAdd = do
+    res <- thing .| toAdd
+    deref thing
+    return res
+

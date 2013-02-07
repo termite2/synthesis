@@ -164,14 +164,10 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     lift $ deref updateExprConj'
 
     --update the transition relation
-    trans' <- lift $ trans .& updateExprConj
-    lift $ deref updateExprConj
-    lift $ deref trans
+    trans' <- lift $ andDeref ops trans updateExprConj
 
     consistentMinusCUL'' <- lift $ conj ops $ map (bnot . fst . snd) $ Map.elems $ labelPreds Map.\\ labelPredsPreUpdate
-    consistentMinusCUL'  <- lift $ consistentMinusCUL .& consistentMinusCUL''
-    lift $ deref consistentMinusCUL''
-    lift $ deref consistentMinusCUL
+    consistentMinusCUL'  <- lift $ andDeref ops consistentMinusCUL consistentMinusCUL''
 
     return rd {
         trans              = trans',
@@ -258,9 +254,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                                     --consistentPlusCUL can be refined
                                     lift $ traceST "refining consistentPlusCUL"
                                     inconsistent       <- lift $ stateLabelInconsistent ops syi statePairs labelPairs
-                                    consistentPlusCUL' <- lift $ consistentPlusCUL .& bnot inconsistent
-                                    lift $ deref inconsistent
-                                    lift $ deref consistentPlusCUL
+                                    consistentPlusCUL' <- lift $ andDeref ops consistentPlusCUL (bnot inconsistent)
                                     lift $ check "refineConsistency4" ops
                                     refineConsistency ops ts (rd {consistentPlusCUL = consistentPlusCUL'}) rs win
                                 Nothing -> do
@@ -269,12 +263,9 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                                     eQuantExpr <- doUpdate ops (eQuant cStatePreds cLabelPreds)
                                     consistentCube' <- lift $ stateLabelConsistent ops syi cStatePreds cLabelPreds
 
-                                    consistentCube  <- lift $ consistentCube' .& eQuantExpr
-                                    lift $ mapM deref [eQuantExpr, consistentCube']
+                                    consistentCube  <- lift $ andDeref ops consistentCube' eQuantExpr
 
-                                    consistentMinusCUL'  <- lift $ consistentMinusCUL .| consistentCube
-                                    lift $ deref consistentCube
-                                    lift $ deref consistentMinusCUL
+                                    consistentMinusCUL'  <- lift $ orDeref ops consistentMinusCUL consistentCube
 
                                     return $ Just $ rd {
                                         consistentMinusCUL = consistentMinusCUL'
