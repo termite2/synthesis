@@ -79,6 +79,16 @@ solveGame ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..
         deref t1
         return res
 
+updateWrapper :: Ops s u -> DDNode s u -> StateT (DB s u dp lp) (ST s) (DDNode s u)
+updateWrapper ops@Ops{..} updateExprConj'' = do
+    outcomeCube <- gets $ _outcomeCube . _sections
+    updateExprConj' <- lift $ bexists outcomeCube updateExprConj''
+    lift $ deref updateExprConj''
+    labelPreds <- gets $ _labelPreds . _symbolTable
+    updateExprConj  <- lift $ doEnVars ops updateExprConj' $ map (fst *** fst) $ Map.elems labelPreds
+    lift $ deref updateExprConj'
+    return updateExprConj
+
 --Create an initial abstraction and set up the data structures
 initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u sp lp -> StateT (DB s u sp lp) (ST s) (RefineDynamic s u, RefineStatic s u)
 initialAbstraction ops@Ops{..} Abstractor{..} = do
@@ -92,17 +102,13 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     --get the abstract update functions for the goal predicates and variables
     --TODO: most of below is shared with promoteUntracked and can be factored
     updateExprConj'' <- doUpdate ops (updateAbs _allocatedStatePreds _allocatedStateVars)
-    outcomeCube <- gets $ _outcomeCube . _sections
-    updateExprConj' <- lift $ bexists outcomeCube updateExprConj''
-    lift $ deref updateExprConj''
-    labelPreds <- gets $ _labelPreds . _symbolTable
-    updateExprConj  <- lift $ doEnVars ops updateExprConj' $ map (fst *** fst) $ Map.elems labelPreds
-    lift $ deref updateExprConj'
+    updateExprConj   <- updateWrapper ops updateExprConj''
     --create the consistency constraints
     let consistentPlusCU   = btrue
         consistentPlusCUL  = btrue
     lift $ ref consistentPlusCU
     lift $ ref consistentPlusCUL
+    labelPreds <- gets $ _labelPreds . _symbolTable
     consistentMinusCUL <- lift $ conj ops $ map (bnot . fst . snd) $ Map.elems labelPreds
     --construct the RefineDynamic and RefineStatic
     let rd = RefineDynamic {
@@ -138,26 +144,21 @@ pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} Refin
 promoteUntracked :: (Ord lp, Ord sp, Show sp, Show lp) => Ops s u -> Abstractor s u sp lp -> RefineDynamic s u -> [Int] -> StateT (DB s u sp lp) (ST s) (RefineDynamic s u)
 promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     --look up the predicates to promote
-    stateRev <- gets $ _stateRev . _symbolTable
-    let refineVars = nub $ map (fromJustNote "promoteUntracked: untracked indices not in stateRev" . flip Map.lookup stateRev) indices
+    stateRev             <- gets $ _stateRev . _symbolTable
+    let refineVars       =  nub $ map (fromJustNote "promoteUntracked: untracked indices not in stateRev" . flip Map.lookup stateRev) indices
     lift $ traceST $ "Promoting: " ++ show refineVars
 
-    NewVars{..} <- promoteUntrackedVars ops refineVars
-    labelPredsPreUpdate <- gets $ _labelPreds . _symbolTable
+    NewVars{..}          <- promoteUntrackedVars ops refineVars
+    labelPredsPreUpdate  <- gets $ _labelPreds . _symbolTable
 
     --compute the update functions
-    updateExprConj'' <- doUpdate ops $ updateAbs _allocatedStatePreds _allocatedStateVars
-    outcomeCube <- gets $ _outcomeCube . _sections
-    updateExprConj' <- lift $ bexists outcomeCube updateExprConj''
-    lift $ deref updateExprConj''
-
-    labelPreds <- gets $ _labelPreds . _symbolTable
-    updateExprConj <- lift $ doEnVars ops updateExprConj' $ map (fst *** fst) $ Map.elems labelPreds
-    lift $ deref updateExprConj'
+    updateExprConj''     <- doUpdate ops $ updateAbs _allocatedStatePreds _allocatedStateVars
+    updateExprConj       <- updateWrapper ops updateExprConj''
 
     --update the transition relation
-    trans' <- lift $ andDeref ops trans updateExprConj
+    trans'               <- lift $ andDeref ops trans updateExprConj
 
+    labelPreds           <- gets $ _labelPreds . _symbolTable
     consistentMinusCUL'' <- lift $ conj ops $ map (bnot . fst . snd) $ Map.elems $ labelPreds Map.\\ labelPredsPreUpdate
     consistentMinusCUL'  <- lift $ andDeref ops consistentMinusCUL consistentMinusCUL''
 

@@ -111,6 +111,16 @@ pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} Refin
     deref newSU
     return res
 
+updateWrapper :: Ops s u -> DDNode s u -> StateT (DB s u dp lp) (ST s) (DDNode s u)
+updateWrapper ops@Ops{..} updateExprConj'' = do
+    outcomeCube <- gets $ _outcomeCube . _sections
+    updateExprConj' <- lift $ bexists outcomeCube updateExprConj''
+    lift $ deref updateExprConj''
+    labelPreds <- gets $ _labelPreds . _symbolTable
+    updateExprConj  <- lift $ doEnVars ops updateExprConj' $ map (fst *** fst) $ Map.elems labelPreds
+    lift $ deref updateExprConj'
+    return updateExprConj
+
 --Create an initial abstraction and set up the data structures
 initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u sp lp -> StateT (DB s u sp lp) (ST s) (RefineDynamic s u, RefineStatic s u)
 initialAbstraction ops@Ops{..} Abstractor{..} = do
@@ -123,17 +133,13 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     lift $ check "After compiling goal" ops
     --get the abstract update functions for the goal predicates and variables
     updateExprConj'' <- doUpdate ops (updateAbs _allocatedStatePreds _allocatedStateVars)
-    outcomeCube <- gets $ _outcomeCube . _sections
-    updateExprConj' <- lift $ bexists outcomeCube updateExprConj''
-    lift $ deref updateExprConj''
-    labelPreds <- gets $ _labelPreds . _symbolTable
-    updateExprConj  <- lift $ doEnVars ops updateExprConj' $ map (fst *** fst) $ Map.elems labelPreds
-    lift $ deref updateExprConj'
+    updateExprConj   <- updateWrapper ops updateExprConj''
     --create the consistency constraints
     let consistentPlusCU   = btrue
         consistentPlusCUL  = btrue
     lift $ ref consistentPlusCU
     lift $ ref consistentPlusCUL
+    labelPreds <- gets $ _labelPreds . _symbolTable
     consistentMinusCUL <- lift $ conj ops $ map (bnot . fst . snd) $ Map.elems labelPreds
     --construct the RefineDynamic and RefineStatic
     let rd = RefineDynamic {
@@ -159,17 +165,12 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
 
     --compute the update functions
     updateExprConj'' <- doUpdate ops $ updateAbs _allocatedStatePreds _allocatedStateVars
-    outcomeCube <- gets $ _outcomeCube . _sections
-    updateExprConj' <- lift $ bexists outcomeCube updateExprConj''
-    lift $ deref updateExprConj''
-
-    labelPreds <- gets $ _labelPreds . _symbolTable
-    updateExprConj <- lift $ doEnVars ops updateExprConj' $ map (fst *** fst) $ Map.elems labelPreds
-    lift $ deref updateExprConj'
+    updateExprConj   <- updateWrapper ops updateExprConj''
 
     --update the transition relation
     trans' <- lift $ andDeref ops trans updateExprConj
 
+    labelPreds <- gets $ _labelPreds . _symbolTable
     consistentMinusCUL'' <- lift $ conj ops $ map (bnot . fst . snd) $ Map.elems $ labelPreds Map.\\ labelPredsPreUpdate
     consistentMinusCUL'  <- lift $ andDeref ops consistentMinusCUL consistentMinusCUL''
 
