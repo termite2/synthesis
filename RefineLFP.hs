@@ -90,6 +90,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     (safeExpr, NewVars{..}) <- doGoal ops safeAbs
     lift $ check "After compiling goal" ops
     --get the abstract update functions for the goal predicates and variables
+    --TODO: most of below is shared with promoteUntracked and can be factored
     updateExprConj'' <- doUpdate ops (updateAbs _allocatedStatePreds _allocatedStateVars)
     outcomeCube <- gets $ _outcomeCube . _sections
     updateExprConj' <- lift $ bexists outcomeCube updateExprConj''

@@ -56,10 +56,8 @@ cPre' Ops{..} SectionInfo{..} RefineDynamic{..} hasOutgoings target = do
     deref t0
     t2 <- hasOutgoings .& t1
     deref t1
-    t3 <- consistentMinusCUL .& t2
+    t4 <- andAbstract _labelCube t2 consistentPlusCUL
     deref t2
-    t4 <- bexists _labelCube t3 --TODO combine this into an andabstract
-    deref t3
     t5 <- consistentPlusCU .-> t4
     deref t4
     return t5
