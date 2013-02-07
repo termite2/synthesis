@@ -6,12 +6,21 @@ module RefineCommon (
     refineAny,
     refineFirstPrime,
     refineLeastPreds,
-    getPredicates
+    getPredicates,
+    partitionStateLabel,
+    indicesToStatePreds,
+    indicesToLabelPreds,
+    partitionStateLabelPreds
     ) where
 
 import Control.Monad.State
 import Data.List
 import Data.Maybe
+import Control.Arrow
+import qualified Data.Map as Map
+import Data.Map (Map)
+
+import Safe
 
 import Interface
 import BddRecord
@@ -105,4 +114,27 @@ getPredicates = mapMaybe func
     where
     func (Predicate p _, x) = Just (p, x)
     func _                  = Nothing
+
+partitionStateLabel :: SectionInfo s u -> [(Int, a)] -> ([(Int, a)], [(Int, a)])
+partitionStateLabel SectionInfo{..} = partition (f . fst)
+    where f p = elem p _trackedInds || elem p _untrackedInds
+
+indicesToStatePreds :: SymbolInfo s u sp lp -> [(Int, a)] -> [(sp, a)]
+indicesToStatePreds SymbolInfo{..} = getPredicates . map func
+    where
+    func = first $ fromJustNote "refineConsistency2" . flip Map.lookup _stateRev
+
+indicesToLabelPreds :: SymbolInfo s u sp lp -> [(Int, a)] -> [(lp, a)]
+indicesToLabelPreds SymbolInfo{..} = getPredicates . catMaybes . map (uncurry func)
+    where
+    func idx polarity = case fromJustNote "refineConsistency3" $ Map.lookup idx _labelRev of
+        (_, True)   -> Nothing
+        (pred, False) -> Just (pred, polarity)
+
+partitionStateLabelPreds :: SectionInfo s u -> SymbolInfo s u sp lp -> [(Int, a)] -> ([(sp, a)], [(lp, a)])
+partitionStateLabelPreds si syi x = (statePairs, labelPairs)
+    where
+    statePairs = indicesToStatePreds syi stateIndices
+    labelPairs = indicesToLabelPreds syi labelIndices
+    (stateIndices, labelIndices) = partitionStateLabel si x
 

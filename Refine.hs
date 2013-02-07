@@ -185,7 +185,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
 --Refine one of the consistency relations so that we make progress. Does not promote untracked state.
 refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
 refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win = do
-    SymbolInfo{..} <- gets _symbolTable 
+    syi@SymbolInfo{..} <- gets _symbolTable 
     let stp = map (show *** (:[]) . getIdx) $ Map.toList _statePreds
     let stv = map (show *** map getIdx) $ Map.toList _stateVars
     let lv  = map (show *** map getIdx)  $ Map.toList _labelVars
@@ -257,13 +257,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                             lift $ check "refineConsistency start3" ops
                             c <- lift $ presentInLargePrime ops t4
                             lift $ deref t4
-                            let (stateIndices, labelIndices) = partition (\(p, x) -> elem p _trackedInds || elem p _untrackedInds) c
-                            let cStatePreds = getPredicates $ map (first $ fromJustNote "refineConsistency2" . flip Map.lookup _stateRev) stateIndices
-                            let cLabelPreds = getPredicates $ catMaybes $ map (uncurry func) labelIndices
-                                    where
-                                    func idx polarity = case fromJustNote "refineConsistency3" $ Map.lookup idx _labelRev of
-                                        (_, True)   -> Nothing
-                                        (pred, False) -> Just (pred, polarity)
+                            let (cStatePreds, cLabelPreds) = partitionStateLabelPreds si syi c
                             --TODO below preds dont seem to be the most general
                             lift $ traceST $ "label preds for solver: " ++ show cLabelPreds
                             lift $ check "refineConsistency end3" ops
