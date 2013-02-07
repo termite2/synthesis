@@ -173,37 +173,28 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     lift $ deref consistentMinusCUL''
     lift $ deref consistentMinusCUL
 
-    let rd = RefineDynamic {
+    return rd {
         trans              = trans',
-        consistentPlusCU   = consistentPlusCU,
-        consistentMinusCUL = consistentMinusCUL',
-        consistentPlusCUL  = consistentPlusCUL
+        consistentMinusCUL = consistentMinusCUL'
     }
-
-    return rd
 
 --Refine one of the consistency relations so that we make progress. Does not promote untracked state.
 refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
 refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win = do
     syi@SymbolInfo{..} <- gets _symbolTable 
-    let stp = map (show *** (:[]) . getIdx) $ Map.toList _statePreds
-    let stv = map (show *** map getIdx) $ Map.toList _stateVars
-    let lv  = map (show *** map getIdx)  $ Map.toList _labelVars
-    let a   = map (show *** (:[]) . getIdx . fst) $ Map.toList _labelPreds
-    let b   = map (show *** (:[]) . getIdx . snd) $ Map.toList _labelPreds
     si@SectionInfo{..} <- gets $ _sections
-    win' <- lift $ win .| goal
-    t0 <- lift $ mapVars win'
-    t2 <- lift $ liftM bnot $ andAbstract _nextCube trans (bnot t0)
+    win'               <- lift $ win .| goal
+    t0                 <- lift $ mapVars win'
+    t2                 <- lift $ liftM bnot $ andAbstract _nextCube trans (bnot t0)
     lift $ deref t0
-    t3 <- lift $ consistentPlusCUL .& t2
+    t3                 <- lift $ consistentPlusCUL .& t2
     lift $ deref t2
-    hasOutgoings <- lift $ bexists _nextCube trans
+    hasOutgoings       <- lift $ bexists _nextCube trans
     --(state, untracked, label) tuples that are winning assuming the liberal consistentPlus
-    tt3 <- lift $ hasOutgoings .& t3
+    tt3                <- lift $ hasOutgoings .& t3
     --deref hasOutgoings
     lift $ deref t3
-    t4 <- lift $ tt3 .& bnot win
+    t4                 <- lift $ tt3 .& bnot win
     --Alive : win', hasOutgoings, tt3, t4
     case t4==bfalse of 
         True  -> do

@@ -164,24 +164,15 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     lift $ deref consistentMinusCUL''
     lift $ deref consistentMinusCUL
 
-    let rd = RefineDynamic {
+    return rd {
         trans              = trans',
-        consistentPlusCU   = consistentPlusCU,
-        consistentMinusCUL = consistentMinusCUL',
-        consistentPlusCUL  = consistentPlusCUL
+        consistentMinusCUL = consistentMinusCUL'
     }
-
-    return rd
 
 --Refine one of the consistency relations so that we make progress. Does not promote untracked state.
 refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
 refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win = do
     syi@SymbolInfo{..} <- gets _symbolTable 
-    let stp            =  map (show *** (:[]) . getIdx) $ Map.toList _statePreds
-    let stv            =  map (show *** map getIdx) $ Map.toList _stateVars
-    let lv             =  map (show *** map getIdx)  $ Map.toList _labelVars
-    let a              =  map (show *** (:[]) . getIdx . fst) $ Map.toList _labelPreds
-    let b              =  map (show *** (:[]) . getIdx . snd) $ Map.toList _labelPreds
     si@SectionInfo{..} <- gets $ _sections
     win'               <- lift $ win .& safeRegion
     hasOutgoings       <- lift $ bexists _nextCube trans
