@@ -49,13 +49,19 @@ data RefineDynamic s u = RefineDynamic {
 
 -- ===Solve an abstracted and compiled game===
 
-cPre' :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
-cPre' Ops{..} SectionInfo{..} RefineDynamic{..} hasOutgoings target = do
+cPre'' :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+cPre'' Ops{..} SectionInfo{..} RefineDynamic{..} hasOutgoings target = do
     t0 <- mapVars target
     t1 <- liftM bnot $ andAbstract _nextCube trans (bnot t0)
     deref t0
     t2 <- hasOutgoings .& t1
     deref t1
+    return t2
+
+--TODO combine implication and quantification in below functions
+cPre' :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+cPre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} hasOutgoings target = do
+    t2 <- cPre'' ops si rd hasOutgoings target
     t4 <- andAbstract _labelCube t2 consistentPlusCUL
     deref t2
     t5 <- consistentPlusCU .-> t4
@@ -178,18 +184,17 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
     syi@SymbolInfo{..} <- gets _symbolTable 
     si@SectionInfo{..} <- gets $ _sections
     win'               <- lift $ win .| goal
-    t0                 <- lift $ mapVars win'
-    t2                 <- lift $ liftM bnot $ andAbstract _nextCube trans (bnot t0)
-    lift $ deref t0
-    t3                 <- lift $ consistentPlusCUL .& t2
-    lift $ deref t2
     hasOutgoings       <- lift $ bexists _nextCube trans
+    t3                 <- lift $ cPre'' ops si rd hasOutgoings win'
+    tt3                <- lift $ consistentPlusCUL .& t3
+    lift $ deref t3
     --(state, untracked, label) tuples that are winning assuming the liberal consistentPlus
     tt3                <- lift $ hasOutgoings .& t3
     --deref hasOutgoings
     lift $ deref t3
     t4                 <- lift $ tt3 .& bnot win
     --Alive : win', hasOutgoings, tt3, t4
+    --TODO combine conjunction with quantification below
     case t4==bfalse of 
         True  -> do
             --no refinement of consistency relations will make progress
