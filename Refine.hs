@@ -182,12 +182,6 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
 
     return rd
 
-getPredicates :: [(Variable p s u, a)] -> [(p, a)]
-getPredicates = mapMaybe func 
-    where
-    func (Predicate p _, x) = Just (p, x)
-    func _                  = Nothing
-
 --Refine one of the consistency relations so that we make progress. Does not promote untracked state.
 refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
 refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win = do

@@ -173,7 +173,90 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
 
     return rd
 
-refineConsistency _ _ _ _ _ = return Nothing
+--Refine one of the consistency relations so that we make progress. Does not promote untracked state.
+refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
+refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win = do
+    SymbolInfo{..}     <- gets _symbolTable 
+    let stp            =  map (show *** (:[]) . getIdx) $ Map.toList _statePreds
+    let stv            =  map (show *** map getIdx) $ Map.toList _stateVars
+    let lv             =  map (show *** map getIdx)  $ Map.toList _labelVars
+    let a              =  map (show *** (:[]) . getIdx . fst) $ Map.toList _labelPreds
+    let b              =  map (show *** (:[]) . getIdx . snd) $ Map.toList _labelPreds
+    si@SectionInfo{..} <- gets $ _sections
+    win'               <- lift $ win .& safeRegion
+    hasOutgoings       <- lift $ bexists _nextCube trans
+    winNoConstraint    <- lift $ cPre' ops si rd hasOutgoings win'
+    lift $ mapM deref [win', hasOutgoings]
+    winActOver         <- lift $ winNoConstraint .& consistentPlusCUL
+    winActUnder        <- lift $ andAbstract _labelCube winNoConstraint consistentMinusCUL
+    lift $ deref winNoConstraint
+    toCheckConsistency <- lift $ winActOver .& bnot winActUnder
+    lift $ mapM deref [winActOver, winActUnder]
+    --Alive : toCheckConsistency
+    case toCheckConsistency==bfalse of 
+        True  -> do
+            --no refinement of consistency relations will shrink the winning region
+            lift $ traceST "no consistency refinement possible"
+            lift $ deref toCheckConsistency
+            return Nothing
+        False -> do
+            --There may be a refinement
+            --extract a <s, u, l> pair that will make progress if one exists
+            (lc, sz) <- lift $ largestCube toCheckConsistency
+            pm <- lift $ makePrime lc toCheckConsistency
+            lift $ mapM deref [lc, toCheckConsistency]
+            c <- lift $ presentVars ops pm
+            lift $ deref pm
+
+            let (stateIndices, labelIndices) = partition (\(p, x) -> elem p _trackedInds || elem p _untrackedInds) c
+            let cStatePreds = getPredicates $ map (first $ fromJustNote "refineConsistency2" . flip Map.lookup _stateRev) stateIndices
+            let cLabelPreds = getPredicates $ catMaybes $ map (uncurry func) labelIndices
+                    where
+                    func idx polarity = case fromJustNote "refineConsistency3" $ Map.lookup idx _labelRev of
+                        (_, True)   -> Nothing
+                        (pred, False) -> Just (pred, polarity)
+            lift $ traceST $ "label preds for solver: " ++ show cLabelPreds
+            lift $ traceST $ "state preds for solver: " ++ show cStatePreds
+            --Alive : nothing
+            case unsatCoreStateLabel cStatePreds cLabelPreds of
+                Just (statePairs, labelPairs) -> do
+                    --statePairs, labelPairs is inconsistent so subtract this from consistentPlusCUL
+                    lift $ traceST "refining consistentPlusCUL"
+                    inconsistentState <- lift $ makeCube ops $ map (first (getNode . fromJustNote "refineConsistency" . flip Map.lookup _statePreds)) statePairs
+                    inconsistentLabel <- lift $ makeCube ops $ map (first (getNode . sel1 . fromJustNote "refineConsistency" . flip Map.lookup _labelPreds)) labelPairs
+                    inconsistent <- lift $ inconsistentState .& inconsistentLabel
+                    lift $ deref inconsistentState
+                    lift $ deref inconsistentLabel
+                    consistentPlusCUL' <- lift $ consistentPlusCUL .& bnot inconsistent
+                    lift $ deref inconsistent
+                    lift $ deref consistentPlusCUL
+                    lift $ check "refineConsistency4" ops
+                    refineConsistency ops ts (rd {consistentPlusCUL = consistentPlusCUL'}) rs win
+                Nothing -> do
+                    --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
+                    lift $ traceST "predicates are consistent. refining consistentMinusCUL..."
+                    eQuantExpr <- doUpdate ops (eQuant cStatePreds cLabelPreds)
+
+                    let statePreds' = map (first $ fst . fromJustNote "refineConsistency" . flip Map.lookup _statePreds) cStatePreds
+                        labelPreds' = map (first $ fromJustNote "refineConsistency" . flip Map.lookup _labelPreds) cLabelPreds
+
+                    let func ((lp, le), pol) = [(fst lp, pol), (fst le, True)]
+                    labelCube <- lift $ uncurry computeCube $ unzip $ concatMap func labelPreds'
+
+                    let otherEnabling = map (getNode. snd . snd) $ filter (\(p, _) -> not $ p `elem` map fst cLabelPreds) $ Map.toList _labelPreds
+                    otherCube <- lift $ uncurry computeCube $ unzip $ zip otherEnabling (repeat False)
+
+                    consistentCube' <- lift $ labelCube .& eQuantExpr
+                    consistentCube  <- lift $ consistentCube' .& otherCube
+                    lift $ mapM deref [labelCube, eQuantExpr, consistentCube', otherCube]
+
+                    consistentMinusCUL'  <- lift $ consistentMinusCUL .| consistentCube
+                    lift $ deref consistentCube
+                    lift $ deref consistentMinusCUL
+
+                    return $ Just $ rd {
+                        consistentMinusCUL = consistentMinusCUL'
+                    }
 
 --The abstraction-refinement loop
 absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp -> o -> ST s Bool

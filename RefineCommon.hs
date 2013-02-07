@@ -5,11 +5,13 @@ module RefineCommon (
     doEnVars,
     refineAny,
     refineFirstPrime,
-    refineLeastPreds
+    refineLeastPreds,
+    getPredicates
     ) where
 
 import Control.Monad.State
 import Data.List
+import Data.Maybe
 
 import Interface
 import BddRecord
@@ -97,4 +99,10 @@ refineLeastPreds ops@Ops{..} SectionInfo{..} newSU
         support <- supportIndices _untrackedCube
         deref untrackedCube
         return (length support, support)
+
+getPredicates :: [(Variable p s u, a)] -> [(p, a)]
+getPredicates = mapMaybe func 
+    where
+    func (Predicate p _, x) = Just (p, x)
+    func _                  = Nothing
 
