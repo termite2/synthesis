@@ -213,11 +213,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                 Just (statePairs, labelPairs) -> do
                     --statePairs, labelPairs is inconsistent so subtract this from consistentPlusCUL
                     lift $ traceST "refining consistentPlusCUL"
-                    inconsistentState <- lift $ makeCube ops $ map (first (getNode . fromJustNote "refineConsistency" . flip Map.lookup _statePreds)) statePairs
-                    inconsistentLabel <- lift $ makeCube ops $ map (first (getNode . sel1 . fromJustNote "refineConsistency" . flip Map.lookup _labelPreds)) labelPairs
-                    inconsistent <- lift $ inconsistentState .& inconsistentLabel
-                    lift $ deref inconsistentState
-                    lift $ deref inconsistentLabel
+                    inconsistent       <- lift $ stateLabelInconsistent ops syi statePairs labelPairs
                     consistentPlusCUL' <- lift $ consistentPlusCUL .& bnot inconsistent
                     lift $ deref inconsistent
                     lift $ deref consistentPlusCUL

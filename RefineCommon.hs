@@ -10,7 +10,8 @@ module RefineCommon (
     partitionStateLabel,
     indicesToStatePreds,
     indicesToLabelPreds,
-    partitionStateLabelPreds
+    partitionStateLabelPreds,
+    stateLabelInconsistent
     ) where
 
 import Control.Monad.State
@@ -19,11 +20,13 @@ import Data.Maybe
 import Control.Arrow
 import qualified Data.Map as Map
 import Data.Map (Map)
+import Data.Tuple.All
 
 import Safe
 
 import Interface
 import BddRecord
+import BddUtil
 
 --Theory solving
 data TheorySolver s u sp lp = TheorySolver {
@@ -138,3 +141,13 @@ partitionStateLabelPreds si syi x = (statePairs, labelPairs)
     labelPairs = indicesToLabelPreds syi labelIndices
     (stateIndices, labelIndices) = partitionStateLabel si x
 
+stateLabelInconsistent :: (Ord sp, Ord lp) => Ops s u -> SymbolInfo s u sp lp -> [(sp, Bool)] -> [(lp, Bool)] -> ST s (DDNode s u)
+stateLabelInconsistent ops@Ops{..} SymbolInfo{..} statePairs labelPairs = do
+    inconsistentState <- makeCube ops $ map (first getStates) statePairs
+    inconsistentLabel <- makeCube ops $ map (first getLabels) labelPairs
+    inconsistent <- inconsistentState .& inconsistentLabel
+    mapM deref [inconsistentState, inconsistentLabel]
+    return inconsistent
+    where
+    getStates = getNode . fromJustNote "refineConsistency" . flip Map.lookup _statePreds
+    getLabels = getNode . sel1 . fromJustNote "refineConsistency" . flip Map.lookup _labelPreds
