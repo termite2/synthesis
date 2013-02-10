@@ -265,7 +265,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                                     --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
                                     lift $ traceST "predicates are consistent. refining consistentMinusCUL..."
                                     eQuantExpr <- doUpdate ops (eQuant cStatePreds cLabelPreds)
-                                    consistentCube' <- lift $ stateLabelConsistent ops syi cStatePreds cLabelPreds
+                                    consistentCube' <- lift $ stateLabelConsistent ops syi cLabelPreds
 
                                     consistentCube  <- lift $ andDeref ops consistentCube' eQuantExpr
 

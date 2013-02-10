@@ -100,7 +100,6 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     (safeExpr, NewVars{..}) <- doGoal ops safeAbs
     lift $ check "After compiling goal" ops
     --get the abstract update functions for the goal predicates and variables
-    --TODO: most of below is shared with promoteUntracked and can be factored
     updateExprConj'' <- doUpdate ops (updateAbs _allocatedStatePreds _allocatedStateVars)
     updateExprConj   <- updateWrapper ops updateExprConj''
     --create the consistency constraints
@@ -171,7 +170,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
 refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
 refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win = do
     syi@SymbolInfo{..} <- gets _symbolTable 
-    si@SectionInfo{..} <- gets $ _sections
+    si@SectionInfo{..} <- gets _sections
     win'               <- lift $ win .& safeRegion
     hasOutgoings       <- lift $ bexists _nextCube trans
     winNoConstraint    <- lift $ cPre' ops si rd hasOutgoings win'
@@ -211,10 +210,9 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                     lift $ traceST "predicates are consistent. refining consistentMinusCUL..."
                     eQuantExpr <- doUpdate ops (eQuant cStatePreds cLabelPreds)
 
-                    --TODO why is cStatePreds needed here
-                    consistentCube'      <- lift $ stateLabelConsistent ops syi cStatePreds cLabelPreds 
-                    consistentCube       <- lift $ andDeref ops consistentCube' eQuantExpr
-                    consistentMinusCUL'  <- lift $ orDeref ops consistentMinusCUL consistentCube
+                    consistentCube'     <- lift $ stateLabelConsistent ops syi cLabelPreds 
+                    consistentCube      <- lift $ andDeref ops consistentCube' eQuantExpr
+                    consistentMinusCUL' <- lift $ orDeref ops consistentMinusCUL consistentCube
 
                     return $ Just $ rd {
                         consistentMinusCUL = consistentMinusCUL'
