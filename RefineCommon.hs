@@ -33,7 +33,7 @@ import BddUtil
 data TheorySolver s u sp lp = TheorySolver {
     unsatCoreState      :: [(sp, Bool)] -> Maybe [(sp, Bool)],
     unsatCoreStateLabel :: [(sp, Bool)] -> [(lp, Bool)] -> Maybe ([(sp, Bool)], [(lp, Bool)]),
-    eQuant              :: forall pdb. [(sp, Bool)] -> [(lp, Bool)] -> VarOps pdb (BAPred sp lp) BAVar s u -> StateT pdb (ST s) (DDNode s u)
+    eQuant              :: forall pdb. [(lp, Bool)] -> VarOps pdb (BAPred sp lp) BAVar s u -> StateT pdb (ST s) (DDNode s u)
 }
 
 fixedPoint :: Ops s u -> (DDNode s u -> ST s (DDNode s u)) -> DDNode s u -> ST s (DDNode s u)
