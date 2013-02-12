@@ -72,7 +72,7 @@ cPreUnder ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} hasOutgoings targe
     t2 <- cPre' ops si rd hasOutgoings target
     t3 <- andAbstract _labelCube consistentMinusCUL t2
     deref t2
-    t4 <- liftM bnot $ andAbstract _outcomeCube consistentPlusCU (bnot t3)
+    t4 <- liftM bnot $ andAbstract _untrackedCube consistentPlusCU (bnot t3)
     deref t3
     return t4
 
