@@ -111,16 +111,6 @@ pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} Refin
     deref newSU
     return res
 
-updateWrapper :: Ops s u -> DDNode s u -> StateT (DB s u dp lp) (ST s) (DDNode s u)
-updateWrapper ops@Ops{..} updateExprConj'' = do
-    outcomeCube <- gets $ _outcomeCube . _sections
-    updateExprConj' <- lift $ bexists outcomeCube updateExprConj''
-    lift $ deref updateExprConj''
-    labelPreds <- gets $ _labelPreds . _symbolTable
-    updateExprConj  <- lift $ doEnVars ops updateExprConj' $ map (fst *** fst) $ Map.elems labelPreds
-    lift $ deref updateExprConj'
-    return updateExprConj
-
 --Create an initial abstraction and set up the data structures
 initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u sp lp -> StateT (DB s u sp lp) (ST s) (RefineDynamic s u, RefineStatic s u)
 initialAbstraction ops@Ops{..} Abstractor{..} = do

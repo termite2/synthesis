@@ -12,7 +12,8 @@ module RefineCommon (
     indicesToLabelPreds,
     partitionStateLabelPreds,
     stateLabelInconsistent,
-    stateLabelConsistent
+    stateLabelConsistent,
+    updateWrapper
     ) where
 
 import Control.Monad.State
@@ -162,4 +163,14 @@ stateLabelConsistent ops@Ops{..} SymbolInfo{..} cLabelPreds = do
     otherEnabling = map (getNode. snd . snd) $ filter (\(p, _) -> not $ p `elem` map fst cLabelPreds) $ Map.toList _labelPreds
     labelPreds' = map (first $ fromJustNote "refineConsistency" . flip Map.lookup _labelPreds) cLabelPreds
     func ((lp, le), pol) = [(fst lp, pol), (fst le, True)]
+
+updateWrapper :: Ops s u -> DDNode s u -> StateT (DB s u dp lp) (ST s) (DDNode s u)
+updateWrapper ops@Ops{..} updateExprConj'' = do
+    outcomeCube <- gets $ _outcomeCube . _sections
+    updateExprConj' <- lift $ bexists outcomeCube updateExprConj''
+    lift $ deref updateExprConj''
+    labelPreds <- gets $ _labelPreds . _symbolTable
+    updateExprConj  <- lift $ doEnVars ops updateExprConj' $ map (fst *** fst) $ Map.elems labelPreds
+    lift $ deref updateExprConj'
+    return updateExprConj
 
