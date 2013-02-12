@@ -13,11 +13,13 @@ module BddUtil (
     andDeref,
     orDeref,
     subtractBdd,
-    addBdd
+    addBdd,
+    checkManagerConsistency
     ) where
 
 import Control.Monad
 import Control.Arrow
+import Control.Monad.ST.Lazy.Unsafe (unsafeIOToST)
 
 import BddRecord
 import qualified CuddExplicitDeref as C
@@ -123,4 +125,7 @@ addBdd Ops{..} thing toAdd = do
     res <- thing .| toAdd
     deref thing
     return res
+
+checkManagerConsistency :: String -> Ops s u -> ST s ()
+checkManagerConsistency msg ops = unsafeIOToST (putStrLn ("checking bdd consistency" ++ msg ++ "\n")) >> debugCheck ops >> checkKeys ops
 
