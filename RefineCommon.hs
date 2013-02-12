@@ -38,7 +38,7 @@ data TheorySolver s u sp lp = TheorySolver {
 }
 
 fixedPoint :: Ops s u -> (DDNode s u -> ST s (DDNode s u)) -> DDNode s u -> ST s (DDNode s u)
-fixedPoint (ops @ Ops {..}) func start = do
+fixedPoint ops@Ops{..} func start = do
     res <- func start
     deref start 
     case (res==start) of --this is safe 

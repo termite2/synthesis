@@ -49,6 +49,7 @@ data RefineDynamic s u = RefineDynamic {
     consistentPlusCUL  :: DDNode s u
 }
 
+--Returns {<state, untracked, label>}
 cPre' :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 cPre' Ops{..} SectionInfo{..} RefineDynamic{..} hasOutgoings target = do
     t0 <- mapVars target
@@ -242,8 +243,44 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                     }
 -}
 
+fixedPoint2 :: Ops s u -> (DDNode s u -> DDNode s u -> ST s (DDNode s u, DDNode s u)) -> DDNode s u -> DDNode s u -> ST s (DDNode s u, DDNode s u)
+fixedPoint2 ops@Ops{..} func state set = do
+    (state', set') <- func state set
+    deref set
+    deref state
+    case (set'==set) of --this is safe 
+        True -> return (state', set')
+        False -> fixedPoint2 ops func state' set'
+
+strategy :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> RefineStatic s u -> ST s (DDNode s u)
+strategy ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} rs@RefineStatic{..} = do
+    (strat, set) <- fixedPoint2 ops func bfalse bfalse
+    return strat
+    where
+    func strat target = do
+        traceST "strategy: iteration"
+        t1 <- target .| goal
+        res <- solveFair cPreUnder ops si rs rd t1
+        deref t1
+        t2 <- res .& fair
+        t3 <- t2 .| target
+        deref t2
+        hasOutgoings <- bexists _nextCube trans
+        res2 <- cPre' ops si rd hasOutgoings t3
+        deref hasOutgoings
+        deref t3
+        resConsistent <- res2 .& consistentMinusCUL 
+        deref res2
+        stratNew <- resConsistent .& bnot target
+        deref target
+        deref resConsistent
+        strat' <- strat .| stratNew
+        deref strat
+        deref stratNew
+        return (strat', res)
+
 --The abstraction-refinement loop
-absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp -> o -> ST s Bool
+absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp -> o -> ST s (Maybe String)
 absRefineLoop m spec ts abstractorState = 
     let ops@Ops{..} = constructOps m in
     flip evalStateT (initialDB ops) $ do
@@ -254,10 +291,10 @@ absRefineLoop m spec ts abstractorState =
         lift $ traceST $ "Init is: " ++ (bddSynopsis ops $ RefineReachFair.init rs)
         refineLoop ops rs rd bfalse
         where
-            refineLoop :: Ops s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) Bool
+            refineLoop :: Ops s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe String)
             refineLoop ops@Ops{..} rs@RefineStatic{..} = refineLoop'
                 where 
-                refineLoop' :: RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) Bool
+                refineLoop' :: RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe String)
                 refineLoop' rd@RefineDynamic{..} lastWin = do
                     si@SectionInfo{..} <- gets _sections
                     lift $ setVarMap _trackedNodes _nextNodes
@@ -269,7 +306,8 @@ absRefineLoop m spec ts abstractorState =
                         True -> lift $ do
                             traceST "Winning"
                             deref winRegion
-                            return True
+                            strat <- strategy ops si rd rs 
+                            return $ Just $ bddSynopsis ops strat
                         False -> do
                             lift $ traceST "Not winning without further refinement"
                             winAndGoal <- lift $ winRegion .| goal
@@ -291,4 +329,5 @@ absRefineLoop m spec ts abstractorState =
                                             refineLoop' newRD winRegion
                                         Nothing -> lift $ do
                                             traceST "Losing"
-                                            return False
+                                            return Nothing
+
