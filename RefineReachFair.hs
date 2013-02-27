@@ -64,8 +64,7 @@ cPreOver ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} hasOutgoings target
     t2 <- cPre' ops si rd hasOutgoings target
     ccube <- _labelCube .& _untrackedCube
     t3 <- andAbstract ccube consistentPlusCUL t2
-    deref t2
-    deref ccube
+    mapM deref [t2, ccube]
     return t3
 
 cPreUnder :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
@@ -139,6 +138,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
         }
     return (rd, rs)
 
+--check msg ops = unsafeIOToST (putStrLn ("checking bdd consistency" ++ msg ++ "\n")) >> debugCheck ops >> checkKeys ops
 check msg ops = return ()
 
 refineStrategy = refineLeastPreds
@@ -187,15 +187,14 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
         consistentMinusCUL = consistentMinusCUL'
     }
 
-refineConsistency _ _ _ _ _ = return Nothing
-
-{-
 --Refine one of the consistency relations so that we make progress. Does not promote untracked state.
-refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
-refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win = do
+refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
+refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning = do
     syi@SymbolInfo{..} <- gets _symbolTable 
     si@SectionInfo{..} <- gets _sections
-    win'               <- lift $ win .& safeRegion
+    win''              <- lift $ win .& fair
+    win'               <- lift $ win'' .| winning
+    lift $ deref win''
     hasOutgoings       <- lift $ bexists _nextCube trans
     winNoConstraint    <- lift $ cPre' ops si rd hasOutgoings win'
     lift $ mapM deref [win', hasOutgoings]
@@ -228,7 +227,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                     inconsistent       <- lift $ stateLabelInconsistent ops syi statePairs labelPairs
                     consistentPlusCUL' <- lift $ andDeref ops consistentPlusCUL (bnot inconsistent)
                     lift $ check "refineConsistency4" ops
-                    refineConsistency ops ts (rd {consistentPlusCUL = consistentPlusCUL'}) rs win
+                    refineConsistency ops ts (rd {consistentPlusCUL = consistentPlusCUL'}) rs win winning
                 Nothing -> do
                     --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
                     lift $ traceST "predicates are consistent. refining consistentMinusCUL..."
@@ -241,7 +240,6 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                     return $ Just $ rd {
                         consistentMinusCUL = consistentMinusCUL'
                     }
--}
 
 fixedPoint2 :: Ops s u -> (DDNode s u -> DDNode s u -> ST s (DDNode s u, DDNode s u)) -> DDNode s u -> DDNode s u -> ST s (DDNode s u, DDNode s u)
 fixedPoint2 ops@Ops{..} func state set = do
@@ -272,10 +270,8 @@ strategy ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} rs@RefineStatic{..}
         resConsistent <- res2 .& consistentMinusCUL 
         deref res2
         stratNew <- resConsistent .& bnot target
-        deref target
         deref resConsistent
         strat' <- strat .| stratNew
-        deref strat
         deref stratNew
         return (strat', res)
 
@@ -312,7 +308,7 @@ absRefineLoop m spec ts abstractorState =
                             lift $ traceST "Not winning without further refinement"
                             winAndGoal <- lift $ winRegion .| goal
                             newWin <- lift $ solveFair cPreOver ops si rs rd winAndGoal
-                            res <- refineConsistency ops ts rd rs newWin
+                            res <- refineConsistency ops ts rd rs newWin lastWin
                             si@SectionInfo{..} <- gets _sections
                             case res of
                                 Just newRD -> do
