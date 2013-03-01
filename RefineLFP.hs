@@ -28,9 +28,9 @@ import RefineCommon
 
 --Input to the refinement algorithm. Represents the spec.
 data Abstractor s u sp lp = Abstractor {
-    goalAbs   :: forall pdb. VarOps pdb (BAPred sp lp) BAVar s u -> StateT pdb (ST s) (DDNode s u),
-    updateAbs :: forall pdb. [(sp, DDNode s u)] -> [(String, [DDNode s u])] -> VarOps pdb (BAPred sp lp) BAVar s u -> StateT pdb (ST s) (DDNode s u),
-    initAbs   :: forall pdb. VarOps pdb (BAPred sp lp) BAVar s u -> StateT pdb (ST s) (DDNode s u)
+    goalAbs   :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
+    updateAbs :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
+    initAbs   :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u)
 }
 
 -- ===Data structures for keeping track of abstraction state===
@@ -122,14 +122,14 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     (goalExpr, NewVars{..}) <- doGoal ops goalAbs
     lift $ check "After compiling goal" ops
     --get the abstract update functions for the goal predicates and variables
-    updateExprConj'' <- doUpdate ops (updateAbs _allocatedStatePreds _allocatedStateVars)
+    updateExprConj'' <- doUpdate ops (updateAbs _allocatedStateVars)
     updateExprConj   <- updateWrapper ops updateExprConj''
     --create the consistency constraints
     let consistentPlusCU   = btrue
         consistentPlusCUL  = btrue
     lift $ ref consistentPlusCU
     lift $ ref consistentPlusCUL
-    labelPreds <- gets $ _labelPreds . _symbolTable
+    labelPreds <- gets $ _labelVars . _symbolTable
     consistentMinusCUL <- lift $ conj ops $ map (bnot . fst . snd) $ Map.elems labelPreds
     --construct the RefineDynamic and RefineStatic
     let rd = RefineDynamic {
@@ -151,16 +151,16 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     lift $ traceST $ "Promoting: " ++ show refineVars
 
     NewVars{..} <- promoteUntrackedVars ops refineVars
-    labelPredsPreUpdate <- gets $ _labelPreds . _symbolTable
+    labelPredsPreUpdate <- gets $ _labelVars . _symbolTable
 
     --compute the update functions
-    updateExprConj'' <- doUpdate ops $ updateAbs _allocatedStatePreds _allocatedStateVars
+    updateExprConj'' <- doUpdate ops $ updateAbs _allocatedStateVars
     updateExprConj   <- updateWrapper ops updateExprConj''
 
     --update the transition relation
     trans' <- lift $ andDeref ops trans updateExprConj
 
-    labelPreds <- gets $ _labelPreds . _symbolTable
+    labelPreds <- gets $ _labelVars . _symbolTable
     consistentMinusCUL'' <- lift $ conj ops $ map (bnot . fst . snd) $ Map.elems $ labelPreds Map.\\ labelPredsPreUpdate
     consistentMinusCUL'  <- lift $ andDeref ops consistentMinusCUL consistentMinusCUL''
 
@@ -202,7 +202,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
             lift $ deref t5
             let stateUntrackedProgress = map (first $ fromJustNote "refineConsistency1" . flip Map.lookup _stateRev) c
             lift $ traceST $ "Tuple that will make progress: " ++ show (nub stateUntrackedProgress)
-            let preds = getPredicates stateUntrackedProgress
+            let preds = stateUntrackedProgress
             lift $ traceST $ "Preds being checked for consistency: " ++ show preds
             lift $ check "refineConsistency end2" ops
             --Alive : win', hasOutgoings, tt3 
@@ -211,7 +211,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                     --consistentPlusCU can be refined
                     lift $ traceST "refining consistentPlusCU"
                     lift $ mapM deref [win', hasOutgoings, tt3]
-                    inconsistent <- lift $ makeCube ops $ map (first (getNode . fromJustNote "refineConsistency" . flip Map.lookup _statePreds)) pairs
+                    inconsistent <- lift $ makeCube ops $ map (first (getNode . fromJustNote "refineConsistency" . flip Map.lookup _stateVars)) pairs
                     consistentPlusCU'  <- lift $ consistentPlusCU .& bnot inconsistent
                     lift $ deref consistentPlusCU
                     consistentPlusCUL' <- lift $ consistentPlusCUL .& bnot inconsistent

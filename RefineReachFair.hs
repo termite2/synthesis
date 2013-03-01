@@ -28,10 +28,10 @@ import RefineCommon
 
 --Input to the refinement algorithm. Represents the spec.
 data Abstractor s u sp lp = Abstractor {
-    goalAbs   :: forall pdb. VarOps pdb (BAPred sp lp) BAVar s u -> StateT pdb (ST s) (DDNode s u),
-    fairAbs   :: forall pdb. VarOps pdb (BAPred sp lp) BAVar s u -> StateT pdb (ST s) (DDNode s u),
-    updateAbs :: forall pdb. [(sp, DDNode s u)] -> [(String, [DDNode s u])] -> VarOps pdb (BAPred sp lp) BAVar s u -> StateT pdb (ST s) (DDNode s u),
-    initAbs   :: forall pdb. VarOps pdb (BAPred sp lp) BAVar s u -> StateT pdb (ST s) (DDNode s u)
+    goalAbs   :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
+    fairAbs   :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
+    updateAbs :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
+    initAbs   :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u)
 }
 
 -- ===Data structures for keeping track of abstraction state===
@@ -117,14 +117,14 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     (fairExpr, newVarsFair) <- doGoal ops fairAbs
     lift $ check "After compiling fair" ops
     --get the abstract update functions for the goal predicates and variables
-    updateExprConj'' <- doUpdate ops (updateAbs (nub $ _allocatedStatePreds newVarsGoal ++ _allocatedStatePreds newVarsFair) (nub $ _allocatedStateVars newVarsGoal ++ _allocatedStateVars newVarsFair))
+    updateExprConj'' <- doUpdate ops (updateAbs (nub $ _allocatedStateVars newVarsGoal ++ _allocatedStateVars newVarsFair))
     updateExprConj   <- updateWrapper ops updateExprConj''
     --create the consistency constraints
     let consistentPlusCU   = btrue
         consistentPlusCUL  = btrue
     lift $ ref consistentPlusCU
     lift $ ref consistentPlusCUL
-    labelPreds <- gets $ _labelPreds . _symbolTable
+    labelPreds <- gets $ _labelVars . _symbolTable
     consistentMinusCUL <- lift $ conj ops $ map (bnot . fst . snd) $ Map.elems labelPreds
     --construct the RefineDynamic and RefineStatic
     let rd = RefineDynamic {
@@ -169,16 +169,16 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     lift $ traceST $ "Promoting: " ++ show refineVars
 
     NewVars{..}          <- promoteUntrackedVars ops refineVars
-    labelPredsPreUpdate  <- gets $ _labelPreds . _symbolTable
+    labelPredsPreUpdate  <- gets $ _labelVars . _symbolTable
 
     --compute the update functions
-    updateExprConj''     <- doUpdate ops $ updateAbs _allocatedStatePreds _allocatedStateVars
+    updateExprConj''     <- doUpdate ops $ updateAbs _allocatedStateVars
     updateExprConj       <- updateWrapper ops updateExprConj''
 
     --update the transition relation
     trans'               <- lift $ andDeref ops trans updateExprConj
 
-    labelPreds           <- gets $ _labelPreds . _symbolTable
+    labelPreds           <- gets $ _labelVars . _symbolTable
     consistentMinusCUL'' <- lift $ conj ops $ map (bnot . fst . snd) $ Map.elems $ labelPreds Map.\\ labelPredsPreUpdate
     consistentMinusCUL'  <- lift $ andDeref ops consistentMinusCUL consistentMinusCUL''
 
@@ -220,7 +220,9 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
             lift $ traceST $ "label preds for solver: " ++ show cLabelPreds
             lift $ traceST $ "state preds for solver: " ++ show cStatePreds
             --Alive : nothing
-            case unsatCoreStateLabel cStatePreds cLabelPreds of
+            let groupedState = groupForUnsatCore cStatePreds
+                groupedLabel = groupForUnsatCore cLabelPreds
+            case unsatCoreStateLabel groupedState groupedLabel of
                 Just (statePairs, labelPairs) -> do
                     --statePairs, labelPairs is inconsistent so subtract this from consistentPlusCUL
                     lift $ traceST "refining consistentPlusCUL"
@@ -231,9 +233,9 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                 Nothing -> do
                     --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
                     lift $ traceST "predicates are consistent. refining consistentMinusCUL..."
-                    eQuantExpr <- doUpdate ops (eQuant cLabelPreds)
+                    eQuantExpr <- doUpdate ops (eQuant groupedLabel)
 
-                    consistentCube'     <- lift $ stateLabelConsistent ops syi cLabelPreds 
+                    consistentCube'     <- lift $ stateLabelConsistent ops syi groupedLabel 
                     consistentCube      <- lift $ andDeref ops consistentCube' eQuantExpr
                     consistentMinusCUL' <- lift $ orDeref ops consistentMinusCUL consistentCube
 

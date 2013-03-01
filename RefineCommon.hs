@@ -6,14 +6,14 @@ module RefineCommon (
     refineAny,
     refineFirstPrime,
     refineLeastPreds,
-    getPredicates,
     partitionStateLabel,
     indicesToStatePreds,
     indicesToLabelPreds,
     partitionStateLabelPreds,
     stateLabelInconsistent,
     stateLabelConsistent,
-    updateWrapper
+    updateWrapper,
+    groupForUnsatCore
     ) where
 
 import Control.Monad.State
@@ -23,6 +23,7 @@ import Control.Arrow
 import qualified Data.Map as Map
 import Data.Map (Map)
 import Data.Tuple.All
+import Data.Function
 
 import Safe
 
@@ -32,9 +33,9 @@ import BddUtil
 
 --Theory solving
 data TheorySolver s u sp lp = TheorySolver {
-    unsatCoreState      :: [(sp, Bool)] -> Maybe [(sp, Bool)],
-    unsatCoreStateLabel :: [(sp, Bool)] -> [(lp, Bool)] -> Maybe ([(sp, Bool)], [(lp, Bool)]),
-    eQuant              :: forall pdb. [(lp, Bool)] -> VarOps pdb (BAPred sp lp) BAVar s u -> StateT pdb (ST s) (DDNode s u)
+    unsatCoreState      :: [(sp, [Bool])] -> Maybe [(sp, Int)],
+    unsatCoreStateLabel :: [(sp, [Bool])] -> [(lp, [Bool])] -> Maybe ([(sp, [Bool])], [(lp, [Bool])]),
+    eQuant              :: forall pdb. [(lp, [Bool])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u)
 }
 
 fixedPoint :: Ops s u -> (DDNode s u -> ST s (DDNode s u)) -> DDNode s u -> ST s (DDNode s u)
@@ -45,13 +46,15 @@ fixedPoint ops@Ops{..} func start = do
         True -> return start
         False -> fixedPoint ops func res
         
-doEnVars :: Ops s u -> DDNode s u -> [(DDNode s u, DDNode s u)] -> ST s (DDNode s u)
+doEnVars :: Ops s u -> DDNode s u -> [([DDNode s u], DDNode s u)] -> ST s (DDNode s u)
 doEnVars Ops{..} trans enVars = do
         ref trans
         foldM func trans enVars
     where
-    func soFar (pred, en) = do
-        e <- bexists pred soFar
+    func soFar (var, en) = do
+        varCube <- nodesToCube var
+        e <- bexists varCube soFar
+        deref varCube
         e1 <- e .& bnot en
         deref e
         c <- en .& soFar
@@ -114,63 +117,67 @@ refineLeastPreds ops@Ops{..} SectionInfo{..} newSU
         deref untrackedCube
         return (length support, support)
 
-getPredicates :: [(Variable p s u, a)] -> [(p, a)]
-getPredicates = mapMaybe func 
-    where
-    func (Predicate p _, x) = Just (p, x)
-    func _                  = Nothing
-
 partitionStateLabel :: SectionInfo s u -> [(Int, a)] -> ([(Int, a)], [(Int, a)])
 partitionStateLabel SectionInfo{..} = partition (f . fst)
     where f p = elem p _trackedInds || elem p _untrackedInds
 
-indicesToStatePreds :: SymbolInfo s u sp lp -> [(Int, a)] -> [(sp, a)]
-indicesToStatePreds SymbolInfo{..} = getPredicates . map func
+indicesToStatePreds :: SymbolInfo s u sp lp -> [(Int, a)] -> [((Int, Variable sp s u), a)]
+indicesToStatePreds SymbolInfo{..} = map func
     where
-    func = first $ fromJustNote "refineConsistency2" . flip Map.lookup _stateRev
+    func = first $ (id &&& fromJustNote "refineConsistency2" . flip Map.lookup _stateRev)
 
-indicesToLabelPreds :: SymbolInfo s u sp lp -> [(Int, a)] -> [(lp, a)]
-indicesToLabelPreds SymbolInfo{..} = getPredicates . catMaybes . map (uncurry func)
+indicesToLabelPreds :: SymbolInfo s u sp lp -> [(Int, a)] -> [((Int, Variable lp s u), a)]
+indicesToLabelPreds SymbolInfo{..} = catMaybes . map (uncurry func)
     where
     func idx polarity = case fromJustNote "refineConsistency3" $ Map.lookup idx _labelRev of
         (_, True)   -> Nothing
-        (pred, False) -> Just (pred, polarity)
+        (pred, False) -> Just ((idx, pred), polarity)
 
-partitionStateLabelPreds :: SectionInfo s u -> SymbolInfo s u sp lp -> [(Int, a)] -> ([(sp, a)], [(lp, a)])
+partitionStateLabelPreds :: SectionInfo s u -> SymbolInfo s u sp lp -> [(Int, a)] -> ([((Int, Variable sp s u), a)], [((Int, Variable lp s u), a)])
 partitionStateLabelPreds si syi x = (statePairs, labelPairs)
     where
     statePairs = indicesToStatePreds syi stateIndices
     labelPairs = indicesToLabelPreds syi labelIndices
     (stateIndices, labelIndices) = partitionStateLabel si x
 
-stateLabelInconsistent :: (Ord sp, Ord lp) => Ops s u -> SymbolInfo s u sp lp -> [(sp, Bool)] -> [(lp, Bool)] -> ST s (DDNode s u)
-stateLabelInconsistent ops@Ops{..} SymbolInfo{..} statePairs labelPairs = do
-    inconsistentState <- makeCube ops $ map (first getStates) statePairs
-    inconsistentLabel <- makeCube ops $ map (first getLabels) labelPairs
-    inconsistent      <- andDeref ops inconsistentState inconsistentLabel
-    return inconsistent
-    where
-    getStates = getNode . fromJustNote "refineConsistency" . flip Map.lookup _statePreds
-    getLabels = getNode . sel1 . fromJustNote "refineConsistency" . flip Map.lookup _labelPreds
+makeCubeInt :: Ops s u -> [([DDNode s u], [Bool])] -> ST s (DDNode s u)
+makeCubeInt ops x = makeCube ops $ concatMap (uncurry zip ) x
 
-stateLabelConsistent :: (Ord sp, Ord lp) => Ops s u -> SymbolInfo s u sp lp -> [(lp, Bool)] -> ST s (DDNode s u) 
-stateLabelConsistent ops@Ops{..} SymbolInfo{..} cLabelPreds = do
-    labelCube <- uncurry computeCube $ unzip $ concatMap func labelPreds'
-    otherCube <- uncurry computeCube $ unzip $ zip otherEnabling (repeat False)
-    res       <- andDeref ops labelCube otherCube
-    return res
+stateLabelInconsistent :: (Ord sp, Ord lp) => Ops s u -> SymbolInfo s u sp lp -> [(sp, [Bool])] -> [(lp, [Bool])] -> ST s (DDNode s u)
+stateLabelInconsistent ops@Ops{..} SymbolInfo{..} statePairs labelPairs = do
+    inconsistentState <- makeCubeInt ops $ map (first getStates) statePairs
+    inconsistentLabel <- makeCubeInt ops $ map (first getLabels) labelPairs
+    andDeref ops inconsistentState inconsistentLabel
     where
-    otherEnabling = map (getNode. snd . snd) $ filter (\(p, _) -> not $ p `elem` map fst cLabelPreds) $ Map.toList _labelPreds
-    labelPreds' = map (first $ fromJustNote "refineConsistency" . flip Map.lookup _labelPreds) cLabelPreds
-    func ((lp, le), pol) = [(fst lp, pol), (fst le, True)]
+    getStates = map getNode . fromJustNote "refineConsistency" . flip Map.lookup _stateVars
+    getLabels = map getNode . sel1 . fromJustNote "refineConsistency" . flip Map.lookup _labelVars
+
+stateLabelConsistent :: (Ord sp, Ord lp) => Ops s u -> SymbolInfo s u sp lp -> [(lp, [Bool])] -> ST s (DDNode s u) 
+stateLabelConsistent ops@Ops{..} SymbolInfo{..} cLabelPreds = do
+    labelCube <- makeCubeInt ops $ concatMap func labelPreds'
+    otherCube <- makeCube ops    $ zip otherEnabling (repeat False)
+    andDeref ops labelCube otherCube
+    where
+    otherEnabling = map (getNode . snd . snd) $ filter (\(p, _) -> not $ p `elem` map fst cLabelPreds) $ Map.toList _labelVars
+    labelPreds' = map (first $ fromJustNote "refineConsistency" . flip Map.lookup _labelVars) cLabelPreds
+    func ((lp, le), pol) = [(map fst lp, pol), ([fst le], [True])]
 
 updateWrapper :: Ops s u -> DDNode s u -> StateT (DB s u dp lp) (ST s) (DDNode s u)
 updateWrapper ops@Ops{..} updateExprConj'' = do
     outcomeCube <- gets $ _outcomeCube . _sections
     updateExprConj' <- lift $ bexists outcomeCube updateExprConj''
     lift $ deref updateExprConj''
-    labelPreds <- gets $ _labelPreds . _symbolTable
-    updateExprConj  <- lift $ doEnVars ops updateExprConj' $ map (fst *** fst) $ Map.elems labelPreds
+    labelPreds <- gets $ _labelVars . _symbolTable
+    updateExprConj  <- lift $ doEnVars ops updateExprConj' $ map (map fst *** fst) $ Map.elems labelPreds
     lift $ deref updateExprConj'
     return updateExprConj
+
+groupForUnsatCore :: (Ord sp) => [((Int, Variable sp s u), Bool)] -> [(sp, [Bool])]
+groupForUnsatCore svs = map (first ident) $  map (second $ map snd . sortBy (compare `on` fst)) $ aggregate svs
+    where    
+    aggregate args = Map.toList $ foldl f Map.empty args
+        where
+        f mp ((idx, a), b) = case Map.lookup a mp of
+            Just x -> Map.insert a ((idx, b) : x) mp
+            Nothing -> Map.insert a [(idx, b)] mp
 
