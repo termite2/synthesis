@@ -4,14 +4,15 @@ module Solver(SatResult(..),
               Solver(..)) where
 
 import CuddExplicitDeref
-import PredicateDB
+--import PredicateDB
+import Predicate
 
 data SatResult = SatYes
                | SatNo
                | SatMaybe
                deriving (Eq)
 
-data Solver p o s u = Solver {
+data Solver p s u = Solver {
 
     -- Check satisfiability of a conjunction of predicates
     checkSat :: [(p, Bool)] -> SatResult,
@@ -24,9 +25,9 @@ data Solver p o s u = Solver {
     -- a conjunction of predicates.  May introduce new predicates.
     -- Returns logic relation that represents the formula after 
     -- quantification.
-    equant :: [(p, Bool)] -> [String] -> PredicateDB p o s u (DDNode s u),
+    equant :: [(p, Bool)] -> [String] -> PDB pdb s u (DDNode s u),
 
-    predVars :: p -> [(String, VarCategory)]
+    --predVars :: p -> [(String, VarCategory)]
 }
 
 

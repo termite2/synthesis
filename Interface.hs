@@ -25,7 +25,8 @@ data BAVar sp lp where
 --Operations that are given to the backend for compilation. 
 data VarOps pdb v s u = VarOps {
     getVar  :: v -> StateT pdb (ST s) [DDNode s u],
-    withTmp :: forall a. (DDNode s u -> StateT pdb (ST s) a) -> StateT pdb (ST s) a
+    withTmp :: forall a. (DDNode s u -> StateT pdb (ST s) a) -> StateT pdb (ST s) a,
+    allVars :: StateT pdb (ST s) [v]
 }
 
 --Generic utility functions

@@ -33,7 +33,7 @@ import BddUtil
 
 --Theory solving
 data TheorySolver s u sp lp = TheorySolver {
-    unsatCoreState      :: [(sp, [Bool])] -> Maybe [(sp, Int)],
+    unsatCoreState      :: [(sp, [Bool])] -> Maybe [(sp, [Bool])],
     unsatCoreStateLabel :: [(sp, [Bool])] -> [(lp, [Bool])] -> Maybe ([(sp, [Bool])], [(lp, [Bool])]),
     eQuant              :: forall pdb. [(lp, [Bool])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u)
 }
