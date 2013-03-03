@@ -63,7 +63,10 @@ getIdx = snd
 data Variable p s u = Variable {
     ident :: p,
     vars  :: [VarInfo s u]
-} deriving (Show)
+} 
+
+instance (Show p) => Show (Variable p s u) where
+    show x = show $ ident x
 
 instance (Eq p) => Eq (Variable p s u) where
     x == y = ident x == ident y

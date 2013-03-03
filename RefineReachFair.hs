@@ -310,7 +310,7 @@ absRefineLoop m spec ts abstractorState =
                             lift $ traceST "Not winning without further refinement"
                             winAndGoal <- lift $ winRegion .| goal
                             newWin <- lift $ solveFair cPreOver ops si rs rd winAndGoal
-                            res <- refineConsistency ops ts rd rs newWin lastWin
+                            res <- refineConsistency ops ts rd rs newWin winAndGoal
                             si@SectionInfo{..} <- gets _sections
                             case res of
                                 Just newRD -> do
