@@ -217,11 +217,11 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
             lift $ deref toCheckConsistency
 
             let (cStatePreds, cLabelPreds) = partitionStateLabelPreds si syi c
-            lift $ traceST $ "label preds for solver: " ++ show cLabelPreds
-            lift $ traceST $ "state preds for solver: " ++ show cStatePreds
             --Alive : nothing
             let groupedState = groupForUnsatCore cStatePreds
                 groupedLabel = groupForUnsatCore cLabelPreds
+            lift $ traceST $ "label preds for solver: " ++ show groupedState
+            lift $ traceST $ "state preds for solver: " ++ show groupedLabel
             case unsatCoreStateLabel groupedState groupedLabel of
                 Just (statePairs, labelPairs) -> do
                     --statePairs, labelPairs is inconsistent so subtract this from consistentPlusCUL
