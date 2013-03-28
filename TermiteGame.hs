@@ -24,7 +24,7 @@ import BddRecord
 import BddUtil
 import BddInterp
 import Interface
-import RefineCommon
+import RefineCommon hiding (doEnVars)
 
 --Input to the refinement algorithm. Represents the spec.
 data Abstractor s u sp lp = Abstractor {
@@ -54,6 +54,24 @@ data RefineDynamic s u = RefineDynamic {
     -}
 }
 
+type Lab s u = [([DDNode s u], DDNode s u)]
+
+doEnVars :: (Ops s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)) -> Ops s u -> DDNode s u -> Lab s u -> ST s (DDNode s u)
+doEnVars qFunc ops@Ops{..} strat envars = do
+    ref strat
+    foldM func strat envars
+    where
+    func soFar (var, en) = do
+        varCube <- nodesToCube var
+        e <- qFunc ops varCube soFar
+        deref varCube
+        res <- bite en soFar e
+        deref e
+        return res
+
+doEnCont  = doEnVars bforall
+doEnUCont = doEnVars bexists
+
 --Find the <state, untracked, label> tuples that guaranteed to be in the goal for a given transition relation
 cpre' :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 cpre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} hasOutgoings target = do
@@ -65,38 +83,40 @@ cpre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} hasOutgoings target = 
     return stratAvl
 
 --Returns the set of <state, untracked> pairs that are winning 
-cpre'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
-cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont target = do
-    strat    <- cpre' ops si rd hasOutgoingsCont target
-    winCont  <- andAbstract _labelCube btrue strat 
-    winUCont <- liftM bnot $ andAbstract _labelCube btrue (bnot strat)
-    win      <- bite cont winCont winUCont
+cpre'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
+cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
+    strat     <- cpre' ops si rd hasOutgoingsCont target
+    stratCont <- doEnCont ops strat labelPreds
+    deref strat
+    winCont   <- andAbstract _labelCube btrue stratCont
+    winUCont  <- liftM bnot $ andAbstract _labelCube btrue (bnot strat)
+    win       <- bite cont winCont winUCont
     mapM deref [winCont, winUCont]
     return win
 
-cPreOver :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
-cPreOver ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont target = do
-    su  <- cpre'' ops si rs rd hasOutgoingsCont target
+cPreOver :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
+cPreOver ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
+    su  <- cpre'' ops si rs rd hasOutgoingsCont labelPreds target
     res <- bexists _untrackedCube su
     deref su
     return res
 
-cPreUnder :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
-cPreUnder ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont target = do
-    su  <- cpre'' ops si rs rd hasOutgoingsCont target
+cPreUnder :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
+cPreUnder ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
+    su  <- cpre'' ops si rs rd hasOutgoingsCont labelPreds target
     res <- bforall _untrackedCube su
     deref su
     return res
 
-winningSU :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> ST s (DDNode s u)
-winningSU ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} target = do
+winningSU :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
+winningSU ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds target = do
     hasOutgoings <- bexists _nextCube trans
-    res <- cpre'' ops si rs rd hasOutgoings target
+    res <- cpre'' ops si rs rd hasOutgoings labelPreds target
     deref hasOutgoings
     return res
 
-solveFair :: (Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)) -> Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> ST s (DDNode s u)
-solveFair cpreFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} winning = do
+solveFair :: (Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)) -> Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
+solveFair cpreFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds winning = do
     hasOutgoings <- bexists _nextCube trans
     fp <- fixedPoint ops (func hasOutgoings) btrue
     deref hasOutgoings
@@ -107,18 +127,18 @@ solveFair cpreFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineD
         t1 <- target .& fair
         t2 <- t1 .| winning
         deref t1
-        res <- cpreFunc ops si rs rd hasOutgoings t2
+        res <- cpreFunc ops si rs rd hasOutgoings labelPreds t2
         deref t2
         return res
 
-solveGame :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> ST s (DDNode s u)
-solveGame ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} startingPoint = do
+solveGame :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
+solveGame ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds startingPoint = do
     fixedPoint ops func startingPoint
     where
     func target = do
         traceST "solveGame: iteration"
         t1 <- target .| goal
-        res <- solveFair cPreUnder ops si rs rd t1
+        res <- solveFair cPreUnder ops si rs rd labelPreds t1
         deref t1
         return res
 
@@ -168,12 +188,12 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
 
 refineStrategy = refineLeastPreds
 
-pickUntrackedToPromote :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> ST s (Maybe [Int])
-pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} rs@RefineStatic{..} win lastLFP = do
+pickUntrackedToPromote :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> RefineStatic s u -> Lab s u -> DDNode s u -> DDNode s u -> ST s (Maybe [Int])
+pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} rs@RefineStatic{..} labelPreds win lastLFP = do
     win''  <- win .& fair
     win'   <- win'' .| lastLFP
     deref win''
-    su     <- winningSU ops si rs rd win'
+    su     <- winningSU ops si rs rd labelPreds win'
     deref win'
     toDrop <- (bnot su) .& win
     deref su
@@ -232,7 +252,9 @@ absRefineLoop m spec ts abstractorState =
                 refineLoop' rd@RefineDynamic{..} lastWin = do
                     si@SectionInfo{..} <- gets _sections
                     lift $ setVarMap _trackedNodes _nextNodes
-                    winRegion <- lift $ solveGame ops si rs rd lastWin
+                    labelPreds <- gets $ _labelVars . _symbolTable
+                    let lp = map (map fst *** fst) $ Map.elems labelPreds
+                    winRegion <- lift $ solveGame ops si rs rd lp lastWin
                     lift $ deref lastWin
                     winning <- lift $ init `leq` winRegion
                     --Alive: winRegion, rd, rs
@@ -244,7 +266,7 @@ absRefineLoop m spec ts abstractorState =
                         False -> do
                             lift $ traceST "Not winning without further refinement"
                             winAndGoal <- lift $ winRegion .| goal
-                            newWin <- lift $ solveFair cPreOver ops si rs rd winAndGoal
+                            newWin <- lift $ solveFair cPreOver ops si rs rd lp winAndGoal
                             res <- refineConsistency ops ts rd rs newWin winAndGoal
                             si@SectionInfo{..} <- gets _sections
                             case res of
@@ -254,7 +276,7 @@ absRefineLoop m spec ts abstractorState =
                                     refineLoop' newRD winRegion
                                 Nothing -> do
                                     lift $ traceST "Could not refine consistency relations. Attempting to refine untracked state variables"
-                                    res <- lift $ pickUntrackedToPromote ops si rd rs newWin winAndGoal
+                                    res <- lift $ pickUntrackedToPromote ops si rd rs lp newWin winAndGoal
                                     lift $ mapM deref [newWin, winAndGoal]
                                     case res of 
                                         Just vars -> do
