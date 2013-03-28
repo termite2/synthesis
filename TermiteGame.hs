@@ -45,13 +45,11 @@ data RefineStatic s u = RefineStatic {
 
 data RefineDynamic s u = RefineDynamic {
     --relations
-    trans               :: DDNode s u
-    {-
+    trans                   :: DDNode s u,
     consistentMinusCULCont  :: DDNode s u,
     consistentPlusCULCont   :: DDNode s u,
     consistentMinusCULUCont :: DDNode s u,
     consistentPlusCULUCont  :: DDNode s u
-    -}
 }
 
 type Lab s u = [([DDNode s u], DDNode s u)]
@@ -83,12 +81,24 @@ cpre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} hasOutgoings target = 
     return stratAvl
 
 --Returns the set of <state, untracked> pairs that are winning 
-cpre'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
-cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
+cpreOver'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
+cpreOver'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
     strat     <- cpre' ops si rd hasOutgoingsCont target
     stratCont <- doEnCont ops strat labelPreds
     deref strat
-    winCont   <- andAbstract _labelCube btrue stratCont
+    winCont   <- andAbstract _labelCube consistentPlusCULCont stratCont
+    winUCont  <- liftM bnot $ andAbstract _labelCube btrue (bnot strat)
+    win       <- bite cont winCont winUCont
+    mapM deref [winCont, winUCont]
+    return win
+    
+--Returns the set of <state, untracked> pairs that are winning 
+cpreUnder'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
+cpreUnder'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
+    strat     <- cpre' ops si rd hasOutgoingsCont target
+    stratCont <- doEnCont ops strat labelPreds
+    deref strat
+    winCont   <- andAbstract _labelCube consistentMinusCULCont stratCont
     winUCont  <- liftM bnot $ andAbstract _labelCube btrue (bnot strat)
     win       <- bite cont winCont winUCont
     mapM deref [winCont, winUCont]
@@ -96,14 +106,14 @@ cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} h
 
 cPreOver :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
 cPreOver ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
-    su  <- cpre'' ops si rs rd hasOutgoingsCont labelPreds target
+    su  <- cpreOver'' ops si rs rd hasOutgoingsCont labelPreds target
     res <- bexists _untrackedCube su
     deref su
     return res
 
 cPreUnder :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
 cPreUnder ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
-    su  <- cpre'' ops si rs rd hasOutgoingsCont labelPreds target
+    su  <- cpreUnder'' ops si rs rd hasOutgoingsCont labelPreds target
     res <- bforall _untrackedCube su
     deref su
     return res
@@ -111,7 +121,7 @@ cPreUnder ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..
 winningSU :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
 winningSU ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds target = do
     hasOutgoings <- bexists _nextCube trans
-    res <- cpre'' ops si rs rd hasOutgoings labelPreds target
+    res <- cpreOver'' ops si rs rd hasOutgoings labelPreds target
     deref hasOutgoings
     return res
 
@@ -161,18 +171,20 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     (contExpr, newVarsCont) <- doGoal ops contAbs
     lift $ check "After compiling fair" ops
     --get the abstract update functions for the goal predicates and variables
-    outcomeCube <- gets $ _outcomeCube . _sections
     updateExprConj' <- doUpdate ops (updateAbs (nub $ _allocatedStateVars newVarsGoal ++ _allocatedStateVars newVarsFair ++ _allocatedStateVars newVarsCont))
+    outcomeCube <- gets $ _outcomeCube . _sections
     updateExprConj <- lift $ bexists outcomeCube updateExprConj'
     lift $ deref updateExprConj'
 
     --create the consistency constraints
-    let consistentPlusCU   = btrue
-        consistentPlusCUL  = btrue
-    lift $ ref consistentPlusCU
-    lift $ ref consistentPlusCUL
+    let consistentPlusCULCont  = btrue
+        consistentPlusCULUCont = btrue
+    lift $ ref consistentPlusCULCont
+    lift $ ref consistentPlusCULUCont
     labelPreds <- gets $ _labelVars . _symbolTable
-    consistentMinusCUL <- lift $ conj ops $ map (bnot . fst . snd) $ Map.elems labelPreds
+    consistentMinusCULCont <- lift $ conj ops $ map (bnot . fst . snd) $ Map.elems labelPreds
+    let consistentMinusCULUCont = consistentMinusCULCont
+    lift $ ref consistentMinusCULUCont
     --construct the RefineDynamic and RefineStatic
     let rd = RefineDynamic {
             trans  = updateExprConj,
@@ -213,8 +225,8 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     labelPredsPreUpdate  <- gets $ _labelVars . _symbolTable
 
     --compute the update functions
-    outcomeCube <- gets $ _outcomeCube . _sections
     updateExprConj'   <- doUpdate ops (updateAbs _allocatedStateVars)
+    outcomeCube <- gets $ _outcomeCube . _sections
     updateExprConj''  <- lift $ bexists outcomeCube updateExprConj'
     lift $ deref updateExprConj'
 
@@ -231,7 +243,64 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
         trans  = updateExprConj
     }
 
-refineConsistency a b c d e f = return Nothing
+--Refine one of the consistency relations so that we make progress. Does not promote untracked state.
+refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
+refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning = do
+    syi@SymbolInfo{..} <- gets _symbolTable 
+    si@SectionInfo{..} <- gets _sections
+    win''              <- lift $ win .& fair
+    win'               <- lift $ win'' .| winning
+    lift $ deref win''
+    hasOutgoings       <- lift $ bexists _nextCube trans
+    winNoConstraint'   <- lift $ cpre' ops si rd hasOutgoings win'
+    let lp             =  map (map fst *** fst) $ Map.elems _labelVars
+    winNoConstraint    <- lift $ doEnCont ops winNoConstraint' lp
+    lift $ deref winNoConstraint'
+    lift $ mapM deref [win', hasOutgoings]
+    winActOver         <- lift $ winNoConstraint .& consistentPlusCULCont
+    winActUnder        <- lift $ andAbstract _labelCube winNoConstraint consistentMinusCULCont
+    lift $ deref winNoConstraint
+    toCheckConsistency <- lift $ winActOver .& bnot winActUnder
+    lift $ mapM deref [winActOver, winActUnder]
+    --Alive : toCheckConsistency
+    case toCheckConsistency==bfalse of 
+        True  -> do
+            --no refinement of consistency relations will shrink the winning region
+            lift $ traceST "no consistency refinement possible"
+            lift $ deref toCheckConsistency
+            return Nothing
+        False -> do
+            --There may be a refinement
+            --extract a <s, u, l> pair that will make progress if one exists
+            c <- lift $ presentInLargePrime ops toCheckConsistency
+            lift $ deref toCheckConsistency
+
+            let (cStatePreds, cLabelPreds) = partitionStateLabelPreds si syi c
+            --Alive : nothing
+            let groupedState = groupForUnsatCore cStatePreds
+                groupedLabel = groupForUnsatCore cLabelPreds
+            lift $ traceST $ "state preds for solver: " ++ show groupedState
+            lift $ traceST $ "label preds for solver: " ++ show groupedLabel
+            case unsatCoreStateLabel groupedState groupedLabel of
+                Just (statePairs, labelPairs) -> do
+                    --statePairs, labelPairs is inconsistent so subtract this from consistentPlusCUL
+                    lift $ traceST "refining consistentPlusCUL"
+                    inconsistent       <- lift $ stateLabelInconsistent ops syi statePairs labelPairs
+                    consistentPlusCUL' <- lift $ andDeref ops consistentPlusCULCont (bnot inconsistent)
+                    lift $ check "refineConsistency4" ops
+                    refineConsistency ops ts (rd {consistentPlusCULCont = consistentPlusCUL'}) rs win winning
+                Nothing -> do
+                    --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
+                    lift $ traceST "predicates are consistent. refining consistentMinusCUL..."
+                    eQuantExpr <- doUpdate ops (eQuant groupedLabel)
+
+                    consistentCube'     <- lift $ stateLabelConsistent ops syi groupedLabel 
+                    consistentCube      <- lift $ andDeref ops consistentCube' eQuantExpr
+                    consistentMinusCUL' <- lift $ orDeref ops consistentMinusCULCont consistentCube
+
+                    return $ Just $ rd {
+                        consistentMinusCULCont = consistentMinusCUL'
+                    }
    
 --The abstraction-refinement loop
 absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp -> o -> ST s Bool
