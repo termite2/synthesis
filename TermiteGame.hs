@@ -248,9 +248,16 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
         trans  = updateExprConj
     }
 
---Refine one of the consistency relations so that we make progress. Does not promote untracked state.
 refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
 refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning = do
+    r1 <- refineConsistencyCont ops ts rd rs win winning
+    case r1 of
+        Just res -> return $ Just res
+        Nothing  -> refineConsistencyUCont ops ts rd rs win winning
+
+refineConsistencyCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
+refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning = do
+    lift $ check "refineConsistencyCont" ops
     syi@SymbolInfo{..} <- gets _symbolTable 
     si@SectionInfo{..} <- gets _sections
     win''              <- lift $ win .& fair
@@ -260,11 +267,40 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
     winNoConstraint'   <- lift $ cpre' ops si rd hasOutgoings win'
     let lp             =  map (map fst *** fst) $ Map.elems _labelVars
     winNoConstraint    <- lift $ doEnCont ops winNoConstraint' lp
-    lift $ deref winNoConstraint'
-    lift $ mapM deref [win', hasOutgoings]
-    winActOver         <- lift $ winNoConstraint .& consistentPlusCULCont
-    winActUnder        <- lift $ andAbstract _labelCube winNoConstraint consistentMinusCULCont
-    lift $ deref winNoConstraint
+    lift $ mapM deref [win', hasOutgoings, winNoConstraint']
+    res <- doConsistency ops ts consistentPlusCULCont consistentMinusCULCont winNoConstraint
+    lift $ check "refineConsistencyCont End" ops
+    case res of 
+        Nothing -> return Nothing
+        Just (consistentPlusCULCont', consistentMinusCULCont') -> 
+            return $ Just $ rd {consistentPlusCULCont = consistentPlusCULCont', consistentMinusCULCont = consistentMinusCULCont'}
+
+refineConsistencyUCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
+refineConsistencyUCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning = do
+    lift $ check "refineConsistencyUCont" ops
+    syi@SymbolInfo{..} <- gets _symbolTable 
+    si@SectionInfo{..} <- gets _sections
+    win''              <- lift $ win .& fair
+    win'               <- lift $ win'' .| winning
+    lift $ deref win''
+    winNoConstraint'   <- lift $ liftM bnot $ cpre' ops si rd btrue win'
+    let lp             =  map (map fst *** fst) $ Map.elems _labelVars
+    winNoConstraint    <- lift $ doEnCont ops winNoConstraint' lp
+    lift $ mapM deref [win', winNoConstraint']
+    res <- doConsistency ops ts consistentPlusCULUCont consistentMinusCULUCont winNoConstraint
+    --TODO deref winNoConstraint
+    lift $ check "refineConsistencyUCont End" ops
+    case res of 
+        Nothing -> return Nothing
+        Just (consistentPlusCULUCont', consistentMinusCULUCont') -> 
+            return $ Just $ rd {consistentPlusCULUCont = consistentPlusCULUCont', consistentMinusCULUCont = consistentMinusCULUCont'}
+
+doConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (DDNode s u, DDNode s u))
+doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
+    syi@SymbolInfo{..} <- gets _symbolTable 
+    si@SectionInfo{..} <- gets _sections
+    winActOver         <- lift $ winNoConstraint .& cPlus
+    winActUnder        <- lift $ andAbstract _labelCube winNoConstraint cMinus
     toCheckConsistency <- lift $ winActOver .& bnot winActUnder
     lift $ mapM deref [winActOver, winActUnder]
     --Alive : toCheckConsistency
@@ -291,9 +327,9 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                     --statePairs, labelPairs is inconsistent so subtract this from consistentPlusCUL
                     lift $ traceST "refining consistentPlusCUL"
                     inconsistent       <- lift $ stateLabelInconsistent ops syi statePairs labelPairs
-                    consistentPlusCUL' <- lift $ andDeref ops consistentPlusCULCont (bnot inconsistent)
+                    consistentPlusCUL' <- lift $ andDeref ops cPlus (bnot inconsistent)
                     lift $ check "refineConsistency4" ops
-                    refineConsistency ops ts (rd {consistentPlusCULCont = consistentPlusCUL'}) rs win winning
+                    doConsistency ops ts consistentPlusCUL' cMinus winNoConstraint
                 Nothing -> do
                     --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
                     lift $ traceST "predicates are consistent. refining consistentMinusCUL..."
@@ -301,22 +337,21 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
 
                     consistentCube'     <- lift $ stateLabelConsistent ops syi groupedLabel 
                     consistentCube      <- lift $ andDeref ops consistentCube' eQuantExpr
-                    consistentMinusCUL' <- lift $ orDeref ops consistentMinusCULCont consistentCube
+                    consistentMinusCUL' <- lift $ orDeref ops cMinus consistentCube
 
-                    return $ Just $ rd {
-                        consistentMinusCULCont = consistentMinusCUL'
-                    }
-   
+                    return $ Just (cPlus, consistentMinusCUL')
+
 --The abstraction-refinement loop
 absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp -> o -> ST s Bool
-absRefineLoop m spec ts abstractorState = 
-    let ops@Ops{..} = constructOps m in
-    flip evalStateT (initialDB ops) $ do
+absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
+    idb <- initialDB ops
+    flip evalStateT idb $ do
         (rd, rs) <- initialAbstraction ops spec
         lift $ traceST "Refinement state after initial abstraction: " 
         lift $ traceST $ "Goal is: " ++ (bddSynopsis ops $ goal rs)
         lift $ traceST $ "Fair is: " ++ (bddSynopsis ops $ fair rs)
         lift $ traceST $ "Init is: " ++ (bddSynopsis ops $ TermiteGame.init rs)
+        lift $ ref bfalse
         refineLoop ops rs rd bfalse
         where
             refineLoop :: Ops s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) Bool

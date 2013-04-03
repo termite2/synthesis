@@ -110,7 +110,15 @@ data DB s u sp lp = DB {
     _avlOffset   :: Int
 }
 makeLenses ''DB
-initialDB ops = DB initialSymbolTable (initialSectionInfo ops) 0
+initialDB ops@Ops{..} = do
+    let isi@SectionInfo{..} = initialSectionInfo ops
+    let res = DB initialSymbolTable isi 0
+    ref _trackedCube
+    ref _untrackedCube
+    ref _labelCube
+    ref _outcomeCube
+    ref _nextCube
+    return res
 
 --Generic variable allocations
 alloc :: Ops s u -> StateT (DB s u sp lp) (ST s) (DDNode s u, Int)
