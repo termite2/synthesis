@@ -85,9 +85,10 @@ cpreOver'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s 
 cpreOver'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
     strat     <- cpre' ops si rd hasOutgoingsCont target
     stratCont <- doEnCont ops strat labelPreds
-    deref strat
     winCont   <- andAbstract _labelCube consistentPlusCULCont stratCont
+    deref stratCont
     winUCont  <- liftM bnot $ andAbstract _labelCube btrue (bnot strat)
+    deref strat
     win       <- bite cont winCont winUCont
     mapM deref [winCont, winUCont]
     return win
@@ -97,9 +98,10 @@ cpreUnder'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s
 cpreUnder'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
     strat     <- cpre' ops si rd hasOutgoingsCont target
     stratCont <- doEnCont ops strat labelPreds
-    deref strat
     winCont   <- andAbstract _labelCube consistentMinusCULCont stratCont
+    deref stratCont
     winUCont  <- liftM bnot $ andAbstract _labelCube btrue (bnot strat)
+    deref strat
     win       <- bite cont winCont winUCont
     mapM deref [winCont, winUCont]
     return win
@@ -128,12 +130,14 @@ winningSU ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..
 solveFair :: (Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)) -> Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
 solveFair cpreFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds winning = do
     hasOutgoings <- bexists _nextCube trans
+    ref btrue
     fp <- fixedPoint ops (func hasOutgoings) btrue
     deref hasOutgoings
     return fp
     where
     func hasOutgoings target = do
         traceST "solveFair: iteration"
+        check "solveFair" ops
         t1 <- target .& fair
         t2 <- t1 .| winning
         deref t1
@@ -152,7 +156,8 @@ solveGame ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..
         deref t1
         return res
 
-check msg ops = return ()
+--check msg ops = return ()
+check msg ops = unsafeIOToST (putStrLn ("checking bdd consistency" ++ msg ++ "\n")) >> debugCheck ops >> checkKeys ops
 
 --Create an initial abstraction and set up the data structures
 initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u sp lp -> StateT (DB s u sp lp) (ST s) (RefineDynamic s u, RefineStatic s u)
