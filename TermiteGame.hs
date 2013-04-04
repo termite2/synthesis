@@ -83,26 +83,28 @@ cpre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} hasOutgoings target = 
 --Returns the set of <state, untracked> pairs that are winning 
 cpreOver'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
 cpreOver'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
-    strat     <- cpre' ops si rd hasOutgoingsCont target
-    stratCont <- doEnCont ops strat labelPreds
-    winCont   <- andAbstract _labelCube consistentPlusCULCont stratCont
-    deref stratCont
-    winUCont  <- liftM bnot $ andAbstract _labelCube btrue (bnot strat)
+    strat      <- cpre' ops si rd hasOutgoingsCont target
+    stratCont  <- doEnCont ops strat labelPreds
+    stratUCont <- doEnCont ops (bnot strat) labelPreds
     deref strat
-    win       <- bite cont winCont winUCont
+    winCont    <- andAbstract _labelCube consistentPlusCULCont stratCont
+    winUCont   <- liftM bnot $ andAbstract _labelCube consistentMinusCULUCont stratUCont
+    mapM deref [stratCont, stratUCont]
+    win        <- bite cont winCont winUCont
     mapM deref [winCont, winUCont]
     return win
     
 --Returns the set of <state, untracked> pairs that are winning 
 cpreUnder'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
 cpreUnder'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
-    strat     <- cpre' ops si rd hasOutgoingsCont target
-    stratCont <- doEnCont ops strat labelPreds
-    winCont   <- andAbstract _labelCube consistentMinusCULCont stratCont
-    deref stratCont
-    winUCont  <- liftM bnot $ andAbstract _labelCube btrue (bnot strat)
+    strat      <- cpre' ops si rd hasOutgoingsCont target
+    stratCont  <- doEnCont ops strat labelPreds
+    stratUCont <- doEnCont ops (bnot strat) labelPreds
     deref strat
-    win       <- bite cont winCont winUCont
+    winCont    <- andAbstract _labelCube consistentMinusCULCont stratCont
+    winUCont   <- liftM bnot $ andAbstract _labelCube consistentPlusCULUCont stratUCont
+    mapM deref [stratCont, stratUCont]
+    win        <- bite cont winCont winUCont
     mapM deref [winCont, winUCont]
     return win
 
@@ -253,8 +255,15 @@ refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolv
 refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning = do
     r1 <- refineConsistencyCont ops ts rd rs win winning
     case r1 of
-        Just res -> return $ Just res
-        Nothing  -> refineConsistencyUCont ops ts rd rs win winning
+        Just res -> do
+            lift $ traceST "refined controllable consistency"
+            return $ Just res
+        Nothing  -> do
+            res <- refineConsistencyUCont ops ts rd rs win winning
+            case res of 
+                Just _ -> lift $ traceST "refined uncontrollable consistency"
+                Nothing -> return ()
+            return res
 
 refineConsistencyCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
 refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning = do
