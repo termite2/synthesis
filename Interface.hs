@@ -312,7 +312,7 @@ goalOps ops = VarOps {withTmp = undefined {-withTmp' ops -}, ..}
         findWithDefaultM (map getNode) var _stateVars $ findWithDefaultProcessM (map getNode) var _initVars (allocStateVar ops var size) (uncurry (addVarToState ops var) . unzip)
     getVar  _ = error "Requested non-state variable when compiling goal section"
 
-doGoal :: Ord sp => Ops s u -> (VarOps (GoalState s u sp lp) (BAVar sp lp) s u -> StateT (GoalState s u sp lp) (ST s) (DDNode s u)) -> StateT (DB s u sp lp) (ST s) (DDNode s u, NewVars s u sp)
+doGoal :: Ord sp => Ops s u -> (VarOps (GoalState s u sp lp) (BAVar sp lp) s u -> StateT (GoalState s u sp lp) (ST s) a) -> StateT (DB s u sp lp) (ST s) (a, NewVars s u sp)
 doGoal ops complFunc = StateT $ \st -> do
     (res, GoalState{..}) <- runStateT (complFunc $ goalOps ops) (GoalState (NewVars []) st [])
     doOrder ops _oi

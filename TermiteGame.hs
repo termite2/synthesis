@@ -29,7 +29,7 @@ import RefineCommon hiding (doEnVars)
 --Input to the refinement algorithm. Represents the spec.
 data Abstractor s u sp lp = Abstractor {
     goalAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
-    fairAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
+    fairAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) [DDNode s u],
     initAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
     contAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
     updateAbs  :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u)
@@ -39,7 +39,7 @@ data Abstractor s u sp lp = Abstractor {
 data RefineStatic s u = RefineStatic {
     cont :: DDNode s u,
     goal :: DDNode s u,
-    fair :: DDNode s u,
+    fair :: [DDNode s u],
     init :: DDNode s u
 }
 
@@ -129,8 +129,8 @@ winningSU ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..
     deref hasOutgoings
     return res
 
-solveFair :: (Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)) -> Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
-solveFair cpreFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds winning = do
+solveFair :: (Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)) -> Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+solveFair cpreFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds winning fairr = do
     hasOutgoings <- bexists _nextCube trans
     ref btrue
     fp <- fixedPoint ops (func hasOutgoings) btrue
@@ -140,7 +140,7 @@ solveFair cpreFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineD
     func hasOutgoings target = do
         traceST "solveFair: iteration"
         check "solveFair" ops
-        t1 <- target .& fair
+        t1 <- target .& fairr
         t2 <- t1 .| winning
         deref t1
         res <- cpreFunc ops si rs rd hasOutgoings labelPreds t2
@@ -155,8 +155,10 @@ solveGame ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..
     func target = do
         traceST "solveGame: iteration"
         t1 <- target .| goal
-        res <- solveFair cPreUnder ops si rs rd labelPreds t1
+        ress <- mapM (solveFair cPreUnder ops si rs rd labelPreds t1) fair
         deref t1
+        res <- disj ops ress
+        mapM deref ress
         return res
 
 check msg ops = return ()
@@ -173,13 +175,13 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     (goalExpr, newVarsGoal) <- doGoal ops goalAbs
     lift $ check "After compiling goal" ops
     --abstract the fair region
-    (fairExpr, newVarsFair) <- doGoal ops fairAbs
+    (fairExprs, newVarsFairs) <- doGoal ops fairAbs
     lift $ check "After compiling fair" ops
     --abstract the controllable condition
     (contExpr, newVarsCont) <- doGoal ops contAbs
     lift $ check "After compiling fair" ops
     --get the abstract update functions for the goal predicates and variables
-    updateExprConj' <- doUpdate ops (updateAbs (nub $ _allocatedStateVars newVarsGoal ++ _allocatedStateVars newVarsFair ++ _allocatedStateVars newVarsCont))
+    updateExprConj' <- doUpdate ops (updateAbs (nub $ _allocatedStateVars newVarsGoal ++ _allocatedStateVars newVarsFairs ++ _allocatedStateVars newVarsCont))
     outcomeCube <- gets $ _outcomeCube . _sections
     updateExprConj <- lift $ bexists outcomeCube updateExprConj'
     lift $ deref updateExprConj'
@@ -200,7 +202,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
         }
         rs = RefineStatic {
             goal = goalExpr,
-            fair = fairExpr,
+            fair = fairExprs,
             init = initExpr,
             cont = contExpr
         }
@@ -208,9 +210,9 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
 
 refineStrategy = refineLeastPreds
 
-pickUntrackedToPromote :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> RefineStatic s u -> Lab s u -> DDNode s u -> DDNode s u -> ST s (Maybe [Int])
-pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} rs@RefineStatic{..} labelPreds win lastLFP = do
-    win''  <- win .& fair
+pickUntrackedToPromote :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> RefineStatic s u -> Lab s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (Maybe [Int])
+pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} rs@RefineStatic{..} labelPreds win lastLFP fairr = do
+    win''  <- win .& fairr
     win'   <- win'' .| lastLFP
     deref win''
     su     <- winningSU ops si rs rd labelPreds win'
@@ -251,26 +253,26 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
         trans  = updateExprConj
     }
 
-refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
-refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning = do
-    r1 <- refineConsistencyCont ops ts rd rs win winning
+refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
+refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning fairr = do
+    r1 <- refineConsistencyCont ops ts rd rs win winning fairr
     case r1 of
         Just res -> do
             lift $ traceST "refined controllable consistency"
             return $ Just res
         Nothing  -> do
-            res <- refineConsistencyUCont ops ts rd rs win winning
+            res <- refineConsistencyUCont ops ts rd rs win winning fairr
             case res of 
                 Just _ -> lift $ traceST "refined uncontrollable consistency"
                 Nothing -> return ()
             return res
 
-refineConsistencyCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
-refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning = do
+refineConsistencyCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
+refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning fairr = do
     lift $ check "refineConsistencyCont" ops
     syi@SymbolInfo{..} <- gets _symbolTable 
     si@SectionInfo{..} <- gets _sections
-    win''              <- lift $ win .& fair
+    win''              <- lift $ win .& fairr
     win'               <- lift $ win'' .| winning
     lift $ deref win''
     hasOutgoings       <- lift $ bexists _nextCube trans
@@ -285,12 +287,12 @@ refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Re
         Just (consistentPlusCULCont', consistentMinusCULCont') -> 
             return $ Just $ rd {consistentPlusCULCont = consistentPlusCULCont', consistentMinusCULCont = consistentMinusCULCont'}
 
-refineConsistencyUCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
-refineConsistencyUCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning = do
+refineConsistencyUCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
+refineConsistencyUCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning fairr = do
     lift $ check "refineConsistencyUCont" ops
     syi@SymbolInfo{..} <- gets _symbolTable 
     si@SectionInfo{..} <- gets _sections
-    win''              <- lift $ win .& fair
+    win''              <- lift $ win .& fairr
     win'               <- lift $ win'' .| winning
     lift $ deref win''
     winNoConstraint'   <- lift $ liftM bnot $ cpre' ops si rd btrue win'
@@ -351,6 +353,14 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
 
                     return $ Just (cPlus, consistentMinusCUL')
 
+mSumMaybe :: Monad m => [m (Maybe a)] -> m (Maybe a)
+mSumMaybe (x:xs) = do
+    res <- x
+    case res of
+        Nothing -> mSumMaybe xs
+        Just y  -> return $ Just y
+mSumMaybe [] = return Nothing
+
 --The abstraction-refinement loop
 absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp -> o -> ST s Bool
 absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
@@ -359,7 +369,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
         (rd, rs) <- initialAbstraction ops spec
         lift $ traceST "Refinement state after initial abstraction: " 
         lift $ traceST $ "Goal is: " ++ (bddSynopsis ops $ goal rs)
-        lift $ traceST $ "Fair is: " ++ (bddSynopsis ops $ fair rs)
+        lift $ traceST $ "Fair is: " ++ (concatMap (bddSynopsis ops) $ fair rs)
         lift $ traceST $ "Init is: " ++ (bddSynopsis ops $ TermiteGame.init rs)
         lift $ ref bfalse
         refineLoop ops rs rd bfalse
@@ -385,23 +395,32 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                         False -> do
                             lift $ traceST "Not winning without further refinement"
                             winAndGoal <- lift $ winRegion .| goal
-                            newWin <- lift $ solveFair cPreOver ops si rs rd lp winAndGoal
-                            res <- refineConsistency ops ts rd rs newWin winAndGoal
+                            res <- mSumMaybe $ map (refine winAndGoal) fair
+                            case res of 
+                                Nothing -> return False
+                                Just rd -> refineLoop' rd winRegion
+                    where
+                        refine :: DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
+                        refine winAndGoal fairr = do
+                            si@SectionInfo{..} <- gets _sections
+                            labelPreds <- gets $ _labelVars . _symbolTable
+                            let lp = map (map fst *** fst) $ Map.elems labelPreds
+                            newWin <- lift $ solveFair cPreOver ops si rs rd lp winAndGoal fairr
+                            res <- refineConsistency ops ts rd rs newWin winAndGoal fairr
                             si@SectionInfo{..} <- gets _sections
                             case res of
                                 Just newRD -> do
                                     lift $ traceST "Refined consistency relations. Re-solving..."
                                     lift $ mapM deref [newWin, winAndGoal]
-                                    refineLoop' newRD winRegion
+                                    return $ Just newRD
                                 Nothing -> do
                                     lift $ traceST "Could not refine consistency relations. Attempting to refine untracked state variables"
-                                    res <- lift $ pickUntrackedToPromote ops si rd rs lp newWin winAndGoal
+                                    res <- lift $ pickUntrackedToPromote ops si rd rs lp newWin winAndGoal fairr
                                     lift $ mapM deref [newWin, winAndGoal]
                                     case res of 
                                         Just vars -> do
                                             newRD <- promoteUntracked ops spec rd vars 
-                                            refineLoop' newRD winRegion
+                                            return $ Just newRD
                                         Nothing -> lift $ do
-                                            traceST "Losing"
-                                            return False
+                                            return Nothing
 

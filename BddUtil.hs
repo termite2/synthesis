@@ -2,6 +2,7 @@
 
 module BddUtil (
     conj,
+    disj,
     allMinterms,
     concPart,
     primeCover,
@@ -32,6 +33,17 @@ conj Ops{..} nodes = do
     go accum []     = return accum
     go accum (n:ns) = do
         accum' <- accum .&  n
+        deref accum
+        go accum' ns
+
+disj :: Ops s u -> [DDNode s u] -> ST s (DDNode s u)
+disj Ops{..} nodes = do
+        ref bfalse
+        go bfalse nodes
+    where
+    go accum []     = return accum
+    go accum (n:ns) = do
+        accum' <- accum .| n
         deref accum
         go accum' ns
 
