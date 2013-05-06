@@ -13,7 +13,8 @@ module RefineCommon (
     stateLabelInconsistent,
     stateLabelConsistent,
     updateWrapper,
-    groupForUnsatCore
+    groupForUnsatCore,
+    setupManager
     ) where
 
 import Control.Monad.State
@@ -30,6 +31,8 @@ import Safe
 import Interface
 import BddRecord
 import BddUtil
+import CuddST
+import CuddReorder
 
 --Theory solving
 data TheorySolver s u sp lp = TheorySolver {
@@ -180,4 +183,13 @@ groupForUnsatCore svs = map (first ident) $  map (second $ map snd . sortBy (com
         f mp ((idx, a), b) = case Map.lookup a mp of
             Just x -> Map.insert a ((idx, b) : x) mp
             Nothing -> Map.insert a [(idx, b)] mp
+
+setupManager :: ST s (STDdManager s u)
+setupManager = do
+    m <- cuddInitSTDefaults
+    cuddAutodynEnable m CuddReorderGroupSift
+    regStdPreReordHook m
+    regStdPostReordHook m
+    cuddEnableReorderingReporting m
+    return m
 
