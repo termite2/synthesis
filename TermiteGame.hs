@@ -419,8 +419,10 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                             labelPreds <- gets $ _labelVars . _symbolTable
                             let lp = map (map fst *** fst) $ Map.elems labelPreds
                             underReach <- lift $ solveReach cPreUnder ops si rs rd lp overWinAndGoal
-                            res <- mSumMaybe $ map (refinePerFair underReach) fair
+                            urog <- lift $ underReach .| overWinAndGoal
                             lift $ deref underReach
+                            res <- mSumMaybe $ map (refinePerFair urog) fair
+                            lift $ deref urog
                             return res
                         refinePerFair :: DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
                         refinePerFair winAndGoal fairr = do
