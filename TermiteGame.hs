@@ -28,7 +28,7 @@ import RefineCommon hiding (doEnVars)
 
 --Input to the refinement algorithm. Represents the spec.
 data Abstractor s u sp lp = Abstractor {
-    goalAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
+    goalAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) [DDNode s u],
     fairAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) [DDNode s u],
     initAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
     contAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
@@ -38,7 +38,7 @@ data Abstractor s u sp lp = Abstractor {
 -- ===Data structures for keeping track of abstraction state===
 data RefineStatic s u = RefineStatic {
     cont :: DDNode s u,
-    goal :: DDNode s u,
+    goal :: [DDNode s u],
     fair :: [DDNode s u],
     init :: DDNode s u
 }
@@ -168,9 +168,13 @@ solveBuchi ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{.
     where
     func reachN = do
         traceST "solveBuchi: iteration"
-        t1 <- reachN .& goal
-        res <- solveReach cPreOver ops si rs rd labelPreds t1
-        deref t1
+        ress <- forM goal $ \g -> do
+            t1 <- reachN .& g
+            res <- solveReach cPreOver ops si rs rd labelPreds t1
+            deref t1
+            return res
+        res <- conj ops ress
+        mapM deref ress
         return res
 
 check msg ops = return ()
@@ -184,7 +188,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     initExpr <- doInit ops initAbs
     lift $ check "After compiling init" ops
     --abstract the goal
-    (goalExpr, newVarsGoal) <- doGoal ops goalAbs
+    (goalExprs, newVarsGoals) <- doGoal ops goalAbs
     lift $ check "After compiling goal" ops
     --abstract the fair region
     (fairExprs, newVarsFairs) <- doGoal ops fairAbs
@@ -193,7 +197,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     (contExpr, newVarsCont) <- doGoal ops contAbs
     lift $ check "After compiling fair" ops
     --get the abstract update functions for the goal predicates and variables
-    updateExprConj' <- doUpdate ops (updateAbs (nub $ _allocatedStateVars newVarsGoal ++ _allocatedStateVars newVarsFairs ++ _allocatedStateVars newVarsCont))
+    updateExprConj' <- doUpdate ops (updateAbs (nub $ _allocatedStateVars newVarsGoals ++ _allocatedStateVars newVarsFairs ++ _allocatedStateVars newVarsCont))
     outcomeCube <- gets $ _outcomeCube . _sections
     updateExprConj <- lift $ bexists outcomeCube updateExprConj'
     lift $ deref updateExprConj'
@@ -213,7 +217,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
             ..
         }
         rs = RefineStatic {
-            goal = goalExpr,
+            goal = goalExprs,
             fair = fairExprs,
             init = initExpr,
             cont = contExpr
@@ -380,7 +384,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
     flip evalStateT idb $ do
         (rd, rs) <- initialAbstraction ops spec
         lift $ traceST "Refinement state after initial abstraction: " 
-        lift $ traceST $ "Goal is: " ++ (bddSynopsis ops $ goal rs)
+        lift $ traceST $ "Goal is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ goal rs)
         lift $ traceST $ "Fair is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ fair rs)
         lift $ traceST $ "Init is: " ++ (bddSynopsis ops $ TermiteGame.init rs)
         lift $ ref bfalse
@@ -405,10 +409,12 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                             deref winRegion
                             return False
                         True -> do
-                            lift $ traceST "Possibly winning, confirming with further refinement"
-                            overAndGoal <- lift $ winRegion .& goal
-                            res <- refineReach overAndGoal
-                            lift $ deref overAndGoal
+                            lift $ traceST "Possibly winning, Confirming with further refinement"
+                            res <- mSumMaybe $ flip map goal $ \g -> do
+                                overAndGoal <- lift $ winRegion .& g
+                                res <- refineReach overAndGoal
+                                lift $ deref overAndGoal
+                                return res
                             case res of 
                                 Nothing -> return True
                                 Just rd -> refineLoop' rd winRegion
