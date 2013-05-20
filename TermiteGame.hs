@@ -1,5 +1,8 @@
 {-# LANGUAGE PolymorphicComponents, RecordWildCards, ScopedTypeVariables #-}
-module TermiteGame where
+module TermiteGame (
+    Abstractor(..),
+    absRefineLoop
+    ) where
 
 import Control.Monad.ST.Lazy
 import Data.STRef.Lazy
@@ -257,6 +260,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     --update the transition relation
     updateExprConj  <- lift $ andDeref ops trans updateExprConj''
 
+    --TODO why is this commented out?
     {-
     labelPreds           <- gets $ _labelVars . _symbolTable
     consistentMinusCUL'' <- lift $ conj ops $ map (bnot . fst . snd) $ Map.elems $ labelPreds Map.\\ labelPredsPreUpdate
@@ -278,7 +282,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
             res <- refineConsistencyUCont ops ts rd rs win winning fairr
             case res of 
                 Just _ -> lift $ traceST "refined uncontrollable consistency"
-                Nothing -> return ()
+                Nothing -> lift $ traceST "No consistency refinement possible"
             return res
 
 refineConsistencyCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
@@ -333,7 +337,7 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
     case toCheckConsistency==bfalse of 
         True  -> do
             --no refinement of consistency relations will shrink the winning region
-            lift $ traceST "no consistency refinement possible"
+            lift $ debugDo 2 $ traceST "no consistency refinement possible"
             lift $ deref toCheckConsistency
             return Nothing
         False -> do
