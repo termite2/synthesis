@@ -26,6 +26,11 @@ import BddInterp
 import Interface
 import RefineCommon hiding (doEnVars)
 
+debugLevel = 0
+
+debugDo :: Monad m => Int -> m () -> m ()
+debugDo lvl func = when (lvl <= debugLevel) func
+
 --Input to the refinement algorithm. Represents the spec.
 data Abstractor s u sp lp = Abstractor {
     goalAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) [DDNode s u],
@@ -132,7 +137,7 @@ solveFair cpreFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineD
     return fp
     where
     func hasOutgoings target = do
-        traceST "solveFair: iteration"
+        debugDo 1 $ traceST "solveFair: iteration"
         check "solveFair" ops
         t1 <- target .& fairr
         t2 <- t1 .| winning
@@ -147,7 +152,7 @@ solveReach cpreFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@Refine
     fixedPoint ops func bfalse
     where
     func target = do
-        traceST "solveReach: iteration"
+        debugDo 1 $ traceST "solveReach: iteration"
         t1 <- target .| goall
         ress <- mapM (solveFair cpreFunc ops si rs rd labelPreds t1) fair
         deref t1
@@ -161,7 +166,7 @@ solveBuchi ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{.
     fixedPoint ops func startingPoint
     where
     func reachN = do
-        traceST "solveBuchi: iteration"
+        debugDo 1 $ traceST "solveBuchi: iteration"
         ress <- forM goal $ \g -> do
             t1 <- reachN .& g
             res <- solveReach cPreOver ops si rs rd labelPreds t1
@@ -377,10 +382,10 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
     idb <- initialDB ops
     flip evalStateT idb $ do
         (rd, rs) <- initialAbstraction ops spec
-        lift $ traceST "Refinement state after initial abstraction: " 
-        lift $ traceST $ "Goal is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ goal rs)
-        lift $ traceST $ "Fair is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ fair rs)
-        lift $ traceST $ "Init is: " ++ (bddSynopsis ops $ TermiteGame.init rs)
+        lift $ debugDo 1 $ traceST "Refinement state after initial abstraction: " 
+        lift $ debugDo 1 $ traceST $ "Goal is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ goal rs)
+        lift $ debugDo 1 $ traceST $ "Fair is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ fair rs)
+        lift $ debugDo 1 $ traceST $ "Init is: " ++ (bddSynopsis ops $ TermiteGame.init rs)
         lift $ ref bfalse
         refineLoop ops rs rd btrue
         where
