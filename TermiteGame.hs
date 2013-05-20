@@ -408,62 +408,41 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                     let lp = map (map fst *** fst) $ Map.elems labelPreds
                     hasOutgoings <- lift $ bexists _nextCube trans
                     winRegion <- lift $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin
-                    lift $ deref hasOutgoings
                     lift $ deref lastWin
                     winning <- lift $ bnot winRegion `leq` bnot init
-                    --Alive: winRegion, rd, rs
+                    --Alive: winRegion, rd, rs, hasOutgoings
                     case winning of
                         False -> lift $ do
                             traceST "Losing"
-                            deref winRegion
+                            mapM deref [winRegion, hasOutgoings]
                             return False
                         True -> do
                             lift $ traceST "Possibly winning, Confirming with further refinement"
                             res <- mSumMaybe $ flip map goal $ \g -> do
                                 overAndGoal <- lift $ winRegion .& g
-                                res <- refineReach overAndGoal
-                                lift $ deref overAndGoal
+                                underReach <- lift $ solveReach (cPreUnder ops si rs rd hasOutgoings lp) ops rs overAndGoal
+                                urog <- lift $ underReach .| overAndGoal
+                                lift $ deref underReach
+                                res <- mSumMaybe $ flip map fair $ \fairr -> do
+                                    newWin <- lift $ solveFair (cPreOver ops si rs rd hasOutgoings lp) ops rs urog fairr
+                                    res <- refineConsistency ops ts rd rs newWin urog fairr
+                                    case res of
+                                        Just newRD -> do
+                                            lift $ traceST "Refined consistency relations. Re-solving..."
+                                            lift $ mapM deref [newWin]
+                                            return $ Just newRD
+                                        Nothing -> do
+                                            lift $ traceST "Could not refine consistency relations. Attempting to refine untracked state variables"
+                                            res <- lift $ pickUntrackedToPromote ops si rd rs lp newWin urog fairr
+                                            lift $ mapM deref [newWin]
+                                            case res of 
+                                                Just vars -> do
+                                                    newRD <- promoteUntracked ops spec rd vars 
+                                                    return $ Just newRD
+                                                Nothing -> lift $ do
+                                                    return Nothing
+                                lift $ mapM deref [urog, overAndGoal, hasOutgoings]
                                 return res
                             case res of 
                                 Nothing -> return True
                                 Just rd -> refineLoop' rd winRegion
-                    where
-                        refineReach :: DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
-                        refineReach overWinAndGoal = do
-                            si@SectionInfo{..} <- gets _sections
-                            labelPreds <- gets $ _labelVars . _symbolTable
-                            let lp = map (map fst *** fst) $ Map.elems labelPreds
-                            hasOutgoings <- lift $ bexists _nextCube trans
-                            underReach <- lift $ solveReach (cPreUnder ops si rs rd hasOutgoings lp) ops rs overWinAndGoal
-                            lift $ deref hasOutgoings
-                            urog <- lift $ underReach .| overWinAndGoal
-                            lift $ deref underReach
-                            res <- mSumMaybe $ map (refinePerFair urog) fair
-                            lift $ deref urog
-                            return res
-                        refinePerFair :: DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
-                        refinePerFair winAndGoal fairr = do
-                            si@SectionInfo{..} <- gets _sections
-                            labelPreds <- gets $ _labelVars . _symbolTable
-                            let lp = map (map fst *** fst) $ Map.elems labelPreds
-                            hasOutgoings <- lift $ bexists _nextCube trans
-                            newWin <- lift $ solveFair (cPreOver ops si rs rd hasOutgoings lp) ops rs winAndGoal fairr
-                            lift $ deref hasOutgoings
-                            res <- refineConsistency ops ts rd rs newWin winAndGoal fairr
-                            si@SectionInfo{..} <- gets _sections
-                            case res of
-                                Just newRD -> do
-                                    lift $ traceST "Refined consistency relations. Re-solving..."
-                                    lift $ mapM deref [newWin]
-                                    return $ Just newRD
-                                Nothing -> do
-                                    lift $ traceST "Could not refine consistency relations. Attempting to refine untracked state variables"
-                                    res <- lift $ pickUntrackedToPromote ops si rd rs lp newWin winAndGoal fairr
-                                    lift $ mapM deref [newWin]
-                                    case res of 
-                                        Just vars -> do
-                                            newRD <- promoteUntracked ops spec rd vars 
-                                            return $ Just newRD
-                                        Nothing -> lift $ do
-                                            return Nothing
-
