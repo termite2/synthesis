@@ -70,7 +70,7 @@ doEnVars qFunc ops@Ops{..} strat envars = do
 doEnCont  = doEnVars bforall
 doEnUCont = doEnVars bexists
 
---Find the <state, untracked, label> tuples that guaranteed to be in the goal for a given transition relation
+--Find the <state, untracked, label> tuples that are guaranteed to lead to the goal for a given transition relation
 cpre' :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 cpre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} hasOutgoings target = do
     nextWin  <- mapVars target
@@ -79,45 +79,39 @@ cpre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} hasOutgoings target = 
     stratAvl <- hasOutgoings .& strat
     deref strat
     return stratAvl
+   
+--Returns the set of <state, untracked> pairs that are winning 
+cpre'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds cc cu target = do
+    strat      <- cpre' ops si rd hasOutgoingsCont target
+    stratCont  <- doEnCont ops strat labelPreds
+    stratUCont <- doEnCont ops (bnot strat) labelPreds
+    deref strat
+    winCont    <- andAbstract _labelCube cc stratCont
+    winUCont   <- liftM bnot $ andAbstract _labelCube cu stratUCont
+    mapM deref [stratCont, stratUCont]
+    win        <- bite cont winCont winUCont
+    mapM deref [winCont, winUCont]
+    return win
 
 --Returns the set of <state, untracked> pairs that are winning 
-cpreOver'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
-cpreOver'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
-    strat      <- cpre' ops si rd hasOutgoingsCont target
-    stratCont  <- doEnCont ops strat labelPreds
-    stratUCont <- doEnCont ops (bnot strat) labelPreds
-    deref strat
-    winCont    <- andAbstract _labelCube consistentPlusCULCont stratCont
-    winUCont   <- liftM bnot $ andAbstract _labelCube consistentMinusCULUCont stratUCont
-    mapM deref [stratCont, stratUCont]
-    win        <- bite cont winCont winUCont
-    mapM deref [winCont, winUCont]
-    return win
+cpreOver' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
+cpreOver' ops si rs rd@RefineDynamic{..} hasOutgoingsCont labelPreds = cpre'' ops si rs rd hasOutgoingsCont labelPreds consistentPlusCULCont consistentMinusCULUCont 
     
 --Returns the set of <state, untracked> pairs that are winning 
-cpreUnder'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
-cpreUnder'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
-    strat      <- cpre' ops si rd hasOutgoingsCont target
-    stratCont  <- doEnCont ops strat labelPreds
-    stratUCont <- doEnCont ops (bnot strat) labelPreds
-    deref strat
-    winCont    <- andAbstract _labelCube consistentMinusCULCont stratCont
-    winUCont   <- liftM bnot $ andAbstract _labelCube consistentPlusCULUCont stratUCont
-    mapM deref [stratCont, stratUCont]
-    win        <- bite cont winCont winUCont
-    mapM deref [winCont, winUCont]
-    return win
+cpreUnder' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
+cpreUnder' ops si rs rd@RefineDynamic{..} hasOutgoingsCont labelPreds = cpre'' ops si rs rd hasOutgoingsCont labelPreds consistentMinusCULCont consistentPlusCULUCont
 
 cPreOver :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
 cPreOver ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
-    su  <- cpreOver'' ops si rs rd hasOutgoingsCont labelPreds target
+    su  <- cpreOver' ops si rs rd hasOutgoingsCont labelPreds target
     res <- bexists _untrackedCube su
     deref su
     return res
 
 cPreUnder :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
 cPreUnder ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
-    su  <- cpreUnder'' ops si rs rd hasOutgoingsCont labelPreds target
+    su  <- cpreUnder' ops si rs rd hasOutgoingsCont labelPreds target
     res <- bforall _untrackedCube su
     deref su
     return res
@@ -125,7 +119,7 @@ cPreUnder ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..
 winningSU :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
 winningSU ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds target = do
     hasOutgoings <- bexists _nextCube trans
-    res <- cpreOver'' ops si rs rd hasOutgoings labelPreds target
+    res <- cpreOver' ops si rs rd hasOutgoings labelPreds target
     deref hasOutgoings
     return res
 
