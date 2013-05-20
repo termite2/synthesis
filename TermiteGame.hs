@@ -130,40 +130,38 @@ winningSU ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..
     deref hasOutgoings
     return res
 
-solveFair :: (Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)) -> Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
-solveFair cpreFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds winning fairr = do
-    hasOutgoings <- bexists _nextCube trans
+solveFair :: (DDNode s u -> ST s (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+solveFair cpreFunc ops@Ops{..} rs@RefineStatic{..} winning fairr = do
     ref btrue
-    fp <- fixedPoint ops (func hasOutgoings) btrue
-    deref hasOutgoings
+    fp <- fixedPoint ops func btrue
     return fp
     where
-    func hasOutgoings target = do
+    func target = do
         debugDo 1 $ traceST "solveFair: iteration"
         check "solveFair" ops
         t1 <- target .& fairr
         t2 <- t1 .| winning
         deref t1
-        res <- cpreFunc ops si rs rd hasOutgoings labelPreds t2
+        res <- cpreFunc t2
         deref t2
         return res
 
-solveReach :: (Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)) -> Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
-solveReach cpreFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds goall = do
+solveReach :: (DDNode s u -> ST s (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> ST s (DDNode s u)
+solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} goall = do
     ref bfalse
     fixedPoint ops func bfalse
     where
     func target = do
         debugDo 1 $ traceST "solveReach: iteration"
         t1 <- target .| goall
-        ress <- mapM (solveFair cpreFunc ops si rs rd labelPreds t1) fair
+        ress <- mapM (solveFair cpreFunc ops rs t1) fair
         deref t1
         res <- disj ops ress
         mapM deref ress
         return res
 
-solveBuchi :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
-solveBuchi ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds startingPoint = do
+solveBuchi :: (DDNode s u -> ST s (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> ST s (DDNode s u)
+solveBuchi cpreFunc ops@Ops{..} rs@RefineStatic{..} startingPoint = do
     ref startingPoint
     fixedPoint ops func startingPoint
     where
@@ -171,7 +169,7 @@ solveBuchi ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{.
         debugDo 1 $ traceST "solveBuchi: iteration"
         ress <- forM goal $ \g -> do
             t1 <- reachN .& g
-            res <- solveReach cPreOver ops si rs rd labelPreds t1
+            res <- solveReach cpreFunc ops rs t1
             deref t1
             return res
         res <- conj ops ress
@@ -401,7 +399,9 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                     lift $ setVarMap _trackedNodes _nextNodes
                     labelPreds <- gets $ _labelVars . _symbolTable
                     let lp = map (map fst *** fst) $ Map.elems labelPreds
-                    winRegion <- lift $ solveBuchi ops si rs rd lp lastWin
+                    hasOutgoings <- lift $ bexists _nextCube trans
+                    winRegion <- lift $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin
+                    lift $ deref hasOutgoings
                     lift $ deref lastWin
                     winning <- lift $ bnot winRegion `leq` bnot init
                     --Alive: winRegion, rd, rs
@@ -426,7 +426,9 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                             si@SectionInfo{..} <- gets _sections
                             labelPreds <- gets $ _labelVars . _symbolTable
                             let lp = map (map fst *** fst) $ Map.elems labelPreds
-                            underReach <- lift $ solveReach cPreUnder ops si rs rd lp overWinAndGoal
+                            hasOutgoings <- lift $ bexists _nextCube trans
+                            underReach <- lift $ solveReach (cPreUnder ops si rs rd hasOutgoings lp) ops rs overWinAndGoal
+                            lift $ deref hasOutgoings
                             urog <- lift $ underReach .| overWinAndGoal
                             lift $ deref underReach
                             res <- mSumMaybe $ map (refinePerFair urog) fair
@@ -437,7 +439,9 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                             si@SectionInfo{..} <- gets _sections
                             labelPreds <- gets $ _labelVars . _symbolTable
                             let lp = map (map fst *** fst) $ Map.elems labelPreds
-                            newWin <- lift $ solveFair cPreOver ops si rs rd lp winAndGoal fairr
+                            hasOutgoings <- lift $ bexists _nextCube trans
+                            newWin <- lift $ solveFair (cPreOver ops si rs rd hasOutgoings lp) ops rs winAndGoal fairr
+                            lift $ deref hasOutgoings
                             res <- refineConsistency ops ts rd rs newWin winAndGoal fairr
                             si@SectionInfo{..} <- gets _sections
                             case res of
