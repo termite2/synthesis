@@ -34,6 +34,8 @@ debugLevel = 0
 debugDo :: Monad m => Int -> m () -> m ()
 debugDo lvl = when (lvl <= debugLevel) 
 
+forAccumM i l f = foldM f i l
+
 --Input to the refinement algorithm. Represents the spec.
 data Abstractor s u sp lp = Abstractor {
     goalAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) [DDNode s u],
@@ -133,8 +135,7 @@ winningSU ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..
 solveFair :: (DDNode s u -> ST s (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 solveFair cpreFunc ops@Ops{..} rs@RefineStatic{..} winning fairr = do
     ref btrue
-    fp <- fixedPoint ops func btrue
-    return fp
+    fixedPoint ops func btrue
     where
     func target = do
         debugDo 1 $ traceST "solveFair: iteration"
@@ -154,10 +155,14 @@ solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} goall = do
     func target = do
         debugDo 1 $ traceST "solveReach: iteration"
         t1 <- target .| goall
-        ress <- mapM (solveFair cpreFunc ops rs t1) fair
+        ref bfalse
+        res <- forAccumM bfalse fair $ \accum val -> do
+            res' <- solveFair cpreFunc ops rs t1 val
+            res  <- res' .| accum
+            deref res'
+            deref accum
+            return res
         deref t1
-        res <- disj ops ress
-        mapM deref ress
         return res
 
 solveBuchi :: (DDNode s u -> ST s (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> ST s (DDNode s u)
@@ -167,13 +172,15 @@ solveBuchi cpreFunc ops@Ops{..} rs@RefineStatic{..} startingPoint = do
     where
     func reachN = do
         debugDo 1 $ traceST "solveBuchi: iteration"
-        ress <- forM goal $ \g -> do
-            t1 <- reachN .& g
-            res <- solveReach cpreFunc ops rs t1
+        ref btrue
+        res <- forAccumM btrue goal $ \accum val -> do
+            t1 <- reachN .& val
+            res' <- solveReach cpreFunc ops rs t1
             deref t1
+            res <- res' .& accum
+            deref res'
+            deref accum
             return res
-        res <- conj ops ress
-        mapM deref ress
         return res
 
 check msg ops = return ()
