@@ -29,7 +29,7 @@ import RefineCommon hiding (doEnVars)
 debugLevel = 0
 
 debugDo :: Monad m => Int -> m () -> m ()
-debugDo lvl func = when (lvl <= debugLevel) func
+debugDo lvl = when (lvl <= debugLevel) 
 
 --Input to the refinement algorithm. Represents the spec.
 data Abstractor s u sp lp = Abstractor {
@@ -89,6 +89,7 @@ cpre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} hasOutgoings target = 
 cpre'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds cc cu target = do
     strat      <- cpre' ops si rd hasOutgoingsCont target
+    --TODO should they both be doEnCont?
     stratCont  <- doEnCont ops strat labelPreds
     stratUCont <- doEnCont ops (bnot strat) labelPreds
     deref strat
@@ -107,19 +108,17 @@ cpreOver' ops si rs rd@RefineDynamic{..} hasOutgoingsCont labelPreds = cpre'' op
 cpreUnder' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
 cpreUnder' ops si rs rd@RefineDynamic{..} hasOutgoingsCont labelPreds = cpre'' ops si rs rd hasOutgoingsCont labelPreds consistentMinusCULCont consistentPlusCULUCont
 
-cPreOver :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
-cPreOver ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
-    su  <- cpreOver' ops si rs rd hasOutgoingsCont labelPreds target
-    res <- bexists _untrackedCube su
+cPreHelper cpreFunc quantFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
+    su  <- cpreFunc ops si rs rd hasOutgoingsCont labelPreds target
+    res <- quantFunc _untrackedCube su
     deref su
     return res
 
+cPreOver :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
+cPreOver ops@Ops{..} = cPreHelper cpreOver' bexists ops  
+
 cPreUnder :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
-cPreUnder ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
-    su  <- cpreUnder' ops si rs rd hasOutgoingsCont labelPreds target
-    res <- bforall _untrackedCube su
-    deref su
-    return res
+cPreUnder ops@Ops{..} = cPreHelper cpreUnder' bforall ops
 
 winningSU :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
 winningSU ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds target = do
