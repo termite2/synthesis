@@ -124,19 +124,19 @@ partitionStateLabel :: SectionInfo s u -> [(Int, a)] -> ([(Int, a)], [(Int, a)])
 partitionStateLabel SectionInfo{..} = partition (f . fst)
     where f p = elem p _trackedInds || elem p _untrackedInds
 
-indicesToStatePreds :: SymbolInfo s u sp lp -> [(Int, a)] -> [((Int, Variable sp s u), a)]
+indicesToStatePreds :: SymbolInfo s u sp lp -> [(Int, a)] -> [((Int, sp), a)]
 indicesToStatePreds SymbolInfo{..} = map func
     where
     func = first $ (id &&& fromJustNote "refineConsistency2" . flip Map.lookup _stateRev)
 
-indicesToLabelPreds :: SymbolInfo s u sp lp -> [(Int, a)] -> [((Int, Variable lp s u), a)]
+indicesToLabelPreds :: SymbolInfo s u sp lp -> [(Int, a)] -> [((Int, lp), a)]
 indicesToLabelPreds SymbolInfo{..} = catMaybes . map (uncurry func)
     where
     func idx polarity = case fromJustNote "refineConsistency3" $ Map.lookup idx _labelRev of
         (_, True)   -> Nothing
         (pred, False) -> Just ((idx, pred), polarity)
 
-partitionStateLabelPreds :: SectionInfo s u -> SymbolInfo s u sp lp -> [(Int, a)] -> ([((Int, Variable sp s u), a)], [((Int, Variable lp s u), a)])
+partitionStateLabelPreds :: SectionInfo s u -> SymbolInfo s u sp lp -> [(Int, a)] -> ([((Int, sp), a)], [((Int, lp), a)])
 partitionStateLabelPreds si syi x = (statePairs, labelPairs)
     where
     statePairs = indicesToStatePreds syi stateIndices
@@ -152,7 +152,7 @@ stateLabelInconsistent ops@Ops{..} SymbolInfo{..} statePairs labelPairs = do
     inconsistentLabel <- makeCubeInt ops $ map (first getLabels) labelPairs
     andDeref ops inconsistentState inconsistentLabel
     where
-    getStates = map getNode . fromJustNote "refineConsistency" . flip Map.lookup _stateVars
+    getStates = map getNode . fst . fromJustNote "refineConsistency" . flip Map.lookup _stateVars
     getLabels = map getNode . sel1 . fromJustNote "refineConsistency" . flip Map.lookup _labelVars
 
 stateLabelConsistent :: (Ord sp, Ord lp) => Ops s u -> SymbolInfo s u sp lp -> [(lp, [Bool])] -> ST s (DDNode s u) 
@@ -175,8 +175,8 @@ updateWrapper ops@Ops{..} updateExprConj'' = do
     lift $ deref updateExprConj'
     return updateExprConj
 
-groupForUnsatCore :: (Ord sp) => [((Int, Variable sp s u), Bool)] -> [(sp, [Bool])]
-groupForUnsatCore svs = map (first ident) $  map (second $ map snd . sortBy (compare `on` fst)) $ aggregate svs
+groupForUnsatCore :: (Ord sp) => [((Int, sp), Bool)] -> [(sp, [Bool])]
+groupForUnsatCore svs = map (second $ map snd . sortBy (compare `on` fst)) $ aggregate svs
     where    
     aggregate args = Map.toList $ foldl f Map.empty args
         where

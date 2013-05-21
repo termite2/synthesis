@@ -10,6 +10,7 @@ import Data.Set (Set)
 import Control.Monad.State
 import Control.Arrow
 import Data.List as List
+import Safe
 
 import Control.Lens
 
@@ -43,47 +44,27 @@ findWithDefaultProcessM modF key theMap funcAbsent funcPresent = maybe funcAbsen
 modifyM :: Monad m => (s -> m s) -> StateT s m ()
 modifyM f = get >>= (lift . f) >>= put
 
-infixl 1 =>=
-(=>=) :: Monad m => m a -> (a -> m ()) -> m a
-a =>= b = do
-    res <- a
-    b res
-    return res
-
-monadOut :: Monad m => (a, m b) -> m (a, b)
-monadOut (x, y) = do
-    y <- y
-    return (x, y)
+unc :: ([a] -> [b] -> [c] -> [d] -> f) -> ([(a, b)], [(c, d)]) -> f
+unc f (l1, l2) = f ul1 ul2 ul3 ul4
+    where
+    (ul1, ul2) = unzip l1
+    (ul3, ul4) = unzip l2
 
 --Variable type
 type VarInfo s u = (DDNode s u, Int)
 getNode = fst
 getIdx = snd
 
-data Variable p s u = Variable {
-    ident :: p,
-    vars  :: [VarInfo s u]
-} 
-
-instance (Show p) => Show (Variable p s u) where
-    show x = show $ ident x
-
-instance (Eq p) => Eq (Variable p s u) where
-    x == y = ident x == ident y
-
-instance (Ord p) => Ord (Variable p s u) where
-    x `compare` y = ident x `compare` ident y
-
 --Symbol table
 data SymbolInfo s u sp lp = SymbolInfo {
     --below maps are used for update function compilation and constructing
-    _initVars           :: Map sp [VarInfo s u],
-    _stateVars          :: Map sp [VarInfo s u],
+    _initVars           :: Map sp ([VarInfo s u], [VarInfo s u]),
+    _stateVars          :: Map sp ([VarInfo s u], [VarInfo s u]),
     _labelVars          :: Map lp ([VarInfo s u], VarInfo s u),
     _outcomeVars        :: Map lp [VarInfo s u],
     --mappings from index to variable/predicate
-    _stateRev           :: Map Int (Variable sp s u),
-    _labelRev           :: Map Int (Variable lp s u, Bool)
+    _stateRev           :: Map Int sp,
+    _labelRev           :: Map Int (lp, Bool)
 }
 makeLenses ''SymbolInfo
 initialSymbolTable = SymbolInfo Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty 
@@ -128,12 +109,6 @@ alloc Ops{..} = do
     avlOffset += 1
     return (res, offset)
 
-allocPair :: Ops s u -> StateT (DB s u sp lp) (ST s) ((DDNode s u, Int), (DDNode s u, Int))
-allocPair ops@Ops{..} = do
-    r1 <- alloc ops
-    r2 <- alloc ops
-    return (r1, r2)
-
 allocN :: Ops s u -> Int -> StateT (DB s u sp lp) (ST s) ([DDNode s u], [Int])
 allocN Ops{..} size = do
     offset <- use avlOffset
@@ -168,10 +143,11 @@ addToCubeDeref Ops{..} add cb = do
 
 --initial state helpers
 allocInitVar  :: (Ord sp) => Ops s u -> sp -> Int -> StateT (DB s u sp lp) (ST s) [DDNode s u]
-allocInitVar ops v size = liftM fst $ do
-    val <- allocN ops size
-    symbolTable . initVars %= Map.insert v (uncurry zip val)
-    return val
+allocInitVar ops@Ops{..} v size = do
+    ((cn, ci), (nn, ni)) <- allocNPair ops size
+    lift $ makeTreeNode (head ci) (2 * size) 4
+    symbolTable . initVars %= Map.insert v (zip cn ci, zip nn ni)
+    return cn
 
 -- === goal helpers ===
 data NewVars s u sp = NewVars {
@@ -181,74 +157,59 @@ makeLenses ''NewVars
 
 data GoalState s u sp lp = GoalState {
     _nv :: NewVars s u sp,
-    _db :: DB s u sp lp,
-    _oi :: [(Int, Int)]
+    _db :: DB s u sp lp
 }
 makeLenses ''GoalState
-
-listInsertDrop :: (Ord a) => [a] -> [(a, a)] -> [a]
-listInsertDrop list items = listInsertDrop' list
-    where
-    mp = Map.fromList items
-    st = Set.fromList $ map snd items
-    listInsertDrop' [] = []
-    listInsertDrop' (x:xs) = case Map.lookup x mp of
-        Nothing -> case Set.member x st of
-            False -> x : listInsertDrop' xs
-            True  -> listInsertDrop' xs
-        Just y -> x : y : listInsertDrop' xs
-
-doOrder :: Ops s u -> [(Int, Int)] -> ST s ()
-doOrder Ops {..} pairs = do
-    size <- readSize
-    perm <- mapM readInvPerm [0..size-1]
-    let order = listInsertDrop perm pairs
-    shuffleHeap order 
-    mapM_ (\pos -> makeTreeNode pos 2 0) (map fst pairs)
 
 liftToGoalState :: StateT (DB s u sp lp) (ST s) a -> StateT (GoalState s u sp lp) (ST s) a
 liftToGoalState (StateT func) = StateT $ \st -> do
     (res, st') <- func (_db st) 
-    return (res, GoalState (_nv st) st' (_oi st))
+    return (res, GoalState (_nv st) st')
 
 allocStateVar :: (Ord sp) => Ops s u -> sp -> Int -> StateT (GoalState s u sp lp) (ST s) [DDNode s u]
-allocStateVar ops name size = liftM fst $ liftToGoalState (allocN ops size) =>= uncurry (addVarToState ops name)
+allocStateVar ops@Ops{..} name size = do
+    ((cn, ci), (nn, ni)) <- liftToGoalState $ allocNPair ops size
+    lift $ makeTreeNode (head ci) (2 * size) 4
+    addVarToState ops name cn ci nn ni
+    return cn
 
 type Update a = a -> a
 
-addStateVarSymbol :: (Ord sp) => sp -> [DDNode s u] -> [Int] -> Update (SymbolInfo s u sp lp)
-addStateVarSymbol name vars idxs = 
-    stateVars %~ Map.insert name (zip vars idxs) >>>
+addStateVarSymbol :: (Ord sp) => sp -> [DDNode s u] -> [Int] -> [DDNode s u] -> [Int] -> Update (SymbolInfo s u sp lp)
+addStateVarSymbol name vars idxs vars' idxs' = 
+    stateVars %~ Map.insert name (zip vars idxs, zip vars' idxs') >>>
     stateRev  %~ flip (foldl func) idxs 
-        where func theMap idx = Map.insert idx (Variable name (zip vars idxs)) theMap
+        where func theMap idx = Map.insert idx name theMap
 
-addVarToStateSection :: Ops s u -> sp -> [DDNode s u] -> [Int] -> StateT (GoalState s u sp lp )(ST s) ()
-addVarToStateSection ops@Ops{..} name vars idxs = do
-    db . sections . trackedNodes %= (vars ++)
-    db . sections . trackedInds  %= (idxs ++)
+addVarToStateSection :: Ops s u -> sp -> [DDNode s u] -> [Int] -> [DDNode s u] -> [Int] -> StateT (GoalState s u sp lp )(ST s) ()
+addVarToStateSection ops@Ops{..} name varsCurrent idxsCurrent varsNext idxsNext = do
+    db . sections . trackedNodes %= (varsCurrent ++)
+    db . sections . trackedInds  %= (idxsCurrent ++)
     modifyM $ db . sections . trackedCube %%~ \c -> do
-        cb <- nodesToCube vars
+        cb <- nodesToCube varsCurrent
         addToCubeDeref ops c cb
-    (nextVars, nextIdxs) <- liftToGoalState $ allocN ops (length vars)
-    db . sections . nextNodes %= (nextVars ++)
+    db . sections . nextNodes %= (varsNext ++)
     modifyM $ db . sections . nextCube %%~ \c -> do
-        cb <- nodesToCube nextVars
+        cb <- nodesToCube varsNext
         addToCubeDeref ops c cb
-    oi %= (zip idxs nextIdxs ++) 
-    nv . allocatedStateVars %= ((name, nextVars) :)
+    nv . allocatedStateVars %= ((name, varsNext) :)
 
-addVarToState :: (Ord sp) => Ops s u -> sp -> [DDNode s u] -> [Int] -> StateT (GoalState s u sp lp) (ST s) ()
-addVarToState ops@Ops{..} name vars idxs = do
-    db . symbolTable %= addStateVarSymbol name vars idxs
-    addVarToStateSection ops name vars idxs
+addVarToState :: (Ord sp) => Ops s u -> sp -> [DDNode s u] -> [Int] -> [DDNode s u] -> [Int] -> StateT (GoalState s u sp lp) (ST s) ()
+addVarToState ops@Ops{..} name vars idxs vars' idxs' = do
+    db . symbolTable %= addStateVarSymbol name vars idxs vars' idxs'
+    addVarToStateSection ops name vars idxs vars' idxs'
 
 -- === update helpers ===
 allocUntrackedVar :: (Ord sp) => Ops s u -> sp -> Int -> StateT (DB s u sp lp) (ST s) [DDNode s u]
-allocUntrackedVar ops var size = liftM fst $ allocN ops size =>= uncurry (addVarToUntracked ops var)
+allocUntrackedVar ops@Ops{..} var size = do
+    ((cn, ci), (nn, ni)) <- allocNPair ops size
+    lift $ makeTreeNode (head ci) (2 * size) 4
+    addVarToUntracked ops var cn ci nn ni
+    return cn
 
-addVarToUntracked  :: (Ord sp) => Ops s u -> sp -> [DDNode s u] -> [Int] -> StateT (DB s u sp lp) (ST s) ()
-addVarToUntracked ops@Ops {..} name vars idxs = do
-    symbolTable %= addStateVarSymbol name vars idxs
+addVarToUntracked  :: (Ord sp) => Ops s u -> sp -> [DDNode s u] -> [Int] -> [DDNode s u] -> [Int] -> StateT (DB s u sp lp) (ST s) ()
+addVarToUntracked ops@Ops {..} name vars idxs vars' idxs' = do
+    symbolTable %= addStateVarSymbol name vars idxs vars' idxs'
     sections . untrackedInds %= (idxs ++)
     modifyM $ sections . untrackedCube %%~ \c -> do
         cb <- nodesToCube vars
@@ -257,22 +218,25 @@ addVarToUntracked ops@Ops {..} name vars idxs = do
 allocLabelVar :: (Ord lp) => Ops s u -> lp -> Int -> StateT (DB s u sp lp) (ST s) [DDNode s u]
 allocLabelVar ops@Ops{..} var size = do
     (vars, idxs) <- allocN ops size
+    lift $ makeTreeNode (head idxs) size 4
     (en, enIdx) <- alloc ops
+    --TODO include this in above group?
     symbolTable . labelVars %= Map.insert var ((zip vars idxs), (en, enIdx))
     symbolTable . labelRev  %= (
         flip (foldl (func vars idxs)) idxs >>>
-        Map.insert enIdx (Variable var (zip vars idxs), True)
+        Map.insert enIdx (var, True)
         )
     modifyM $ sections . labelCube %%~ \c -> do
         cb <- nodesToCube vars
         r1 <- addToCubeDeref ops cb c
         addToCubeDeref ops en r1
     return vars
-        where func vars idxs theMap idx = Map.insert idx (Variable var (zip vars idxs), False) theMap
+        where func vars idxs theMap idx = Map.insert idx (var, False) theMap
 
 allocOutcomeVar :: (Ord lp) => Ops s u -> lp -> Int -> StateT (DB s u sp lp) (ST s) [DDNode s u]
 allocOutcomeVar ops@Ops{..} name size = do
     (vars, idxs) <- allocN ops size
+    lift $ makeTreeNode (head idxs) size 4
     symbolTable . outcomeVars %= Map.insert name (zip vars idxs)
     modifyM $ sections . outcomeCube %%~ \c -> do
         cb <- nodesToCube vars
@@ -280,20 +244,20 @@ allocOutcomeVar ops@Ops{..} name size = do
     return vars
 
 -- === Variable promotion helpers ===
-promoteUntrackedVar :: Ops s u -> Variable sp s u -> StateT (GoalState s u sp lp) (ST s) ()
-promoteUntrackedVar ops@Ops{..} (Variable var vi) = do
-    let (vars, idxs) = unzip vi
-    addVarToStateSection ops var vars idxs
-    --remove from untracked
+promoteUntrackedVar :: (Ord sp) => Ops s u -> sp -> StateT (GoalState s u sp lp) (ST s) ()
+promoteUntrackedVar ops@Ops{..} var = do
+    mp <- use $ db . symbolTable . stateVars
+    let (c, n) = fromJustNote "promoteUntrackedVar" $ Map.lookup var mp
+    let ((vars, idxs), (vars', idxs')) = (unzip c, unzip n)
+    addVarToStateSection ops var vars idxs vars' idxs'
     db . sections . untrackedInds %= (\\ idxs)
     modifyM $ db . sections . untrackedCube %%~ \c -> do
         cb <- nodesToCube vars
         bexists cb c
 
-promoteUntrackedVars :: Ops s u -> [Variable sp s u] -> StateT (DB s u sp lp) (ST s) (NewVars s u sp)
+promoteUntrackedVars :: (Ord sp) => Ops s u -> [sp] -> StateT (DB s u sp lp) (ST s) (NewVars s u sp)
 promoteUntrackedVars ops vars = StateT $ \st -> do
-    (_, GoalState{..}) <- runStateT (mapM_ (promoteUntrackedVar ops) vars) (GoalState (NewVars []) st [])
-    doOrder ops _oi
+    (_, GoalState{..}) <- runStateT (mapM_ (promoteUntrackedVar ops) vars) (GoalState (NewVars []) st)
     return (_nv, _db)
 
 withTmp' :: Ops s u -> (DDNode s u -> StateT (DB s u sp lp) (ST s) a) -> StateT (DB s u sp lp) (ST s) a
@@ -309,13 +273,12 @@ goalOps ops = VarOps {withTmp = undefined {-withTmp' ops -}, ..}
     where
     getVar  (StateVar var size) = do
         SymbolInfo{..} <- use $ db . symbolTable
-        findWithDefaultM (map getNode) var _stateVars $ findWithDefaultProcessM (map getNode) var _initVars (allocStateVar ops var size) (uncurry (addVarToState ops var) . unzip)
+        findWithDefaultM (map getNode . fst) var _stateVars $ findWithDefaultProcessM (map getNode . fst) var _initVars (allocStateVar ops var size) (unc (addVarToState ops var))
     getVar  _ = error "Requested non-state variable when compiling goal section"
 
 doGoal :: Ord sp => Ops s u -> (VarOps (GoalState s u sp lp) (BAVar sp lp) s u -> StateT (GoalState s u sp lp) (ST s) a) -> StateT (DB s u sp lp) (ST s) (a, NewVars s u sp)
 doGoal ops complFunc = StateT $ \st -> do
-    (res, GoalState{..}) <- runStateT (complFunc $ goalOps ops) (GoalState (NewVars []) st [])
-    doOrder ops _oi
+    (res, GoalState{..}) <- runStateT (complFunc $ goalOps ops) (GoalState (NewVars []) st)
     return ((res, _nv), _db)
 
 initOps :: Ord sp => Ops s u -> VarOps (DB s u sp lp) (BAVar sp lp) s u
@@ -323,7 +286,7 @@ initOps ops = VarOps {withTmp = withTmp' ops, ..}
     where
     getVar  (StateVar var size) = do
         SymbolInfo{..} <- use symbolTable
-        findWithDefaultM (map getNode) var _initVars (allocInitVar ops var size)
+        findWithDefaultM (map getNode . fst) var _initVars (allocInitVar ops var size)
     getVar _ = error "Requested non-state variable when compiling init section"
 
 doInit :: Ord sp => Ops s u -> (VarOps (DB s u sp lp) (BAVar sp lp) s u -> StateT (DB s u sp lp) (ST s) (DDNode s u)) -> StateT (DB s u sp lp) (ST s) (DDNode s u)
@@ -334,7 +297,7 @@ updateOps ops = VarOps {withTmp = withTmp' ops, ..}
     where
     getVar (StateVar var size) = do
         SymbolInfo{..} <- use symbolTable
-        findWithDefaultM (map getNode) var _stateVars $ findWithDefaultProcessM (map getNode) var _initVars (allocUntrackedVar ops var size) (uncurry (addVarToUntracked ops var) . unzip)
+        findWithDefaultM (map getNode . fst) var _stateVars $ findWithDefaultProcessM (map getNode . fst) var _initVars (allocUntrackedVar ops var size) (unc (addVarToUntracked ops var))
     getVar (LabelVar var size) = do
         SymbolInfo{..} <- use symbolTable
         findWithDefaultM (map getNode . fst) var _labelVars $ allocLabelVar ops var size
