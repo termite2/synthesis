@@ -302,8 +302,10 @@ refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Re
     winNoConstraint'   <- lift $ cpre' ops si rd hasOutgoings win'
     let lp             =  map (map fst *** fst) $ Map.elems _labelVars
     winNoConstraint    <- lift $ doEnCont ops winNoConstraint' lp
-    lift $ mapM deref [win', hasOutgoings, winNoConstraint']
-    res <- doConsistency ops ts consistentPlusCULCont consistentMinusCULCont winNoConstraint
+    lift $ deref winNoConstraint'
+    winNoConstraint2   <- lift $ cont .& winNoConstraint
+    lift $ mapM deref [win', hasOutgoings, winNoConstraint]
+    res <- doConsistency ops ts consistentPlusCULCont consistentMinusCULCont winNoConstraint2
     lift $ check "refineConsistencyCont End" ops
     case res of 
         Nothing -> return Nothing
@@ -321,8 +323,10 @@ refineConsistencyUCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@R
     winNoConstraint'   <- lift $ liftM bnot $ cpre' ops si rd btrue win'
     let lp             =  map (map fst *** fst) $ Map.elems _labelVars
     winNoConstraint    <- lift $ doEnCont ops winNoConstraint' lp
-    lift $ mapM deref [win', winNoConstraint']
-    res <- doConsistency ops ts consistentPlusCULUCont consistentMinusCULUCont winNoConstraint
+    lift $ deref winNoConstraint'
+    winNoConstraint2   <- lift $ bnot cont .& winNoConstraint
+    lift $ mapM deref [win', winNoConstraint]
+    res <- doConsistency ops ts consistentPlusCULUCont consistentMinusCULUCont winNoConstraint2
     --TODO deref winNoConstraint
     lift $ check "refineConsistencyUCont End" ops
     case res of 
@@ -360,14 +364,14 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
             case unsatCoreStateLabel groupedState groupedLabel of
                 Just (statePairs, labelPairs) -> do
                     --statePairs, labelPairs is inconsistent so subtract this from consistentPlusCUL
-                    lift $ traceST "refining consistentPlusCUL"
+                    lift $ traceST "refining consistentPlus"
                     inconsistent       <- lift $ stateLabelInconsistent ops syi statePairs labelPairs
                     consistentPlusCUL' <- lift $ andDeref ops cPlus (bnot inconsistent)
                     lift $ check "refineConsistency4" ops
                     doConsistency ops ts consistentPlusCUL' cMinus winNoConstraint
                 Nothing -> do
                     --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
-                    lift $ traceST "predicates are consistent. refining consistentMinusCUL..."
+                    lift $ traceST "predicates are consistent. refining consistentMinus..."
                     eQuantExpr <- doUpdate ops (eQuant groupedLabel)
 
                     consistentCube'     <- lift $ stateLabelConsistent ops syi groupedLabel 
