@@ -2,7 +2,7 @@
 
 module Interface where
 
-import Control.Monad.ST.Lazy
+import Control.Monad.ST
 import qualified Data.Map as Map
 import Data.Map (Map)
 import qualified Data.Set as Set

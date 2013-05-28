@@ -20,7 +20,7 @@ module BddUtil (
 
 import Control.Monad
 import Control.Arrow
-import Control.Monad.ST.Lazy.Unsafe (unsafeIOToST)
+import Control.Monad.ST.Unsafe (unsafeIOToST)
 
 import BddRecord
 import qualified CuddExplicitDeref as C

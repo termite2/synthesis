@@ -8,7 +8,7 @@ module BddRecord (
     ST
     ) where
 
-import Control.Monad.ST.Lazy
+import Control.Monad.ST
 import Control.Monad
 
 import qualified CuddExplicitDeref as C

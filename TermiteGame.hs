@@ -4,7 +4,7 @@ module TermiteGame (
     absRefineLoop
     ) where
 
-import Control.Monad.ST.Lazy
+import Control.Monad.ST
 import Data.STRef.Lazy
 import qualified Data.Map as Map
 import Data.Map (Map)
