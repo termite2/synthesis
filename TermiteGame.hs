@@ -353,7 +353,6 @@ refineConsistencyUCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@R
     winNoConstraint2   <- lift $ bnot cont .& winNoConstraint
     lift $ mapM deref [win', winNoConstraint]
     res <- doConsistency ops ts consistentPlusCULUCont consistentMinusCULUCont winNoConstraint2
-    --TODO deref winNoConstraint
     lift $ check "refineConsistencyUCont End" ops
     case res of 
         Nothing -> return Nothing
@@ -373,7 +372,7 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
         True  -> do
             --no refinement of consistency relations will shrink the winning region
             lift $ debugDo 2 $ traceST "no consistency refinement possible"
-            lift $ deref toCheckConsistency
+            lift $ mapM deref [toCheckConsistency, winNoConstraint]
             return Nothing
         False -> do
             --There may be a refinement
@@ -397,6 +396,7 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
                     doConsistency ops ts consistentPlusCUL' cMinus winNoConstraint
                 Nothing -> do
                     --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
+                    lift $ deref winNoConstraint
                     lift $ traceST "predicates are consistent. refining consistentMinus..."
                     eQuantExpr <- doUpdate ops (eQuant groupedLabel)
 
