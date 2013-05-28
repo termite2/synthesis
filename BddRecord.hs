@@ -47,7 +47,9 @@ data Ops s u = Ops {
     readPerm                                  :: Int -> ST s Int,
     shuffleHeap                               :: [Int] -> ST s (),
     makeTreeNode                              :: Int -> Int -> Int -> ST s (),
-    dagSize                                   :: DDNode s u -> ST s Int
+    dagSize                                   :: DDNode s u -> ST s Int,
+    readNodeCount                             :: ST s Integer,
+    readPeakNodeCount                         :: ST s Integer
 }
 
 constructOps :: STDdManager s u -> Ops s u
@@ -95,3 +97,6 @@ constructOps m = Ops {..}
     shuffleHeap            = C.cuddShuffleHeapST m
     makeTreeNode x y z     = void $ C.cuddMakeTreeNode m x y z
     dagSize                = C.dagSize
+    readNodeCount          = C.readNodeCount m
+    readPeakNodeCount      = C.readPeakNodeCount m
+    
