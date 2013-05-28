@@ -53,6 +53,13 @@ data RefineStatic s u = RefineStatic {
     init :: DDNode s u
 }
 
+derefStatic :: Ops s u -> RefineStatic s u -> ST s ()
+derefStatic Ops{..} RefineStatic{..} = do
+    deref cont
+    mapM deref goal
+    mapM deref fair
+    deref init
+
 data RefineDynamic s u = RefineDynamic {
     --relations
     trans                   :: DDNode s u,
@@ -61,6 +68,25 @@ data RefineDynamic s u = RefineDynamic {
     consistentMinusCULUCont :: DDNode s u,
     consistentPlusCULUCont  :: DDNode s u
 }
+
+derefDynamic :: Ops s u -> RefineDynamic s u -> ST s ()
+derefDynamic Ops{..} RefineDynamic{..} = do
+    deref trans
+    deref consistentMinusCULCont
+    deref consistentPlusCULCont
+    deref consistentMinusCULUCont
+    deref consistentPlusCULUCont
+
+dumpSizes :: Ops s u -> RefineDynamic s u -> ST s ()
+dumpSizes Ops{..} RefineDynamic{..} = do
+    let func x = do
+        ds <- dagSize x
+        traceST $ show ds
+    func trans
+    func consistentMinusCULCont
+    func consistentPlusCULCont
+    func consistentMinusCULUCont
+    func consistentPlusCULUCont
 
 type Lab s u = [([DDNode s u], DDNode s u)]
 
