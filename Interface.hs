@@ -84,6 +84,14 @@ data SectionInfo s u = SectionInfo {
 makeLenses ''SectionInfo
 initialSectionInfo Ops{..} = SectionInfo btrue [] [] btrue [] btrue btrue btrue []
 
+derefSectionInfo :: Ops s u -> SectionInfo s u -> ST s ()
+derefSectionInfo Ops{..} SectionInfo{..} = do
+    deref _trackedCube
+    deref _untrackedCube
+    deref _labelCube
+    deref _outcomeCube
+    deref _nextCube
+
 --Variable/predicate database
 data DB s u sp lp = DB {
     _symbolTable :: SymbolInfo s u sp lp,
