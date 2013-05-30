@@ -1,7 +1,9 @@
 {-# LANGUAGE PolymorphicComponents, RecordWildCards, ScopedTypeVariables #-}
 module TermiteGame (
     Abstractor(..),
-    absRefineLoop
+    absRefineLoop,
+    RefineStatic(..),
+    RefineDynamic(..)
     ) where
 
 import Control.Monad.ST
