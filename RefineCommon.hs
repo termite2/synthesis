@@ -152,8 +152,8 @@ stateLabelInconsistent ops@Ops{..} SymbolInfo{..} statePairs labelPairs = do
     inconsistentLabel <- makeCubeInt ops $ map (first getLabels) labelPairs
     andDeref ops inconsistentState inconsistentLabel
     where
-    getStates = map getNode . fst . fromJustNote "refineConsistency" . flip Map.lookup _stateVars
-    getLabels = map getNode . sel1 . fromJustNote "refineConsistency" . flip Map.lookup _labelVars
+    getStates = sel1 . fromJustNote "refineConsistency" . flip Map.lookup _stateVars
+    getLabels = sel1 . fromJustNote "refineConsistency" . flip Map.lookup _labelVars
 
 stateLabelConsistent :: (Ord sp, Ord lp) => Ops s u -> SymbolInfo s u sp lp -> [(lp, [Bool])] -> ST s (DDNode s u) 
 stateLabelConsistent ops@Ops{..} SymbolInfo{..} cLabelPreds = do
@@ -161,9 +161,9 @@ stateLabelConsistent ops@Ops{..} SymbolInfo{..} cLabelPreds = do
     otherCube <- makeCube ops    $ zip otherEnabling (repeat False)
     andDeref ops labelCube otherCube
     where
-    otherEnabling = map (getNode . snd . snd) $ filter (\(p, _) -> not $ p `elem` map fst cLabelPreds) $ Map.toList _labelVars
+    otherEnabling = map (sel3 . snd) $ filter (\(p, _) -> not $ p `elem` map fst cLabelPreds) $ Map.toList _labelVars
     labelPreds' = map (first $ fromJustNote "refineConsistency" . flip Map.lookup _labelVars) cLabelPreds
-    func ((lp, le), pol) = [(map fst lp, pol), ([fst le], [True])]
+    func (l, pol) = [(sel1 l, pol), ([sel3 l], [True])]
 
 updateWrapper :: Ops s u -> DDNode s u -> StateT (DB s u dp lp) (ST s) (DDNode s u)
 updateWrapper ops@Ops{..} updateExprConj'' = do
@@ -171,7 +171,7 @@ updateWrapper ops@Ops{..} updateExprConj'' = do
     updateExprConj' <- lift $ bexists outcomeCube updateExprConj''
     lift $ deref updateExprConj''
     labelPreds <- gets $ _labelVars . _symbolTable
-    updateExprConj  <- lift $ doEnVars ops updateExprConj' $ map (map fst *** fst) $ Map.elems labelPreds
+    updateExprConj  <- lift $ doEnVars ops updateExprConj' $ map (sel1 &&& sel3) $ Map.elems labelPreds
     lift $ deref updateExprConj'
     return updateExprConj
 

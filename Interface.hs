@@ -11,6 +11,7 @@ import Control.Monad.State
 import Control.Arrow
 import Data.List as List
 import Safe
+import Data.Tuple.All
 
 import Control.Lens
 
@@ -51,17 +52,16 @@ unc f (l1, l2) = f ul1 ul2 ul3 ul4
     (ul3, ul4) = unzip l2
 
 --Variable type
-type VarInfo s u = (DDNode s u, Int)
 getNode = fst
 getIdx = snd
 
 --Symbol table
 data SymbolInfo s u sp lp = SymbolInfo {
     --below maps are used for update function compilation and constructing
-    _initVars           :: Map sp ([VarInfo s u], [VarInfo s u]),
-    _stateVars          :: Map sp ([VarInfo s u], [VarInfo s u]),
-    _labelVars          :: Map lp ([VarInfo s u], VarInfo s u),
-    _outcomeVars        :: Map lp [VarInfo s u],
+    _initVars           :: Map sp ([DDNode s u], [Int], [DDNode s u], [Int]),
+    _stateVars          :: Map sp ([DDNode s u], [Int], [DDNode s u], [Int]),
+    _labelVars          :: Map lp ([DDNode s u], [Int], DDNode s u, Int),
+    _outcomeVars        :: Map lp ([DDNode s u], [Int]),
     --mappings from index to variable/predicate
     _stateRev           :: Map Int sp,
     _labelRev           :: Map Int (lp, Bool)
@@ -154,7 +154,7 @@ allocInitVar  :: (Ord sp) => Ops s u -> sp -> Int -> StateT (DB s u sp lp) (ST s
 allocInitVar ops@Ops{..} v size = do
     ((cn, ci), (nn, ni)) <- allocNPair ops size
     lift $ makeTreeNode (head ci) (2 * size) 4
-    symbolTable . initVars %= Map.insert v (zip cn ci, zip nn ni)
+    symbolTable . initVars %= Map.insert v (cn, ci, nn, ni)
     return cn
 
 -- === goal helpers ===
@@ -185,7 +185,7 @@ type Update a = a -> a
 
 addStateVarSymbol :: (Ord sp) => sp -> [DDNode s u] -> [Int] -> [DDNode s u] -> [Int] -> Update (SymbolInfo s u sp lp)
 addStateVarSymbol name vars idxs vars' idxs' = 
-    stateVars %~ Map.insert name (zip vars idxs, zip vars' idxs') >>>
+    stateVars %~ Map.insert name (vars, idxs, vars', idxs') >>>
     stateRev  %~ flip (foldl func) idxs 
         where func theMap idx = Map.insert idx name theMap
 
@@ -229,7 +229,7 @@ allocLabelVar ops@Ops{..} var size = do
     lift $ makeTreeNode (head idxs) size 4
     (en, enIdx) <- alloc ops
     --TODO include this in above group?
-    symbolTable . labelVars %= Map.insert var ((zip vars idxs), (en, enIdx))
+    symbolTable . labelVars %= Map.insert var (vars, idxs, en, enIdx)
     symbolTable . labelRev  %= (
         flip (foldl (func vars idxs)) idxs >>>
         Map.insert enIdx (var, True)
@@ -245,7 +245,7 @@ allocOutcomeVar :: (Ord lp) => Ops s u -> lp -> Int -> StateT (DB s u sp lp) (ST
 allocOutcomeVar ops@Ops{..} name size = do
     (vars, idxs) <- allocN ops size
     lift $ makeTreeNode (head idxs) size 4
-    symbolTable . outcomeVars %= Map.insert name (zip vars idxs)
+    symbolTable . outcomeVars %= Map.insert name (vars, idxs)
     modifyM $ sections . outcomeCube %%~ \c -> do
         cb <- nodesToCube vars
         addToCubeDeref ops cb c
@@ -255,8 +255,7 @@ allocOutcomeVar ops@Ops{..} name size = do
 promoteUntrackedVar :: (Ord sp) => Ops s u -> sp -> StateT (GoalState s u sp lp) (ST s) ()
 promoteUntrackedVar ops@Ops{..} var = do
     mp <- use $ db . symbolTable . stateVars
-    let (c, n) = fromJustNote "promoteUntrackedVar" $ Map.lookup var mp
-    let ((vars, idxs), (vars', idxs')) = (unzip c, unzip n)
+    let (vars, idxs, vars', idxs') = fromJustNote "promoteUntrackedVar" $ Map.lookup var mp
     addVarToStateSection ops var vars idxs vars' idxs'
     db . sections . untrackedInds %= (\\ idxs)
     modifyM $ db . sections . untrackedCube %%~ \c -> do
@@ -281,7 +280,7 @@ goalOps ops = VarOps {withTmp = undefined {-withTmp' ops -}, ..}
     where
     getVar  (StateVar var size) = do
         SymbolInfo{..} <- use $ db . symbolTable
-        findWithDefaultM (map getNode . fst) var _stateVars $ findWithDefaultProcessM (map getNode . fst) var _initVars (allocStateVar ops var size) (unc (addVarToState ops var))
+        findWithDefaultM sel1 var _stateVars $ findWithDefaultProcessM sel1 var _initVars (allocStateVar ops var size) (uncurryN $ addVarToState ops var)
     getVar  _ = error "Requested non-state variable when compiling goal section"
 
 doGoal :: Ord sp => Ops s u -> (VarOps (GoalState s u sp lp) (BAVar sp lp) s u -> StateT (GoalState s u sp lp) (ST s) a) -> StateT (DB s u sp lp) (ST s) (a, NewVars s u sp)
@@ -294,7 +293,7 @@ initOps ops = VarOps {withTmp = withTmp' ops, ..}
     where
     getVar  (StateVar var size) = do
         SymbolInfo{..} <- use symbolTable
-        findWithDefaultM (map getNode . fst) var _initVars (allocInitVar ops var size)
+        findWithDefaultM sel1 var _initVars (allocInitVar ops var size)
     getVar _ = error "Requested non-state variable when compiling init section"
 
 doInit :: Ord sp => Ops s u -> (VarOps (DB s u sp lp) (BAVar sp lp) s u -> StateT (DB s u sp lp) (ST s) (DDNode s u)) -> StateT (DB s u sp lp) (ST s) (DDNode s u)
@@ -305,13 +304,13 @@ updateOps ops = VarOps {withTmp = withTmp' ops, ..}
     where
     getVar (StateVar var size) = do
         SymbolInfo{..} <- use symbolTable
-        findWithDefaultM (map getNode . fst) var _stateVars $ findWithDefaultProcessM (map getNode . fst) var _initVars (allocUntrackedVar ops var size) (unc (addVarToUntracked ops var))
+        findWithDefaultM sel1 var _stateVars $ findWithDefaultProcessM sel1 var _initVars (allocUntrackedVar ops var size) (uncurryN $ addVarToUntracked ops var)
     getVar (LabelVar var size) = do
         SymbolInfo{..} <- use symbolTable
-        findWithDefaultM (map getNode . fst) var _labelVars $ allocLabelVar ops var size
+        findWithDefaultM sel1 var _labelVars $ allocLabelVar ops var size
     getVar (OutVar var size) = do
         SymbolInfo{..} <- use symbolTable
-        findWithDefaultM (map getNode) var _outcomeVars $ allocOutcomeVar ops var size
+        findWithDefaultM sel1 var _outcomeVars $ allocOutcomeVar ops var size
 
 doUpdate :: (Ord sp, Ord lp) => Ops s u -> (VarOps (DB s u sp lp) (BAVar sp lp) s u -> StateT (DB s u sp lp) (ST s) (DDNode s u)) -> StateT (DB s u sp lp) (ST s) (DDNode s u)
 doUpdate ops complFunc = complFunc (updateOps ops)

@@ -240,7 +240,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     lift $ ref consistentPlusCULCont
     lift $ ref consistentPlusCULUCont
     labelPreds <- gets $ _labelVars . _symbolTable
-    consistentMinusCULCont <- lift $ conj ops $ map (bnot . fst . snd) $ Map.elems labelPreds
+    consistentMinusCULCont <- lift $ conj ops $ map (bnot . sel3) $ Map.elems labelPreds
     let consistentMinusCULUCont = consistentMinusCULCont
     lift $ ref consistentMinusCULUCont
     --construct the RefineDynamic and RefineStatic
@@ -326,7 +326,7 @@ refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Re
     lift $ deref win''
     hasOutgoings       <- lift $ bexists _nextCube trans
     winNoConstraint'   <- lift $ cpre' ops si rd hasOutgoings win'
-    let lp             =  map (map fst *** fst) $ Map.elems _labelVars
+    let lp             =  map (sel1 &&& sel3) $ Map.elems _labelVars
     winNoConstraint    <- lift $ doEnCont ops winNoConstraint' lp
     lift $ deref winNoConstraint'
     winNoConstraint2   <- lift $ cont .& winNoConstraint
@@ -347,7 +347,7 @@ refineConsistencyUCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@R
     win'               <- lift $ win'' .| winning
     lift $ deref win''
     winNoConstraint'   <- lift $ liftM bnot $ cpre' ops si rd btrue win'
-    let lp             =  map (map fst *** fst) $ Map.elems _labelVars
+    let lp             =  map (sel1 &&& sel3) $ Map.elems _labelVars
     winNoConstraint    <- lift $ doEnCont ops winNoConstraint' lp
     lift $ deref winNoConstraint'
     winNoConstraint2   <- lift $ bnot cont .& winNoConstraint
@@ -435,7 +435,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                     si@SectionInfo{..} <- gets _sections
                     lift $ setVarMap _trackedNodes _nextNodes
                     labelPreds <- gets $ _labelVars . _symbolTable
-                    let lp = map (map fst *** fst) $ Map.elems labelPreds
+                    let lp = map (sel1 &&& sel3) $ Map.elems labelPreds
                     hasOutgoings <- lift $ bexists _nextCube trans
                     winRegion <- lift $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin
                     lift $ deref lastWin
