@@ -620,10 +620,10 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
         return (win, stratUCont)
 
 --The abstraction-refinement loop
-absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp -> o -> ST s Bool
+absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp -> o -> ST s ((Bool, RefineStatic s u, RefineDynamic s u), DB s u sp lp)
 absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
     idb <- initialDB ops
-    flip evalStateT idb $ do
+    flip runStateT idb $ do
         (rd, rs) <- initialAbstraction ops spec
         lift $ debugDo 1 $ traceST "Refinement state after initial abstraction: " 
         lift $ debugDo 1 $ traceST $ "Goal is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ goal rs)
@@ -632,10 +632,10 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
         lift $ ref bfalse
         refineLoop ops rs rd btrue
         where
-            refineLoop :: Ops s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) Bool
+            refineLoop :: Ops s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Bool, RefineStatic s u, RefineDynamic s u)
             refineLoop ops@Ops{..} rs@RefineStatic{..} = refineLoop'
                 where 
-                refineLoop' :: RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) Bool
+                refineLoop' :: RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Bool, RefineStatic s u, RefineDynamic s u)
                 refineLoop' rd@RefineDynamic{..} lastWin = do
                     si@SectionInfo{..} <- gets _sections
                     lift $ setVarMap _trackedNodes _nextNodes
@@ -650,7 +650,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                         False -> lift $ do
                             traceST "Losing"
                             mapM deref [winRegion, hasOutgoings]
-                            return False
+                            return (False, rs, rd)
                         True -> do
                             lift $ traceST "Possibly winning, Confirming with further refinement"
                             res <- mSumMaybe $ flip map goal $ \g -> do
@@ -679,5 +679,5 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                                 lift $ mapM deref [urog, overAndGoal, hasOutgoings]
                                 return res
                             case res of 
-                                Nothing -> return True
+                                Nothing -> return (True, rs, rd)
                                 Just rd -> refineLoop' rd winRegion
