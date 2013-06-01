@@ -274,9 +274,14 @@ withTmp' Ops{..} func = do
     avlOffset += 1
     func var
 
+allVars' :: StateT (DB s u sp lp) (ST s) [BAVar sp lp]
+allVars' = do
+    SymbolInfo {..} <- use symbolTable 
+    return $ map (uncurry StateVar . second (length . sel1)) (Map.toList _stateVars) ++ map (uncurry LabelVar . second (length . sel1)) (Map.toList _labelVars) ++ map (uncurry OutVar . second (length . sel1)) (Map.toList _outcomeVars)
+
 --Construct the VarOps for compiling particular parts of the spec
 goalOps :: Ord sp => Ops s u -> VarOps (GoalState s u sp lp) (BAVar sp lp) s u
-goalOps ops = VarOps {withTmp = undefined {-withTmp' ops -}, ..}
+goalOps ops = VarOps {withTmp = undefined {-withTmp' ops -}, allVars = liftToGoalState allVars', ..}
     where
     getVar  (StateVar var size) = do
         SymbolInfo{..} <- use $ db . symbolTable
@@ -289,7 +294,7 @@ doGoal ops complFunc = StateT $ \st -> do
     return ((res, _nv), _db)
 
 initOps :: Ord sp => Ops s u -> VarOps (DB s u sp lp) (BAVar sp lp) s u
-initOps ops = VarOps {withTmp = withTmp' ops, ..}
+initOps ops = VarOps {withTmp = withTmp' ops, allVars = allVars', ..}
     where
     getVar  (StateVar var size) = do
         SymbolInfo{..} <- use symbolTable
@@ -300,7 +305,7 @@ doInit :: Ord sp => Ops s u -> (VarOps (DB s u sp lp) (BAVar sp lp) s u -> State
 doInit ops complFunc = complFunc (initOps ops)
 
 updateOps :: (Ord sp, Ord lp) => Ops s u -> VarOps (DB s u sp lp) (BAVar sp lp) s u
-updateOps ops = VarOps {withTmp = withTmp' ops, ..}
+updateOps ops = VarOps {withTmp = withTmp' ops, allVars = allVars', ..}
     where
     getVar (StateVar var size) = do
         SymbolInfo{..} <- use symbolTable
