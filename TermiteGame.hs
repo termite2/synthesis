@@ -102,6 +102,7 @@ doEnVars qFunc ops@Ops{..} strat envars = do
         e <- qFunc ops varCube soFar
         deref varCube
         res <- bite en soFar e
+        deref soFar
         deref e
         return res
 
