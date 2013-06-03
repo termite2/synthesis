@@ -146,16 +146,17 @@ allocNPair Ops{..} size = do
     return ((res1, indices1), (res2, indices2))
 
 --Do the variable allocation and symbol table tracking
-addToCube :: Ops s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
-addToCube Ops{..} add cb = do
-    res <- add .& cb
-    deref cb
-    return res
-
 addToCubeDeref :: Ops s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 addToCubeDeref Ops{..} add cb = do
     res <- add .& cb
     deref add
+    deref cb
+    return res
+
+subFromCubeDeref :: Ops s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+subFromCubeDeref Ops{..} sub cb = do
+    res <- bexists sub cb
+    deref sub
     deref cb
     return res
 
@@ -270,7 +271,7 @@ promoteUntrackedVar ops@Ops{..} var = do
     db . sections . untrackedInds %= (\\ idxs)
     modifyM $ db . sections . untrackedCube %%~ \c -> do
         cb <- nodesToCube vars
-        bexists cb c
+        subFromCubeDeref ops cb c
 
 promoteUntrackedVars :: (Ord sp) => Ops s u -> [sp] -> StateT (DB s u sp lp) (ST s) (NewVars s u sp)
 promoteUntrackedVars ops vars = StateT $ \st -> do
