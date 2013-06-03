@@ -45,12 +45,6 @@ findWithDefaultProcessM modF key theMap funcAbsent funcPresent = maybe funcAbsen
 modifyM :: Monad m => (s -> m s) -> StateT s m ()
 modifyM f = get >>= (lift . f) >>= put
 
-unc :: ([a] -> [b] -> [c] -> [d] -> f) -> ([(a, b)], [(c, d)]) -> f
-unc f (l1, l2) = f ul1 ul2 ul3 ul4
-    where
-    (ul1, ul2) = unzip l1
-    (ul3, ul4) = unzip l2
-
 --Variable type
 getNode = fst
 getIdx = snd
@@ -96,18 +90,34 @@ derefSectionInfo Ops{..} SectionInfo{..} = do
 data DB s u sp lp = DB {
     _symbolTable :: SymbolInfo s u sp lp,
     _sections    :: SectionInfo s u,
-    _avlOffset   :: Int
+    _avlOffset   :: Int,
+    _freeInds    :: [Int]
 }
 makeLenses ''DB
 initialDB ops@Ops{..} = do
     let isi@SectionInfo{..} = initialSectionInfo ops
-    let res = DB initialSymbolTable isi 0
+    let res = DB initialSymbolTable isi 0 []
     ref _trackedCube
     ref _untrackedCube
     ref _labelCube
     ref _outcomeCube
     ref _nextCube
     return res
+
+allocIdx :: StateT (DB s u sp lp) (ST s) Int
+allocIdx = do
+    st <- use freeInds
+    case st of 
+        [] -> do
+            ind <- use avlOffset
+            avlOffset += 1
+            return ind
+        x:xs -> do
+            freeInds .= xs
+            return x 
+
+freeIdx :: Int -> StateT (DB s u sp lp) (ST s) ()
+freeIdx idx = freeInds %= (idx :)
 
 --Generic variable allocations
 alloc :: Ops s u -> StateT (DB s u sp lp) (ST s) (DDNode s u, Int)
@@ -269,10 +279,12 @@ promoteUntrackedVars ops vars = StateT $ \st -> do
 
 withTmp' :: Ops s u -> (DDNode s u -> StateT (DB s u sp lp) (ST s) a) -> StateT (DB s u sp lp) (ST s) a
 withTmp' Ops{..} func = do
-    ind <- use avlOffset
+    ind <- allocIdx
     var <- lift $ ithVar ind
-    avlOffset += 1
-    func var
+    res <- func var
+    freeIdx ind
+    lift $ deref var
+    return res
 
 allVars' :: StateT (DB s u sp lp) (ST s) [BAVar sp lp]
 allVars' = do
