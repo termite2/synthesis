@@ -27,7 +27,7 @@ data Ops s u = Ops {
     leq                                       :: DDNode s u -> DDNode s u -> ST s Bool,
     makePrime                                 :: DDNode s u -> DDNode s u -> ST s (DDNode s u),
     largestCube                               :: DDNode s u -> ST s (DDNode s u, Int),
-    supportIndices                            :: DDNode s u -> ST s ([Int]),
+    supportIndices                            :: DDNode s u -> ST s [Int],
     ithVar                                    :: Int -> ST s (DDNode s u),
     shift                                     :: [DDNode s u] -> [DDNode s u] -> DDNode s u -> ST s (DDNode s u),
     ref                                       :: DDNode s u -> ST s (),
