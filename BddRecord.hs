@@ -5,7 +5,8 @@ module BddRecord (
     constructOps,
     DDNode,
     STDdManager,
-    ST
+    ST,
+    C.CuddReorderingType(..)
     ) where
 
 import Control.Monad.ST
@@ -49,7 +50,9 @@ data Ops s u = Ops {
     makeTreeNode                              :: Int -> Int -> Int -> ST s (),
     dagSize                                   :: DDNode s u -> ST s Int,
     readNodeCount                             :: ST s Integer,
-    readPeakNodeCount                         :: ST s Integer
+    readPeakNodeCount                         :: ST s Integer,
+    regular                                   :: DDNode s u -> DDNode s u,
+    reduceHeap                                :: C.CuddReorderingType -> Int -> ST s Int
 }
 
 constructOps :: STDdManager s u -> Ops s u
@@ -99,4 +102,6 @@ constructOps m = Ops {..}
     dagSize                = C.dagSize
     readNodeCount          = C.readNodeCount m
     readPeakNodeCount      = C.readPeakNodeCount m
+    regular                = C.regular
+    reduceHeap             = C.cuddReduceHeap m
     
