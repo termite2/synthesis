@@ -417,6 +417,75 @@ mSumMaybe (x:xs) = do
         Just y  -> return $ Just y
 mSumMaybe [] = return Nothing
 
+forAccumLM :: Monad m => acc -> [x] -> (acc -> x -> m (acc, y)) -> m (acc, [y])
+forAccumLM a b c = mapAccumLM c a b
+
+fixedPoint2 :: Ops s u -> DDNode s u -> a -> (DDNode s u -> a -> ST s (DDNode s u, a)) -> ST s (DDNode s u, a)
+fixedPoint2 ops@Ops{..} start thing func = do
+    (res, thing') <- func start thing
+    deref start 
+    case (res==start) of 
+        True -> return (start, thing')
+        False -> fixedPoint2 ops res thing' func
+
+strategy :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s [[(DDNode s u, DDNode s u)]]
+strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
+    hasOutgoings <- bexists _nextCube trans
+    --For each goal
+    res <- forM goal $ \goal -> do 
+        winAndGoal <- goal .& win
+        ref bfalse
+        --Reachabiliy least fixedpoint
+        res <- fixedPoint2 ops bfalse (repeat (bfalse, bfalse)) $ \soFar strats -> do 
+            soFarOrWinAndGoal <- soFar .| winAndGoal
+            ref bfalse
+            --For each fair
+            (res, strats') <- forAccumLM bfalse fair $ \accum fair -> do
+                --Fairness greatest fixedpoint
+                winFair <- solveFair (cPreUnder ops si rs rd hasOutgoings labelPreds)  ops rs soFarOrWinAndGoal fair
+                thing <- winFair .& fair
+                deref winFair
+                thing2 <- thing .| soFarOrWinAndGoal
+                deref thing
+                (win', strats) <- cpre hasOutgoings thing2
+                deref winFair
+                win <- win' .| accum 
+                deref win'
+                return (win, strats)
+            deref soFarOrWinAndGoal
+            strats <- zipWithM (combineStrats soFar) strats strats'
+            return (res, strats)
+        deref winAndGoal
+        return res
+    deref hasOutgoings
+    let (wins, strats) = unzip res
+    win' <- conj ops wins
+    mapM deref wins
+    deref win'
+    when (win' /= win) (error "Winning regions are not equal in strategy generation")
+    return strats
+    where
+    combineStrats prevWin (oldC, oldU) (newC, newU) = do
+        c <- newC .& bnot prevWin
+        deref newC
+        c' <- c .| oldC
+        deref oldC
+        u <- newU .& bnot prevWin
+        deref newU
+        u' <- u .| oldU
+        deref oldU
+        return (c', u')
+    cpre hasOutgoings target = do
+        strat      <- cpre' ops si rd hasOutgoings target
+        stratCont  <- doEnCont ops strat labelPreds
+        stratUCont <- doEnCont ops (bnot strat) labelPreds
+        deref strat
+        winCont    <- andAbstract _labelCube consistentMinusCULCont stratCont
+        winUCont   <- liftM bnot $ andAbstract _labelCube consistentPlusCULUCont stratUCont
+        win        <- bite cont winCont winUCont
+        mapM deref [winCont, stratUCont]
+        return (win, (stratCont, winUCont))
+
 --The abstraction-refinement loop
 absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp -> o -> ST s Bool
 absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
