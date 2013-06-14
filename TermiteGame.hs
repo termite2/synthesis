@@ -44,7 +44,7 @@ data Abstractor s u sp lp = Abstractor {
     fairAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) [DDNode s u],
     initAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
     contAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
-    updateAbs  :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u)
+    updateAbs  :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) ([DDNode s u])
 }
 
 -- ===Data structures for keeping track of abstraction state===
@@ -64,7 +64,8 @@ derefStatic Ops{..} RefineStatic{..} = do
 
 data RefineDynamic s u = RefineDynamic {
     --relations
-    trans                   :: DDNode s u,
+    --                         cube, rel
+    trans                   :: [(DDNode s u, DDNode s u)],
     consistentMinusCULCont  :: DDNode s u,
     consistentPlusCULCont   :: DDNode s u,
     consistentMinusCULUCont :: DDNode s u,
@@ -73,7 +74,8 @@ data RefineDynamic s u = RefineDynamic {
 
 derefDynamic :: Ops s u -> RefineDynamic s u -> ST s ()
 derefDynamic Ops{..} RefineDynamic{..} = do
-    deref trans
+    mapM (deref . fst) trans
+    mapM (deref . snd) trans
     deref consistentMinusCULCont
     deref consistentPlusCULCont
     deref consistentMinusCULUCont
@@ -84,7 +86,7 @@ dumpSizes Ops{..} RefineDynamic{..} = do
     let func x = do
         ds <- dagSize x
         traceST $ show ds
-    func trans
+    mapM (func . snd) trans
     func consistentMinusCULCont
     func consistentPlusCULCont
     func consistentMinusCULUCont
@@ -109,11 +111,29 @@ doEnVars qFunc ops@Ops{..} strat envars = do
 doEnCont  = doEnVars bforall
 doEnUCont = doEnVars bexists
 
+partitionedThing :: Ops s u -> [(DDNode s u, DDNode s u)] -> DDNode s u -> ST s (DDNode s u)
+partitionedThing Ops{..} pairs win = do
+    ref win
+    forAccumM win pairs $ \win (cube, rel) -> do
+        res <- liftM bnot $ andAbstract cube (bnot win) rel
+        deref win
+        return res
+
+doHasOutgoings :: Ops s u -> [(DDNode s u, DDNode s u)] -> ST s (DDNode s u)
+doHasOutgoings Ops{..} pairs = do
+    ref btrue
+    forAccumM btrue pairs $ \has (cube, rel) -> do
+        r <- bexists cube rel
+        a <- band r has
+        deref has
+        deref r
+        return a
+
 --Find the <state, untracked, label> tuples that are guaranteed to lead to the goal for a given transition relation
 cpre' :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 cpre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} hasOutgoings target = do
     nextWin  <- mapVars target
-    strat    <- liftM bnot $ andAbstract _nextCube trans (bnot nextWin)
+    strat    <- partitionedThing ops trans nextWin
     deref nextWin
     stratAvl <- hasOutgoings .& strat
     deref strat
@@ -156,7 +176,7 @@ cPreUnder ops@Ops{..} = cPreHelper cpreUnder' bforall ops
 
 winningSU :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
 winningSU ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds target = do
-    hasOutgoings <- bexists _nextCube trans
+    hasOutgoings <- doHasOutgoings ops trans 
     res <- cpreOver' ops si rs rd hasOutgoings labelPreds target
     deref hasOutgoings
     return res
@@ -232,10 +252,11 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     (contExpr, newVarsCont) <- doGoal ops contAbs
     lift $ check "After compiling fair" ops
     --get the abstract update functions for the goal predicates and variables
-    updateExprConj' <- doUpdate ops (updateAbs (nub $ _allocatedStateVars newVarsGoals ++ _allocatedStateVars newVarsFairs ++ _allocatedStateVars newVarsCont))
+    let toUpdate = nub $ _allocatedStateVars newVarsGoals ++ _allocatedStateVars newVarsFairs ++ _allocatedStateVars newVarsCont
+    updateExprs' <- doUpdate ops (updateAbs toUpdate)
     outcomeCube <- gets $ _outcomeCube . _sections
-    updateExprConj <- lift $ bexists outcomeCube updateExprConj'
-    lift $ deref updateExprConj'
+    updateExprs <- lift $ mapM (bexists outcomeCube) updateExprs'
+    lift $ mapM deref updateExprs'
 
     --create the consistency constraints
     let consistentPlusCULCont  = btrue
@@ -246,9 +267,10 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     consistentMinusCULCont <- lift $ conj ops $ map (bnot . sel3) $ Map.elems labelPreds
     let consistentMinusCULUCont = consistentMinusCULCont
     lift $ ref consistentMinusCULUCont
+    cubes <- lift $ mapM (nodesToCube . snd) toUpdate
     --construct the RefineDynamic and RefineStatic
     let rd = RefineDynamic {
-            trans  = updateExprConj,
+            trans  = zip cubes updateExprs,
             ..
         }
         rs = RefineStatic {
@@ -286,13 +308,11 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     labelPredsPreUpdate  <- gets $ _labelVars . _symbolTable
 
     --compute the update functions
-    updateExprConj'   <- doUpdate ops (updateAbs _allocatedStateVars)
+    updateExprs'   <- doUpdate ops (updateAbs _allocatedStateVars)
     outcomeCube <- gets $ _outcomeCube . _sections
-    updateExprConj''  <- lift $ bexists outcomeCube updateExprConj'
-    lift $ deref updateExprConj'
-
-    --update the transition relation
-    updateExprConj  <- lift $ andDeref ops trans updateExprConj''
+    updateExprs  <- lift $ mapM (bexists outcomeCube) updateExprs'
+    lift $ mapM deref updateExprs'
+    cubes <- lift $ mapM (nodesToCube . snd) _allocatedStateVars
 
     --TODO why is this commented out?
     {-
@@ -302,7 +322,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     -}
 
     return rd {
-        trans  = updateExprConj
+        trans  = (zip cubes updateExprs) ++ trans
     }
 
 refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
@@ -327,7 +347,7 @@ refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Re
     win''              <- lift $ win .& fairr
     win'               <- lift $ win'' .| winning
     lift $ deref win''
-    hasOutgoings       <- lift $ bexists _nextCube trans
+    hasOutgoings       <- lift $ doHasOutgoings ops trans
     winNoConstraint'   <- lift $ cpre' ops si rd hasOutgoings win'
     let lp             =  map (sel1 &&& sel3) $ Map.elems _labelVars
     winNoConstraint    <- lift $ doEnCont ops winNoConstraint' lp
@@ -430,7 +450,7 @@ fixedPoint2 ops@Ops{..} start thing func = do
 
 strategy :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s [[(DDNode s u, DDNode s u)]]
 strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
-    hasOutgoings <- bexists _nextCube trans
+    hasOutgoings <- doHasOutgoings ops trans
     --For each goal
     res <- forM goal $ \goal -> do 
         winAndGoal <- goal .& win
@@ -508,7 +528,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                     lift $ setVarMap _trackedNodes _nextNodes
                     labelPreds <- gets $ _labelVars . _symbolTable
                     let lp = map (sel1 &&& sel3) $ Map.elems labelPreds
-                    hasOutgoings <- lift $ bexists _nextCube trans
+                    hasOutgoings <- lift $ doHasOutgoings ops trans
                     winRegion <- lift $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin
                     lift $ deref lastWin
                     winning <- lift $ bnot winRegion `leq` bnot init

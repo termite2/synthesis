@@ -330,6 +330,6 @@ updateOps ops = VarOps {withTmp = withTmp' ops, allVars = allVars', ..}
         SymbolInfo{..} <- use symbolTable
         findWithDefaultM sel1 var _outcomeVars $ allocOutcomeVar ops var size
 
-doUpdate :: (Ord sp, Ord lp) => Ops s u -> (VarOps (DB s u sp lp) (BAVar sp lp) s u -> StateT (DB s u sp lp) (ST s) (DDNode s u)) -> StateT (DB s u sp lp) (ST s) (DDNode s u)
+doUpdate :: (Ord sp, Ord lp) => Ops s u -> (VarOps (DB s u sp lp) (BAVar sp lp) s u -> StateT (DB s u sp lp) (ST s) a) -> StateT (DB s u sp lp) (ST s) a
 doUpdate ops complFunc = complFunc (updateOps ops)
 
