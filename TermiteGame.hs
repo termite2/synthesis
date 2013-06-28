@@ -506,6 +506,76 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         mapM deref [winCont, stratUCont]
         return (win, (stratCont, winUCont))
 
+counterExample :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s [[DDNode s u]]
+counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
+    hasOutgoings <- doHasOutgoings ops trans 
+    sequence $ replicate (length goal * length fair) (ref bfalse)
+    ref bfalse
+    (win', strat) <- fixedPoint2 ops bfalse (zip goal $ repeat $ zip fair $ repeat bfalse) $ \win strat -> do
+        ref bfalse
+        res <- forAccumLM bfalse strat $ \tot (goal, strats) -> do
+            tgt               <- bnot goal .| win
+            winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs (bnot tgt)
+            (winStrat, strat) <- stratReach si rs rd hasOutgoings fair win strats winBuchi tgt
+            deref winStrat
+            deref tgt
+            tot'              <- tot .| winBuchi
+            mapM deref [tot, winBuchi]
+            return (tot', (goal, strat))
+        return res
+    when (win /= bnot win') (error "the counterexample winning region is not the complement of the game winning region")
+    traceST $ bddSynopsis ops win
+    deref hasOutgoings
+    return $ map (map snd . snd) strat
+
+    where
+
+    fixedPoint' ops = flip $ fixedPoint ops 
+
+    target fair goal winN reach = do
+        a   <- reach .| fair
+        b   <- a .& winN
+        deref a
+        c   <- b .& goal
+        deref b
+        return c
+
+    --TODO check winning regions coincide
+    stratReach si rs rd hasOutgoings fairs startingWin stratSoFar winN goal = do
+        ref startingWin
+        fixedPoint2 ops startingWin stratSoFar $ \reach strat -> do
+            ref btrue
+            res <- forAccumLM btrue strat $ \winAccum (fair, strat) -> do
+                tgt            <- target fair goal winN reach
+                (win', strat') <- strategy si rs rd hasOutgoings tgt
+                deref tgt
+                strat''        <- strat' .& bnot reach
+                deref strat'
+                --TODO use ite for strat
+                strat'''       <- strat'' .| strat
+                deref strat''
+                deref strat
+                win            <- bforall _untrackedCube win'
+                deref win'
+                winAccum'      <- winAccum .& win
+                mapM deref [win, winAccum]
+                return (winAccum', (fair, strat'''))
+            return res
+
+    strategy SectionInfo{..} RefineStatic{..} RefineDynamic{..} hasOutgoings target = do
+        strt        <- cpre' ops si rd hasOutgoings (bnot target)
+        stratCont'  <- doEnCont ops strt labelPreds
+        winCont     <- liftM bnot $ andAbstract _labelCube consistentPlusCULCont stratCont'
+        deref stratCont'
+        stratUCont' <- doEnCont ops (bnot strt) labelPreds
+        deref strt
+        stratUCont  <- band consistentMinusCULUCont stratUCont'
+        deref stratUCont'
+        winUCont    <- bexists _labelCube stratUCont
+        win         <- bite cont winCont winUCont
+        mapM deref [winCont, winUCont]
+        return (win, stratUCont)
+
 --The abstraction-refinement loop
 absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp -> o -> ST s Bool
 absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
