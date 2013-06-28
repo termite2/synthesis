@@ -213,11 +213,9 @@ cPreOver ops@Ops{..} = cPreHelper cpreOver' bexists ops
 cPreUnder :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
 cPreUnder ops@Ops{..} = cPreHelper cpreUnder' bforall ops
 
-winningSU :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
-winningSU ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds target = do
-    hasOutgoings <- doHasOutgoings ops trans 
+winningSU :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+winningSU ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds hasOutgoings target = do
     res <- cpreOver' ops si rs rd hasOutgoings labelPreds target
-    deref hasOutgoings
     return res
 
 solveFair :: (DDNode s u -> ST s (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
@@ -324,12 +322,12 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
 
 refineStrategy = refineLeastPreds
 
-pickUntrackedToPromote :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> RefineStatic s u -> Lab s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (Maybe [Int])
-pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} rs@RefineStatic{..} labelPreds win lastLFP fairr = do
+pickUntrackedToPromote :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> RefineStatic s u -> Lab s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (Maybe [Int])
+pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} rs@RefineStatic{..} labelPreds hasOutgoings win lastLFP fairr = do
     win''  <- win .& fairr
     win'   <- win'' .| lastLFP
     deref win''
-    su     <- winningSU ops si rs rd labelPreds win'
+    su     <- winningSU ops si rs rd labelPreds hasOutgoings win'
     deref win'
     toDrop <- (bnot su) .& win
     deref su
@@ -369,9 +367,9 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
         trans  = groups ++ trans
     }
 
-refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
-refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning fairr = do
-    r1 <- refineConsistencyCont ops ts rd rs win winning fairr
+refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
+refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} hasOutgoings win winning fairr = do
+    r1 <- refineConsistencyCont ops ts rd rs hasOutgoings win winning fairr
     case r1 of
         Just res -> do
             lift $ traceST "refined controllable consistency"
@@ -383,21 +381,20 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
                 Nothing -> lift $ traceST "No consistency refinement possible"
             return res
 
-refineConsistencyCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
-refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning fairr = do
+refineConsistencyCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
+refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} hasOutgoings win winning fairr = do
     lift $ check "refineConsistencyCont" ops
     syi@SymbolInfo{..} <- gets _symbolTable 
     si@SectionInfo{..} <- gets _sections
     win''              <- lift $ win .& fairr
     win'               <- lift $ win'' .| winning
     lift $ deref win''
-    hasOutgoings       <- lift $ doHasOutgoings ops trans
     winNoConstraint'   <- lift $ cpre' ops si rd hasOutgoings win'
     let lp             =  map (sel1 &&& sel3) $ Map.elems _labelVars
     winNoConstraint    <- lift $ doEnCont ops winNoConstraint' lp
     lift $ deref winNoConstraint'
     winNoConstraint2   <- lift $ cont .& winNoConstraint
-    lift $ mapM deref [win', hasOutgoings, winNoConstraint]
+    lift $ mapM deref [win', winNoConstraint]
     res <- doConsistency ops ts consistentPlusCULCont consistentMinusCULCont winNoConstraint2
     lift $ check "refineConsistencyCont End" ops
     case res of 
@@ -661,7 +658,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                                 lift $ deref underReach
                                 res <- mSumMaybe $ flip map fair $ \fairr -> do
                                     newWin <- lift $ solveFair (cPreOver ops si rs rd hasOutgoings lp) ops rs urog fairr
-                                    res <- refineConsistency ops ts rd rs newWin urog fairr
+                                    res <- refineConsistency ops ts rd rs hasOutgoings newWin urog fairr
                                     case res of
                                         Just newRD -> do
                                             lift $ traceST "Refined consistency relations. Re-solving..."
@@ -669,7 +666,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                                             return $ Just newRD
                                         Nothing -> do
                                             lift $ traceST "Could not refine consistency relations. Attempting to refine untracked state variables"
-                                            res <- lift $ pickUntrackedToPromote ops si rd rs lp newWin urog fairr
+                                            res <- lift $ pickUntrackedToPromote ops si rd rs lp hasOutgoings newWin urog fairr
                                             lift $ mapM deref [newWin]
                                             case res of 
                                                 Just vars -> do
