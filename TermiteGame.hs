@@ -218,10 +218,10 @@ winningSU ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..
     res <- cpreOver' ops si rs rd hasOutgoings labelPreds target
     return res
 
-solveFair :: (DDNode s u -> ST s (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
-solveFair cpreFunc ops@Ops{..} rs@RefineStatic{..} winning fairr = do
-    ref btrue
-    fixedPoint ops func btrue
+solveFair :: (DDNode s u -> ST s (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+solveFair cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt winning fairr = do
+    ref startPt
+    fixedPoint ops func startPt
     where
     func target = do
         debugDo 1 $ traceST "solveFair: iteration"
@@ -233,8 +233,8 @@ solveFair cpreFunc ops@Ops{..} rs@RefineStatic{..} winning fairr = do
         deref t2
         return res
 
-solveReach :: (DDNode s u -> ST s (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> ST s (DDNode s u)
-solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} goall = do
+solveReach :: (DDNode s u -> ST s (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt goall = do
     ref bfalse
     fixedPoint ops func bfalse
     where
@@ -243,7 +243,7 @@ solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} goall = do
         t1 <- target .| goall
         ref bfalse
         res <- forAccumM bfalse fair $ \accum val -> do
-            res' <- solveFair cpreFunc ops rs t1 val
+            res' <- solveFair cpreFunc ops rs startPt t1 val
             res  <- res' .| accum
             deref res'
             deref accum
@@ -261,7 +261,7 @@ solveBuchi cpreFunc ops@Ops{..} rs@RefineStatic{..} startingPoint = do
         ref btrue
         res <- forAccumM btrue goal $ \accum val -> do
             t1 <- reachN .& val
-            res' <- solveReach cpreFunc ops rs t1
+            res' <- solveReach cpreFunc ops rs reachN t1
             deref t1
             res <- res' .& accum
             deref res'
@@ -503,7 +503,8 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
             --For each fair
             (res, strats') <- forAccumLM bfalse fair $ \accum fair -> do
                 --Fairness greatest fixedpoint
-                winFair <- solveFair (cPreUnder ops si rs rd hasOutgoings labelPreds)  ops rs soFarOrWinAndGoal fair
+                --TODO optimise: dont use btrue below
+                winFair <- solveFair (cPreUnder ops si rs rd hasOutgoings labelPreds)  ops rs btrue soFarOrWinAndGoal fair
                 thing <- winFair .& fair
                 deref winFair
                 thing2 <- thing .| soFarOrWinAndGoal
@@ -556,7 +557,8 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
         ref bfalse
         res <- forAccumLM bfalse strat $ \tot (goal, strats) -> do
             tgt               <- bnot goal .| win
-            winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs (bnot tgt)
+            --TODO optimise: dont use btrue below
+            winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs btrue (bnot tgt)
             (winStrat, strat) <- stratReach si rs rd hasOutgoings fair win strats winBuchi tgt
             deref winStrat
             deref tgt
@@ -653,11 +655,11 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                             lift $ traceST "Possibly winning, Confirming with further refinement"
                             res <- mSumMaybe $ flip map goal $ \g -> do
                                 overAndGoal <- lift $ winRegion .& g
-                                underReach <- lift $ solveReach (cPreUnder ops si rs rd hasOutgoings lp) ops rs overAndGoal
+                                underReach <- lift $ solveReach (cPreUnder ops si rs rd hasOutgoings lp) ops rs winRegion overAndGoal
                                 urog <- lift $ underReach .| overAndGoal
                                 lift $ deref underReach
                                 res <- mSumMaybe $ flip map fair $ \fairr -> do
-                                    newWin <- lift $ solveFair (cPreOver ops si rs rd hasOutgoings lp) ops rs urog fairr
+                                    newWin <- lift $ solveFair (cPreOver ops si rs rd hasOutgoings lp) ops rs winRegion urog fairr
                                     res <- refineConsistency ops ts rd rs hasOutgoings newWin urog fairr
                                     case res of
                                         Just newRD -> do
