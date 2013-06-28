@@ -52,7 +52,8 @@ data Ops s u = Ops {
     readNodeCount                             :: ST s Integer,
     readPeakNodeCount                         :: ST s Integer,
     regular                                   :: DDNode s u -> DDNode s u,
-    reduceHeap                                :: C.CuddReorderingType -> Int -> ST s Int
+    reduceHeap                                :: C.CuddReorderingType -> Int -> ST s Int,
+    andLimit                                  :: DDNode s u -> DDNode s u -> Int -> ST s (Maybe (DDNode s u))
 }
 
 constructOps :: STDdManager s u -> Ops s u
@@ -104,4 +105,5 @@ constructOps m = Ops {..}
     readPeakNodeCount      = C.readPeakNodeCount m
     regular                = C.regular
     reduceHeap             = C.cuddReduceHeap m
+    andLimit               = C.andLimit m
     
