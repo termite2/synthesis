@@ -111,6 +111,45 @@ doEnVars qFunc ops@Ops{..} strat envars = do
 doEnCont  = doEnVars bforall
 doEnUCont = doEnVars bexists
 
+groupSize = 1000
+
+andLimit2 :: Ops s u -> Int -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u))
+andLimit2 Ops{..} limit x y = do
+    dsx <- dagSize x
+    case dsx > limit of
+        True -> return Nothing
+        False -> do
+            dsy <- dagSize y
+            case dsy > limit of 
+                True -> return Nothing
+                False -> do
+                    res <- band x y
+                    dsr <- dagSize res
+                    case dsr > limit of
+                        True -> do
+                            deref res
+                            return Nothing
+                        False -> return $ Just res
+
+groupTrels :: Ops s u -> [(DDNode s u, DDNode s u)] -> ST s [(DDNode s u, DDNode s u)]
+groupTrels _ [] = return []
+groupTrels ops@Ops{..} (hd:rst) = groupTrels' hd rst
+    where
+    groupTrels' accum [] = return [accum]
+    groupTrels' (accum@(accumCube, accumRel)) (allRels@((hdCube, hdRel):rels)) = do
+        res <- andLimit2 ops groupSize accumRel hdRel 
+        case res of 
+            Nothing -> do
+                sz <- dagSize accumRel
+                traceST $ show sz
+                res <- groupTrels ops allRels
+                return $ accum : res
+            Just res -> do
+                mapM deref [accumRel, hdRel]
+                cb <- band accumCube hdCube
+                mapM deref [accumCube, hdCube]
+                groupTrels' (cb, res) rels
+
 partitionedThing :: Ops s u -> [(DDNode s u, DDNode s u)] -> DDNode s u -> ST s (DDNode s u)
 partitionedThing Ops{..} pairs win = do
     ref win
@@ -257,6 +296,9 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     outcomeCube <- gets $ _outcomeCube . _sections
     updateExprs <- lift $ mapM (bexists outcomeCube) updateExprs'
     lift $ mapM deref updateExprs'
+    cubes <- lift $ mapM (nodesToCube . snd) toUpdate
+    groups <- lift $ groupTrels ops $ zip cubes updateExprs
+    lift $ traceST $ "Number of transition partitions: " ++ show (length groups)
 
     --create the consistency constraints
     let consistentPlusCULCont  = btrue
@@ -267,10 +309,9 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     consistentMinusCULCont <- lift $ conj ops $ map (bnot . sel3) $ Map.elems labelPreds
     let consistentMinusCULUCont = consistentMinusCULCont
     lift $ ref consistentMinusCULUCont
-    cubes <- lift $ mapM (nodesToCube . snd) toUpdate
     --construct the RefineDynamic and RefineStatic
     let rd = RefineDynamic {
-            trans  = zip cubes updateExprs,
+            trans  = groups,
             ..
         }
         rs = RefineStatic {
@@ -313,6 +354,8 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     updateExprs  <- lift $ mapM (bexists outcomeCube) updateExprs'
     lift $ mapM deref updateExprs'
     cubes <- lift $ mapM (nodesToCube . snd) _allocatedStateVars
+    groups <- lift $ groupTrels ops $ zip cubes updateExprs
+    lift $ traceST $ "Number of transition partitions: " ++ show (length groups)
 
     --TODO why is this commented out?
     {-
@@ -322,7 +365,8 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     -}
 
     return rd {
-        trans  = (zip cubes updateExprs) ++ trans
+        --TODO does this order matter
+        trans  = groups ++ trans
     }
 
 refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
