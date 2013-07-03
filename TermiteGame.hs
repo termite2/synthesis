@@ -3,7 +3,9 @@ module TermiteGame (
     Abstractor(..),
     absRefineLoop,
     RefineStatic(..),
-    RefineDynamic(..)
+    RefineDynamic(..),
+    cex,
+    strat
     ) where
 
 import Control.Monad.ST
@@ -619,11 +621,21 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
         mapM deref [winCont, winUCont]
         return (win, stratUCont)
 
+data RefineInfo s u sp lp = RefineInfo {
+    si :: SectionInfo s u,
+    rs :: RefineStatic s u,
+    rd :: RefineDynamic s u,
+    db :: DB s u sp lp,
+    lp :: Lab s u,
+    wn :: DDNode s u,
+    op :: Ops s u
+}
+
 --The abstraction-refinement loop
-absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp -> o -> ST s ((Bool, RefineStatic s u, RefineDynamic s u), DB s u sp lp)
+absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp -> o -> ST s (Bool, RefineInfo s u sp lp)
 absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
     idb <- initialDB ops
-    flip runStateT idb $ do
+    ((winning, (si, rs, rd, lp, wn)), db) <- flip runStateT idb $ do
         (rd, rs) <- initialAbstraction ops spec
         lift $ debugDo 1 $ traceST "Refinement state after initial abstraction: " 
         lift $ debugDo 1 $ traceST $ "Goal is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ goal rs)
@@ -631,53 +643,59 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
         lift $ debugDo 1 $ traceST $ "Init is: " ++ (bddSynopsis ops $ TermiteGame.init rs)
         lift $ ref bfalse
         refineLoop ops rs rd btrue
-        where
-            refineLoop :: Ops s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Bool, RefineStatic s u, RefineDynamic s u)
-            refineLoop ops@Ops{..} rs@RefineStatic{..} = refineLoop'
-                where 
-                refineLoop' :: RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Bool, RefineStatic s u, RefineDynamic s u)
-                refineLoop' rd@RefineDynamic{..} lastWin = do
-                    si@SectionInfo{..} <- gets _sections
-                    lift $ setVarMap _trackedNodes _nextNodes
-                    labelPreds <- gets $ _labelVars . _symbolTable
-                    let lp = map (sel1 &&& sel3) $ Map.elems labelPreds
-                    hasOutgoings <- lift $ doHasOutgoings ops trans
-                    winRegion <- lift $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin
-                    lift $ deref lastWin
-                    winning <- lift $ bnot winRegion `leq` bnot init
-                    --Alive: winRegion, rd, rs, hasOutgoings
-                    case winning of
-                        False -> lift $ do
-                            traceST "Losing"
-                            mapM deref [winRegion, hasOutgoings]
-                            return (False, rs, rd)
-                        True -> do
-                            lift $ traceST "Possibly winning, Confirming with further refinement"
-                            res <- mSumMaybe $ flip map goal $ \g -> do
-                                overAndGoal <- lift $ winRegion .& g
-                                underReach <- lift $ solveReach (cPreUnder ops si rs rd hasOutgoings lp) ops rs winRegion overAndGoal
-                                urog <- lift $ underReach .| overAndGoal
-                                lift $ deref underReach
-                                res <- mSumMaybe $ flip map fair $ \fairr -> do
-                                    newWin <- lift $ solveFair (cPreOver ops si rs rd hasOutgoings lp) ops rs winRegion urog fairr
-                                    res <- refineConsistency ops ts rd rs hasOutgoings newWin urog fairr
-                                    case res of
-                                        Just newRD -> do
-                                            lift $ traceST "Refined consistency relations. Re-solving..."
-                                            lift $ mapM deref [newWin]
+    return $ (winning, RefineInfo{op=ops, ..})
+    where
+    refineLoop ops@Ops{..} rs@RefineStatic{..} = refineLoop'
+        where 
+        refineLoop' rd@RefineDynamic{..} lastWin = do
+            si@SectionInfo{..} <- gets _sections
+            lift $ setVarMap _trackedNodes _nextNodes
+            labelPreds <- gets $ _labelVars . _symbolTable
+            let lp = map (sel1 &&& sel3) $ Map.elems labelPreds
+            hasOutgoings <- lift $ doHasOutgoings ops trans
+            winRegion <- lift $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin
+            lift $ deref lastWin
+            winning <- lift $ bnot winRegion `leq` bnot init
+            --Alive: winRegion, rd, rs, hasOutgoings
+            case winning of
+                False -> lift $ do
+                    traceST "Losing"
+                    mapM deref [hasOutgoings]
+                    return (False, (si, rs, rd, lp, winRegion))
+                True -> do
+                    lift $ traceST "Possibly winning, Confirming with further refinement"
+                    res <- mSumMaybe $ flip map goal $ \g -> do
+                        overAndGoal <- lift $ winRegion .& g
+                        underReach <- lift $ solveReach (cPreUnder ops si rs rd hasOutgoings lp) ops rs winRegion overAndGoal
+                        urog <- lift $ underReach .| overAndGoal
+                        lift $ deref underReach
+                        res <- mSumMaybe $ flip map fair $ \fairr -> do
+                            newWin <- lift $ solveFair (cPreOver ops si rs rd hasOutgoings lp) ops rs winRegion urog fairr
+                            res <- refineConsistency ops ts rd rs hasOutgoings newWin urog fairr
+                            case res of
+                                Just newRD -> do
+                                    lift $ traceST "Refined consistency relations. Re-solving..."
+                                    lift $ mapM deref [newWin]
+                                    return $ Just newRD
+                                Nothing -> do
+                                    lift $ traceST "Could not refine consistency relations. Attempting to refine untracked state variables"
+                                    res <- lift $ pickUntrackedToPromote ops si rd rs lp hasOutgoings newWin urog fairr
+                                    lift $ mapM deref [newWin]
+                                    case res of 
+                                        Just vars -> do
+                                            newRD <- promoteUntracked ops spec rd vars 
                                             return $ Just newRD
-                                        Nothing -> do
-                                            lift $ traceST "Could not refine consistency relations. Attempting to refine untracked state variables"
-                                            res <- lift $ pickUntrackedToPromote ops si rd rs lp hasOutgoings newWin urog fairr
-                                            lift $ mapM deref [newWin]
-                                            case res of 
-                                                Just vars -> do
-                                                    newRD <- promoteUntracked ops spec rd vars 
-                                                    return $ Just newRD
-                                                Nothing -> lift $ do
-                                                    return Nothing
-                                lift $ mapM deref [urog, overAndGoal, hasOutgoings]
-                                return res
-                            case res of 
-                                Nothing -> return (True, rs, rd)
-                                Just rd -> refineLoop' rd winRegion
+                                        Nothing -> lift $ do
+                                            return Nothing
+                        lift $ mapM deref [urog, overAndGoal, hasOutgoings]
+                        return res
+                    case res of 
+                        Nothing -> return (True, (si, rs, rd, lp, winRegion))
+                        Just rd -> refineLoop' rd winRegion
+
+cex :: RefineInfo s u sp lp -> ST s [[DDNode s u]]
+cex RefineInfo{..} = counterExample op si rs rd lp wn
+
+strat :: RefineInfo s u sp lp -> ST s [[(DDNode s u, DDNode s u)]]
+strat RefineInfo{..} = strategy op si rs rd lp wn
+
