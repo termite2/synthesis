@@ -287,6 +287,15 @@ withTmp' Ops{..} func = do
     lift $ deref var
     return res
 
+withTmpGoal' :: Ops s u -> (DDNode s u -> StateT (GoalState s u sp lp) (ST s) a) -> StateT (GoalState s u sp lp) (ST s) a
+withTmpGoal' Ops{..} func = do
+    ind <- liftToGoalState allocIdx
+    var <- lift $ ithVar ind
+    res <- func var
+    liftToGoalState $ freeIdx ind
+    lift $ deref var
+    return res
+
 allVars' :: StateT (DB s u sp lp) (ST s) [BAVar sp lp]
 allVars' = do
     SymbolInfo {..} <- use symbolTable 
@@ -294,7 +303,7 @@ allVars' = do
 
 --Construct the VarOps for compiling particular parts of the spec
 goalOps :: Ord sp => Ops s u -> VarOps (GoalState s u sp lp) (BAVar sp lp) s u
-goalOps ops = VarOps {withTmp = undefined {-withTmp' ops -}, allVars = liftToGoalState allVars', ..}
+goalOps ops = VarOps {withTmp = withTmpGoal' ops, allVars = liftToGoalState allVars', ..}
     where
     getVar  (StateVar var size) = do
         SymbolInfo{..} <- use $ db . symbolTable
