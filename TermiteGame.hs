@@ -4,6 +4,7 @@ module TermiteGame (
     absRefineLoop,
     RefineStatic(..),
     RefineDynamic(..),
+    RefineInfo(..),
     cex,
     strat
     ) where
@@ -448,8 +449,8 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
 
             let (cStatePreds, cLabelPreds) = partitionStateLabelPreds si syi c
             --Alive : nothing
-            let groupedState = groupForUnsatCore cStatePreds
-                groupedLabel = groupForUnsatCore cLabelPreds
+            let groupedState = groupForUnsatCore (sel2 . fromJustNote "doConsistency" . flip Map.lookup _stateVars) cStatePreds
+                groupedLabel = groupForUnsatCore (sel2 . fromJustNote "doConsistency" . flip Map.lookup _labelVars) cLabelPreds
             lift $ traceST $ "state preds for solver: " ++ show groupedState
             lift $ traceST $ "label preds for solver: " ++ show groupedLabel
             case unsatCoreStateLabel groupedState groupedLabel of

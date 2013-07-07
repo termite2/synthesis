@@ -175,14 +175,17 @@ updateWrapper ops@Ops{..} updateExprConj'' = do
     lift $ deref updateExprConj'
     return updateExprConj
 
-groupForUnsatCore :: (Ord sp) => [((Int, sp), Bool)] -> [(sp, [Bool])]
-groupForUnsatCore svs = map (second $ map snd . sortBy (compare `on` fst)) $ aggregate svs
+groupForUnsatCore :: (Ord sp) => (sp -> [Int]) -> [((Int, sp), Bool)] -> [(sp, [Bool])]
+groupForUnsatCore func svs = map (uncurry reconstruct) $ aggregate svs
     where    
     aggregate args = Map.toList $ foldl f Map.empty args
         where
         f mp ((idx, a), b) = case Map.lookup a mp of
-            Just x -> Map.insert a ((idx, b) : x) mp
+            Just x  -> Map.insert a ((idx, b) : x) mp
             Nothing -> Map.insert a [(idx, b)] mp
+    reconstruct pred list = (pred, map funcy $ func pred)
+        where
+        funcy idx = maybe False snd $ find ((==idx) . fst) list 
 
 setupManager :: ST s (STDdManager s u)
 setupManager = do
