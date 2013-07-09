@@ -515,7 +515,6 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
                 thing2 <- thing .| soFarOrWinAndGoal
                 deref thing
                 (win', strats) <- cpre hasOutgoings thing2
-                deref winFair
                 win <- win' .| accum 
                 deref win'
                 return (win, strats)
