@@ -494,7 +494,7 @@ fixedPoint2 ops@Ops{..} start thing func = do
         True -> return (start, thing')
         False -> fixedPoint2 ops res thing' func
 
-strategy :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s [[(DDNode s u, DDNode s u)]]
+strategy :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s [[DDNode s u]]
 strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
     hasOutgoings <- doHasOutgoings ops trans
     --For each goal
@@ -502,7 +502,7 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         winAndGoal <- goal .& win
         ref bfalse
         --Reachabiliy least fixedpoint
-        res <- fixedPoint2 ops bfalse (repeat (bfalse, bfalse)) $ \soFar strats -> do 
+        res <- fixedPoint2 ops bfalse (repeat bfalse) $ \soFar strats -> do 
             soFarOrWinAndGoal <- soFar .| winAndGoal
             ref bfalse
             --For each fair
@@ -517,6 +517,7 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
                 (win', strats) <- cpre hasOutgoings thing2
                 win <- win' .| accum 
                 deref win'
+                when (winFair /= win') (error "wrs not equal")
                 return (win, strats)
             deref soFarOrWinAndGoal
             strats <- zipWithM (combineStrats soFar) strats strats'
@@ -531,16 +532,12 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
     when (win' /= win) (error "Winning regions are not equal in strategy generation")
     return strats
     where
-    combineStrats prevWin (oldC, oldU) (newC, newU) = do
+    combineStrats prevWin oldC newC = do
         c <- newC .& bnot prevWin
         deref newC
         c' <- c .| oldC
         deref oldC
-        u <- newU .& bnot prevWin
-        deref newU
-        u' <- u .| oldU
-        deref oldU
-        return (c', u')
+        return c'
     cpre hasOutgoings target = do
         strat      <- cpre' ops si rd target
         stratContHas <- strat .& hasOutgoings
@@ -550,9 +547,11 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         deref strat
         winCont    <- andAbstract _labelCube consistentMinusCULCont stratCont
         winUCont   <- liftM bnot $ andAbstract _labelCube consistentPlusCULUCont stratUCont
-        win        <- bite cont winCont winUCont
-        mapM deref [winCont, stratUCont]
-        return (win, (stratCont, winUCont))
+        su         <- bite cont winCont winUCont
+        win        <- bforall _untrackedCube su
+        deref su
+        mapM deref [winCont, stratUCont, winUCont]
+        return (win, stratCont)
 
 counterExample :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s [[DDNode s u]]
 counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
@@ -704,6 +703,6 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
 cex :: RefineInfo s u sp lp -> ST s [[DDNode s u]]
 cex RefineInfo{..} = counterExample op si rs rd lp wn
 
-strat :: RefineInfo s u sp lp -> ST s [[(DDNode s u, DDNode s u)]]
+strat :: RefineInfo s u sp lp -> ST s [[DDNode s u]]
 strat RefineInfo{..} = strategy op si rs rd lp wn
 
