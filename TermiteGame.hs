@@ -172,21 +172,21 @@ doHasOutgoings Ops{..} pairs = do
         return a
 
 --Find the <state, untracked, label> tuples that are guaranteed to lead to the goal for a given transition relation
-cpre' :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
-cpre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} hasOutgoings target = do
+cpre' :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> ST s (DDNode s u)
+cpre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} target = do
     nextWin  <- mapVars target
     strat    <- partitionedThing ops trans nextWin
     deref nextWin
-    stratAvl <- hasOutgoings .& strat
-    deref strat
-    return stratAvl
+    return strat
    
 --Returns the set of <state, untracked> pairs that are winning 
 cpre'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds cc cu target = do
-    strat      <- cpre' ops si rd hasOutgoingsCont target
+    strat      <- cpre' ops si rd target
     --TODO should they both be doEnCont?
-    stratCont  <- doEnCont ops strat labelPreds
+    stratContHas <- strat .& hasOutgoingsCont
+    stratCont  <- doEnCont ops stratContHas labelPreds
+    deref stratContHas
     stratUCont <- doEnCont ops (bnot strat) labelPreds
     deref strat
     winCont    <- andAbstract _labelCube cc stratCont
@@ -392,10 +392,12 @@ refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Re
     win''              <- lift $ win .& fairr
     win'               <- lift $ win'' .| winning
     lift $ deref win''
-    winNoConstraint'   <- lift $ cpre' ops si rd hasOutgoings win'
-    let lp             =  map (sel1 &&& sel3) $ Map.elems _labelVars
-    winNoConstraint    <- lift $ doEnCont ops winNoConstraint' lp
+    winNoConstraint'   <- lift $ cpre' ops si rd win'
+    stratContHas       <- lift $ winNoConstraint' .& hasOutgoings
     lift $ deref winNoConstraint'
+    let lp             =  map (sel1 &&& sel3) $ Map.elems _labelVars
+    winNoConstraint    <- lift $ doEnCont ops stratContHas lp
+    lift $ deref stratContHas
     winNoConstraint2   <- lift $ cont .& winNoConstraint
     lift $ mapM deref [win', winNoConstraint]
     res <- doConsistency ops ts consistentPlusCULCont consistentMinusCULCont winNoConstraint2
@@ -413,7 +415,7 @@ refineConsistencyUCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@R
     win''              <- lift $ win .& fairr
     win'               <- lift $ win'' .| winning
     lift $ deref win''
-    winNoConstraint'   <- lift $ liftM bnot $ cpre' ops si rd btrue win'
+    winNoConstraint'   <- lift $ liftM bnot $ cpre' ops si rd win'
     let lp             =  map (sel1 &&& sel3) $ Map.elems _labelVars
     winNoConstraint    <- lift $ doEnCont ops winNoConstraint' lp
     lift $ deref winNoConstraint'
@@ -541,8 +543,10 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         deref oldU
         return (c', u')
     cpre hasOutgoings target = do
-        strat      <- cpre' ops si rd hasOutgoings target
-        stratCont  <- doEnCont ops strat labelPreds
+        strat      <- cpre' ops si rd target
+        stratContHas <- strat .& hasOutgoings
+        stratCont  <- doEnCont ops stratContHas labelPreds
+        deref stratContHas
         stratUCont <- doEnCont ops (bnot strat) labelPreds
         deref strat
         winCont    <- andAbstract _labelCube consistentMinusCULCont stratCont
@@ -563,6 +567,8 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
             --TODO optimise: dont use btrue below
             winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs btrue (bnot tgt)
             (winStrat, strat) <- stratReach si rs rd hasOutgoings fair win strats winBuchi tgt
+            traceST "asdf"
+            when (winStrat /= winBuchi) (traceST "tttttt")
             deref winStrat
             deref tgt
             tot'              <- tot .| winBuchi
@@ -609,8 +615,10 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
             return res
 
     strategy SectionInfo{..} RefineStatic{..} RefineDynamic{..} hasOutgoings target = do
-        strt        <- cpre' ops si rd hasOutgoings (bnot target)
-        stratCont'  <- doEnCont ops strt labelPreds
+        strt        <- cpre' ops si rd (bnot target)
+        stratContHas <- strt .& hasOutgoings
+        stratCont'  <- doEnCont ops stratContHas labelPreds
+        deref stratContHas
         winCont     <- liftM bnot $ andAbstract _labelCube consistentPlusCULCont stratCont'
         deref stratCont'
         stratUCont' <- doEnCont ops (bnot strt) labelPreds
