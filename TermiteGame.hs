@@ -39,6 +39,9 @@ debugLevel = 0
 debugDo :: Monad m => Int -> m () -> m ()
 debugDo lvl = when (lvl <= debugLevel) 
 
+traceMsg :: String -> ST s ()
+traceMsg = unsafeIOToST . putStr
+
 forAccumM i l f = foldM f i l
 
 --Input to the refinement algorithm. Represents the spec.
@@ -144,7 +147,6 @@ groupTrels ops@Ops{..} (hd:rst) = groupTrels' hd rst
         case res of 
             Nothing -> do
                 sz <- dagSize accumRel
-                traceST $ show sz
                 res <- groupTrels ops allRels
                 return $ accum : res
             Just res -> do
@@ -293,6 +295,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     lift $ check "After compiling fair" ops
     --get the abstract update functions for the goal predicates and variables
     let toUpdate = nub $ _allocatedStateVars newVarsGoals ++ _allocatedStateVars newVarsFairs ++ _allocatedStateVars newVarsCont
+    lift $ traceST $ "Initial transition relation state vars: \n" ++ (intercalate "\n" $ map (('\t' :) . show . fst) $ toUpdate)
     updateExprs' <- doUpdate ops (updateAbs toUpdate)
     outcomeCube <- gets $ _outcomeCube . _sections
     updateExprs <- lift $ mapM (bexists outcomeCube) updateExprs'
@@ -344,7 +347,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     --look up the predicates to promote
     stateRev             <- gets $ _stateRev . _symbolTable
     let refineVars       =  nub $ map (fromJustNote "promoteUntracked: untracked indices not in stateRev" . flip Map.lookup stateRev) indices
-    lift $ traceST $ "Promoting: " ++ show refineVars
+    lift $ traceST $ "* Promoting: \n" ++ (intercalate "\n" $ map (('\t' :) . show) $ refineVars)
 
     NewVars{..}          <- promoteUntrackedVars ops refineVars
     labelPredsPreUpdate  <- gets $ _labelVars . _symbolTable
@@ -375,13 +378,9 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
     r1 <- refineConsistencyCont ops ts rd rs hasOutgoings win winning fairr
     case r1 of
         Just res -> do
-            lift $ traceST "refined controllable consistency"
             return $ Just res
         Nothing  -> do
             res <- refineConsistencyUCont ops ts rd rs win winning fairr
-            case res of 
-                Just _ -> lift $ traceST "refined uncontrollable consistency"
-                Nothing -> lift $ traceST "No consistency refinement possible"
             return res
 
 refineConsistencyCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
@@ -453,12 +452,12 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
             --Alive : nothing
             let groupedState = groupForUnsatCore (sel2 . fromJustNote "doConsistency" . flip Map.lookup _stateVars) cStatePreds
                 groupedLabel = groupForUnsatCore (sel2 . fromJustNote "doConsistency" . flip Map.lookup _labelVars) cLabelPreds
-            lift $ traceST $ "state preds for solver: " ++ show groupedState
-            lift $ traceST $ "label preds for solver: " ++ show groupedLabel
+            let fmt (name, enc) = show name ++ ":" ++ map (alt 'T' 'F') enc
+            lift $ traceMsg $ "* Refining Consistency: " ++ intercalate ", " (map fmt groupedState) ++ " -- " ++ intercalate ", " (map fmt groupedLabel) ++ " ..."
             case unsatCoreStateLabel groupedState groupedLabel of
                 Just (statePairs, labelPairs) -> do
                     --statePairs, labelPairs is inconsistent so subtract this from consistentPlusCUL
-                    lift $ traceST "refining consistentPlus"
+                    lift $ traceST "UNSAT"
                     inconsistent       <- lift $ stateLabelInconsistent ops syi statePairs labelPairs
                     consistentPlusCUL' <- lift $ andDeref ops cPlus (bnot inconsistent)
                     lift $ check "refineConsistency4" ops
@@ -466,7 +465,7 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
                 Nothing -> do
                     --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
                     lift $ deref winNoConstraint
-                    lift $ traceST "predicates are consistent. refining consistentMinus..."
+                    lift $ traceST "SAT"
                     eQuantExpr <- doUpdate ops (eQuant groupedLabel)
 
                     consistentCube'     <- lift $ stateLabelConsistent ops syi groupedLabel 
@@ -565,8 +564,7 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
             --TODO optimise: dont use btrue below
             winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs btrue (bnot tgt)
             (winStrat, strat) <- stratReach si rs rd hasOutgoings fair win strats winBuchi tgt
-            traceST "asdf"
-            when (winStrat /= winBuchi) (traceST "tttttt")
+            when (winStrat /= winBuchi) (traceST "Warning: counterexample winning regions are not equal")
             deref winStrat
             deref tgt
             tot'              <- tot .| winBuchi
@@ -670,7 +668,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                     mapM deref [hasOutgoings]
                     return (False, (si, rs, rd, lp, winRegion))
                 True -> do
-                    lift $ traceST "Possibly winning, Confirming with further refinement"
+                    lift $ debugDo 1 $ traceST "Possibly winning, Confirming with further refinement"
                     res <- mSumMaybe $ flip map goal $ \g -> do
                         overAndGoal <- lift $ winRegion .& g
                         underReach <- lift $ solveReach (cPreUnder ops si rs rd hasOutgoings lp) ops rs winRegion overAndGoal
@@ -681,11 +679,11 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                             res <- refineConsistency ops ts rd rs hasOutgoings newWin urog fairr
                             case res of
                                 Just newRD -> do
-                                    lift $ traceST "Refined consistency relations. Re-solving..."
+                                    lift $ debugDo 1 $ traceST "Refined consistency relations. Re-solving..."
                                     lift $ mapM deref [newWin]
                                     return $ Just newRD
                                 Nothing -> do
-                                    lift $ traceST "Could not refine consistency relations. Attempting to refine untracked state variables"
+                                    lift $ debugDo 1 $ traceST "Could not refine consistency relations. Attempting to refine untracked state variables"
                                     res <- lift $ pickUntrackedToPromote ops si rd rs lp hasOutgoings newWin urog fairr
                                     lift $ mapM deref [newWin]
                                     case res of 
