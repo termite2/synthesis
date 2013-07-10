@@ -23,6 +23,7 @@ import Data.Tuple.All
 import Data.Tuple
 import Debug.Trace as T
 import Control.Monad.State
+import System.IO
 
 import Safe
 
@@ -40,7 +41,9 @@ debugDo :: Monad m => Int -> m () -> m ()
 debugDo lvl = when (lvl <= debugLevel) 
 
 traceMsg :: String -> ST s ()
-traceMsg = unsafeIOToST . putStr
+traceMsg m = unsafeIOToST $ do
+    putStr m
+    hFlush stdout
 
 forAccumM i l f = foldM f i l
 
@@ -245,6 +248,8 @@ solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt goall = do
     where
     func target = do
         debugDo 1 $ traceST "solveReach: iteration"
+        sz <- dagSize target
+        traceMsg $ "r(" ++ show sz ++ ")"
         t1 <- target .| goall
         ref bfalse
         res <- forAccumM bfalse fair $ \accum val -> do
@@ -262,9 +267,11 @@ solveBuchi cpreFunc ops@Ops{..} rs@RefineStatic{..} startingPoint = do
     fixedPoint ops func startingPoint
     where
     func reachN = do
+        traceMsg "b"
         debugDo 1 $ traceST "solveBuchi: iteration"
         ref btrue
         res <- forAccumM btrue goal $ \accum val -> do
+            traceMsg "g"
             t1 <- reachN .& val
             res' <- solveReach cpreFunc ops rs reachN t1
             deref t1
@@ -659,6 +666,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
             let lp = map (sel1 &&& sel3) $ Map.elems labelPreds
             hasOutgoings <- lift $ doHasOutgoings ops trans
             winRegion <- lift $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin
+            lift $ traceST ""
             lift $ deref lastWin
             winning <- lift $ bnot winRegion `leq` bnot init
             --Alive: winRegion, rd, rs, hasOutgoings
@@ -672,6 +680,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                     res <- mSumMaybe $ flip map goal $ \g -> do
                         overAndGoal <- lift $ winRegion .& g
                         underReach <- lift $ solveReach (cPreUnder ops si rs rd hasOutgoings lp) ops rs winRegion overAndGoal
+                        lift $ traceST ""
                         urog <- lift $ underReach .| overAndGoal
                         lift $ deref underReach
                         res <- mSumMaybe $ flip map fair $ \fairr -> do
