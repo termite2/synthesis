@@ -26,6 +26,8 @@ import Control.Monad.State
 import System.IO
 
 import Safe
+import Data.Text.Lazy hiding (intercalate, map, take, length, zip, replicate)
+import Text.PrettyPrint.Leijen.Text
 
 import Util
 import RefineUtil
@@ -46,6 +48,18 @@ traceMsg m = unsafeIOToST $ do
     hFlush stdout
 
 forAccumM i l f = foldM f i l
+
+transSynopsys :: (Show sp, Show lp, Eq sp, Eq lp) => Ops s u -> sp -> DDNode s u -> StateT (DB s u sp lp) (ST s) ()
+transSynopsys Ops{..} name trans = do
+    SymbolInfo{..} <- gets _symbolTable
+    lift $ do
+        support <- supportIndices trans
+        sz      <- dagSize trans
+        let stateSup = nub $ catMaybes $ map (flip Map.lookup _stateRev) support
+            labelSup = nub $ map fst $ catMaybes $ map (flip Map.lookup _labelRev) support
+        --let doc = text (pack $ show name) <$$> indent 4 (text (pack $ "size: " ++ show sz) <$$> text (pack $ show stateSup ++ show labelSup)) 
+        let doc = text (pack $ show name) <$$> indent 4 (text (pack $ "size: " ++ show sz) <$$> (list $ map (text . pack . show) stateSup ++ map (text . pack . show) labelSup))
+        traceST $ show $ renderPretty 0.8 100 doc
 
 --Input to the refinement algorithm. Represents the spec.
 data Abstractor s u sp lp = Abstractor {
@@ -273,6 +287,7 @@ solveBuchi cpreFunc ops@Ops{..} rs@RefineStatic{..} startingPoint = do
         res <- forAccumM btrue goal $ \accum val -> do
             traceMsg "g"
             t1 <- reachN .& val
+            --TODO terminate when t1s are equal
             res' <- solveReach cpreFunc ops rs reachN t1
             deref t1
             res <- res' .& accum
@@ -307,6 +322,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     outcomeCube <- gets $ _outcomeCube . _sections
     updateExprs <- lift $ mapM (bexists outcomeCube) updateExprs'
     lift $ mapM deref updateExprs'
+    zipWithM (transSynopsys ops) (map fst toUpdate) updateExprs
     cubes <- lift $ mapM (nodesToCube . snd) toUpdate
     groups <- lift $ groupTrels ops $ zip cubes updateExprs
     lift $ traceST $ "Number of transition partitions: " ++ show (length groups)
@@ -364,6 +380,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     outcomeCube <- gets $ _outcomeCube . _sections
     updateExprs  <- lift $ mapM (bexists outcomeCube) updateExprs'
     lift $ mapM deref updateExprs'
+    zipWithM (transSynopsys ops) (map fst _allocatedStateVars) updateExprs
     cubes <- lift $ mapM (nodesToCube . snd) _allocatedStateVars
     groups <- lift $ groupTrels ops $ zip cubes updateExprs
     lift $ traceST $ "Number of transition partitions: " ++ show (length groups)
