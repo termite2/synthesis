@@ -202,7 +202,6 @@ cpre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} target = do
 cpre'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds cc cu target = do
     strat      <- cpre' ops si rd target
-    --TODO should they both be doEnCont?
     stratContHas <- strat .& hasOutgoingsCont
     stratCont  <- doEnCont ops stratContHas labelPreds
     deref stratContHas
@@ -234,11 +233,6 @@ cPreOver ops@Ops{..} = cPreHelper cpreOver' bexists ops
 
 cPreUnder :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
 cPreUnder ops@Ops{..} = cPreHelper cpreUnder' bforall ops
-
-winningSU :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
-winningSU ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds hasOutgoings target = do
-    res <- cpreOver' ops si rs rd hasOutgoings labelPreds target
-    return res
 
 solveFair :: (DDNode s u -> ST s (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 solveFair cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt winning fairr = do
@@ -356,7 +350,7 @@ pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} rs@Re
     win''  <- win .& fairr
     win'   <- win'' .| lastLFP
     deref win''
-    su     <- winningSU ops si rs rd labelPreds hasOutgoings win'
+    su     <- cpreOver' ops si rs rd hasOutgoings labelPreds win'
     deref win'
     toDrop <- (bnot su) .& win
     deref su
