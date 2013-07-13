@@ -116,7 +116,7 @@ refineLeastPreds ops@Ops{..} SectionInfo{..} newSU
     analyseCube :: DDNode s u -> ST s (Int, [Int])
     analyseCube cube' = do
         untrackedCube <- bexists _trackedCube cube'
-        support <- supportIndices _untrackedCube
+        support <- supportIndices untrackedCube
         deref untrackedCube
         return (length support, support)
 
