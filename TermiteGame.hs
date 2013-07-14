@@ -343,7 +343,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
         }
     return (rd, rs)
 
-refineStrategy = refineLeastPreds
+refineStrategy = refineFirstPrime
 
 pickUntrackedToPromote :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> RefineStatic s u -> Lab s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (Maybe [Int])
 pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} rs@RefineStatic{..} labelPreds hasOutgoings win lastLFP fairr = do
