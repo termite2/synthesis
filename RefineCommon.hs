@@ -77,15 +77,18 @@ refineAny Ops{..} SectionInfo{..} newSU = do
 
 refineFirstPrime :: Ops s u -> SectionInfo s u -> DDNode s u -> ST s (Maybe [Int])
 refineFirstPrime Ops{..} SectionInfo{..} newSU = do
-    (lc, sz) <- largestCube newSU
-    prime    <- makePrime lc newSU
-    deref lc
-    si       <- supportIndices prime
-    deref prime
-    let ui = si `intersect` _untrackedInds
-    return $ case ui of
-        [] -> Nothing
-        x  -> Just x
+    if newSU == bfalse then
+        return Nothing
+    else do
+        (lc, sz) <- largestCube newSU
+        prime    <- makePrime lc newSU
+        deref lc
+        si       <- supportIndices prime
+        deref prime
+        let ui = si `intersect` _untrackedInds
+        case ui of
+            [] -> error "refineFirstPrime"
+            x  -> return $ Just x
 
 --Refine the least number of untracked state predicates possible to make progress
 refineLeastPreds :: forall s u o sp lp. Ops s u -> SectionInfo s u -> DDNode s u -> ST s (Maybe [Int])
