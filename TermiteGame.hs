@@ -695,6 +695,8 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                         urog <- lift $ underReach .| overAndGoal
                         lift $ deref underReach
                         res <- mSumMaybe $ flip map fair $ \fairr -> do
+                            --TODO this is a hack
+                            lift $ ref consistentPlusCULCont
                             --TODO is this the right cpre?
                             newWin <- lift $ solveFair (cPreOver ops si rs rd hasOutgoings lp) ops rs winRegion urog fairr
                             res <- refineConsistency ops ts rd rs hasOutgoings newWin urog fairr
