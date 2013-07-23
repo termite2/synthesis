@@ -14,7 +14,8 @@ module RefineCommon (
     stateLabelConsistent,
     updateWrapper,
     groupForUnsatCore,
-    setupManager
+    setupManager,
+    makeCubeInt
     ) where
 
 import Control.Monad.State

@@ -92,7 +92,8 @@ data RefineDynamic s u = RefineDynamic {
     consistentMinusCULCont  :: DDNode s u,
     consistentPlusCULCont   :: DDNode s u,
     consistentMinusCULUCont :: DDNode s u,
-    consistentPlusCULUCont  :: DDNode s u
+    consistentPlusCULUCont  :: DDNode s u,
+    inconsistentInit        :: DDNode s u
 }
 
 derefDynamic :: Ops s u -> RefineDynamic s u -> ST s ()
@@ -326,6 +327,8 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
         consistentPlusCULUCont = btrue
     lift $ ref consistentPlusCULCont
     lift $ ref consistentPlusCULUCont
+    let inconsistentInit = bfalse
+    lift $ ref inconsistentInit
     labelPreds <- gets $ _labelVars . _symbolTable
     consistentMinusCULCont <- lift $ conj ops $ map (bnot . sel3) $ Map.elems labelPreds
     let consistentMinusCULUCont = consistentMinusCULCont
@@ -654,6 +657,28 @@ data RefineInfo s u sp lp = RefineInfo {
     op :: Ops s u
 }
 
+refineInit :: Ord sp => Ops s u -> TheorySolver s u sp lp -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (RefineDynamic s u, Bool)
+refineInit ops@Ops{..} ts@TheorySolver{..} rs@RefineStatic{..} rd@RefineDynamic{..} winRegion = do
+    syi@SymbolInfo{..} <- gets _symbolTable 
+    si@SectionInfo{..} <- gets _sections
+    winning <- lift $ leqUnless (bnot winRegion) (bnot init) inconsistentInit
+    case winning of 
+        False -> do
+            witness' <- lift $ init .& bnot winRegion
+            witness  <- lift $ witness' .& bnot inconsistentInit
+            lift $ deref witness'
+            c <- lift $ presentInLargePrime ops witness
+            lift $ deref witness
+            let groupedState = groupForUnsatCore (sel2 . fromJustNote "refineInit" . flip Map.lookup _stateVars) $ indicesToStatePreds syi c
+            case unsatCoreState groupedState of
+                Nothing -> return (rd, False)
+                Just uc -> do
+                    lift $ traceST "* Found inconsistent initial state. Refining..."
+                    unsat <- lift $ makeCubeInt ops $ map (first (sel1 . fromJustNote "refineInit" . flip Map.lookup _stateVars)) uc
+                    inconsistentInit' <- lift $ orDeref ops inconsistentInit unsat
+                    refineInit ops ts rs (rd {inconsistentInit = inconsistentInit'}) winRegion
+        True  -> return (rd, True)
+
 --The abstraction-refinement loop
 absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp -> o -> ST s (Bool, RefineInfo s u sp lp)
 absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
@@ -679,7 +704,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
             winRegion <- lift $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin
             lift $ traceST ""
             lift $ deref lastWin
-            winning <- lift $ bnot winRegion `leq` bnot init
+            (rd, winning) <- refineInit ops ts rs rd winRegion
             --Alive: winRegion, rd, rs, hasOutgoings
             case winning of
                 False -> lift $ do
