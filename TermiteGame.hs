@@ -745,7 +745,9 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                         lift $ mapM deref [urog, overAndGoal, hasOutgoings]
                         return res
                     case res of 
-                        Nothing -> return (True, (si, rs, rd, lp, winRegion))
+                        Nothing -> do 
+                            lift $ traceST "Winning"
+                            return (True, (si, rs, rd, lp, winRegion))
                         Just rd -> refineLoop' rd winRegion
 
 cex :: RefineInfo s u sp lp -> ST s [[DDNode s u]]
