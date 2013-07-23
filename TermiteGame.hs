@@ -516,6 +516,7 @@ fixedPoint2 ops@Ops{..} start thing func = do
 
 strategy :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s [[DDNode s u]]
 strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
+    traceST "* Computing strategy"
     hasOutgoings <- doHasOutgoings ops trans
     --For each goal
     res <- forM goal $ \goal -> do 
@@ -575,6 +576,7 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
 
 counterExample :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s [[DDNode s u]]
 counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
+    traceST "* Computing counterexample"
     hasOutgoings <- doHasOutgoings ops trans 
     sequence $ replicate (length goal * length fair) (ref bfalse)
     ref bfalse
