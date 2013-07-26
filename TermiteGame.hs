@@ -549,64 +549,66 @@ fixedPoint2 ops@Ops{..} start thing func = do
         True -> return (start, thing')
         False -> fixedPoint2 ops res thing' func
 
-strategy :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s [[DDNode s u]]
+strategy :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) [[DDNode s u]]
 strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
-    traceST "* Computing strategy"
-    hasOutgoings <- evalResourceT $ doHasOutgoings ops trans
+    lift $ traceST "* Computing strategy"
+    hasOutgoings <- doHasOutgoings ops trans
     --For each goal
     res <- forM goal $ \goal -> do 
-        winAndGoal <- goal .& win
-        ref bfalse
+        winAndGoal <- $r2 band goal win
+        $r $ return bfalse
+        lift $ ref bfalse
         --Reachabiliy least fixedpoint
-        res <- fixedPoint2 ops bfalse (repeat bfalse) $ \soFar strats -> do 
-            soFarOrWinAndGoal <- soFar .| winAndGoal
-            ref bfalse
+        res <- fixedPoint2R ops bfalse (repeat bfalse) $ \soFar strats -> do 
+            soFarOrWinAndGoal <- $r2 bor soFar winAndGoal
+            $r $ return bfalse
+            lift $ ref bfalse
             --For each fair
             (res, strats') <- forAccumLM bfalse fair $ \accum fair -> do
                 --Fairness greatest fixedpoint
                 --TODO optimise: dont use btrue below
-                winFair <- evalResourceT $ solveFair (cPreUnder ops si rs rd hasOutgoings labelPreds)  ops rs btrue soFarOrWinAndGoal fair
-                thing <- winFair .& fair
-                deref winFair
-                thing2 <- thing .| soFarOrWinAndGoal
-                deref thing
+                winFair <- solveFair (cPreUnder ops si rs rd hasOutgoings labelPreds)  ops rs btrue soFarOrWinAndGoal fair
+                thing <- $r2 band winFair fair
+                $d deref winFair
+                thing2 <- $r2 bor thing soFarOrWinAndGoal
+                $d deref thing
                 (win', strats) <- cpre hasOutgoings thing2
-                win <- win' .| accum 
-                deref win'
+                win <- $r2 bor win' accum 
+                $d deref win'
                 when (winFair /= win') (error "wrs not equal")
                 return (win, strats)
-            deref soFarOrWinAndGoal
+            $d deref soFarOrWinAndGoal
             strats <- zipWithM (combineStrats soFar) strats strats'
             return (res, strats)
-        deref winAndGoal
+        $d deref winAndGoal
         return res
-    deref hasOutgoings
+    $d deref hasOutgoings
     let (wins, strats) = unzip res
-    win' <- conj ops wins
-    mapM deref wins
-    deref win'
+    win' <- $r $ conj ops wins
+    mapM ($d deref) wins
+    $d deref win'
     when (win' /= win) (error "Winning regions are not equal in strategy generation")
     return strats
     where
     combineStrats prevWin oldC newC = do
-        c <- newC .& bnot prevWin
-        deref newC
-        c' <- c .| oldC
-        deref oldC
+        c <- $r2 band newC (bnot prevWin)
+        $d deref newC
+        c' <- $r2 bor c oldC
+        $d deref oldC
         return c'
     cpre hasOutgoings target = do
-        strat      <- evalResourceT $ cpre' ops si rd target
-        stratContHas <- strat .& hasOutgoings
-        stratCont  <- evalResourceT $ doEnCont ops stratContHas labelPreds
-        deref stratContHas
-        stratUCont <- evalResourceT $ doEnCont ops (bnot strat) labelPreds
-        deref strat
-        winCont    <- andAbstract _labelCube consistentMinusCULCont stratCont
-        winUCont   <- liftM bnot $ andAbstract _labelCube consistentPlusCULUCont stratUCont
-        su         <- bite cont winCont winUCont
-        win        <- bforall _untrackedCube su
-        deref su
-        mapM deref [winCont, stratUCont, winUCont]
+        strat      <- cpre' ops si rd target
+        stratContHas <- $r2 band strat hasOutgoings
+        stratCont  <- doEnCont ops stratContHas labelPreds
+        $d deref stratContHas
+        stratUCont <- doEnCont ops (bnot strat) labelPreds
+        $d deref strat
+        winCont    <- $r2 (andAbstract _labelCube) consistentMinusCULCont stratCont
+        winUCont   <- liftM bnot $ $r2 (andAbstract _labelCube) consistentPlusCULUCont stratUCont
+        su         <- $r3 bite cont winCont winUCont
+        win        <- $r1 (bforall _untrackedCube) su
+        $d deref su
+        mapM ($d deref) [winCont, stratUCont, winUCont]
         return (win, stratCont)
 
 fixedPoint2R :: Ops s u -> DDNode s u -> a -> (DDNode s u -> a -> ResourceT (DDNode s u) (ST s) (DDNode s u, a)) -> ResourceT (DDNode s u) (ST s) (DDNode s u, a)
@@ -799,6 +801,6 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
 cex :: RefineInfo s u sp lp -> ResourceT (DDNode s u) (ST s) [[DDNode s u]]
 cex RefineInfo{..} = counterExample op si rs rd lp wn
 
-strat :: RefineInfo s u sp lp -> ST s [[DDNode s u]]
+strat :: RefineInfo s u sp lp -> ResourceT (DDNode s u) (ST s) [[DDNode s u]]
 strat RefineInfo{..} = strategy op si rs rd lp wn
 
