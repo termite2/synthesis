@@ -344,7 +344,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     outcomeCube <- gets $ _outcomeCube . _sections
     updateExprs <- lift $ mapM ($r . bexists outcomeCube) updateExprs'
     lift $ mapM ($d deref) updateExprs'
-    --zipWithM (hoist lift $ transSynopsys ops) (map fst toUpdate) updateExprs
+    hoist lift $ zipWithM (transSynopsys ops) (map fst toUpdate) updateExprs
     cubes <- lift $ mapM ($r . nodesToCube . snd) toUpdate
     groups <- lift $ groupTrels ops $ zip cubes updateExprs
     lift $ lift $ traceST $ "Number of transition partitions: " ++ show (length groups)
