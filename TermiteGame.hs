@@ -609,79 +609,89 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         mapM deref [winCont, stratUCont, winUCont]
         return (win, stratCont)
 
-counterExample :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s [[DDNode s u]]
+fixedPoint2R :: Ops s u -> DDNode s u -> a -> (DDNode s u -> a -> ResourceT (DDNode s u) (ST s) (DDNode s u, a)) -> ResourceT (DDNode s u) (ST s) (DDNode s u, a)
+fixedPoint2R ops@Ops{..} start thing func = do
+    (res, thing') <- func start thing
+    $d deref start 
+    case (res==start) of 
+        True -> return (start, thing')
+        False -> fixedPoint2R ops res thing' func
+
+counterExample :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) [[DDNode s u]]
 counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
-    traceST "* Computing counterexample"
-    hasOutgoings <- evalResourceT $ doHasOutgoings ops trans 
-    sequence $ replicate (length goal * length fair) (ref bfalse)
-    ref bfalse
-    (win', strat) <- fixedPoint2 ops bfalse (zip goal $ repeat $ zip fair $ repeat bfalse) $ \win strat -> do
-        ref bfalse
+    lift $ traceST "* Computing counterexample"
+    hasOutgoings <- doHasOutgoings ops trans 
+    lift $ sequence $ replicate (length goal * length fair) (ref bfalse)
+    sequence $ replicate (length goal * length fair + 1) ($r $ return bfalse)
+    lift $ ref bfalse
+    (win', strat) <- fixedPoint2R ops bfalse (zip goal $ repeat $ zip fair $ repeat bfalse) $ \win strat -> do
+        lift $ ref bfalse
+        $r $ return bfalse
         res <- forAccumLM bfalse strat $ \tot (goal, strats) -> do
-            tgt               <- bnot goal .| win
+            tgt               <- $r2 bor (bnot goal) win
             --TODO optimise: dont use btrue below
-            winBuchi          <- liftM bnot $ evalResourceT $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs btrue (bnot tgt)
+            winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs btrue (bnot tgt)
             (winStrat, strat) <- stratReach si rs rd hasOutgoings fair win strats winBuchi tgt
-            when (winStrat /= winBuchi) (traceST "Warning: counterexample winning regions are not equal")
-            deref winStrat
-            deref tgt
-            tot'              <- tot .| winBuchi
-            mapM deref [tot, winBuchi]
+            when (winStrat /= winBuchi) (lift $ traceST "Warning: counterexample winning regions are not equal")
+            $d deref winStrat
+            $d deref tgt
+            tot' <- $r2 bor tot winBuchi
+            mapM ($d deref) [tot, winBuchi]
             return (tot', (goal, strat))
         return res
     when (win /= bnot win') (error "the counterexample winning region is not the complement of the game winning region")
-    traceST $ bddSynopsis ops win
-    deref hasOutgoings
+    lift $ traceST $ bddSynopsis ops win
+    $d deref hasOutgoings
     return $ map (map snd . snd) strat
 
     where
 
-    fixedPoint' ops = flip $ fixedPoint ops 
-
     target fair goal winN reach = do
-        a   <- reach .| fair
-        b   <- a .& winN
-        deref a
-        c   <- b .& goal
-        deref b
+        a   <- $r2 bor reach fair
+        b   <- $r2 band a winN
+        $d deref a
+        c   <- $r2 band b goal
+        $d deref b
         return c
 
     --TODO check winning regions coincide
     stratReach si rs rd hasOutgoings fairs startingWin stratSoFar winN goal = do
-        ref startingWin
-        fixedPoint2 ops startingWin stratSoFar $ \reach strat -> do
-            ref btrue
+        $r $ return startingWin
+        lift $ ref startingWin
+        fixedPoint2R ops startingWin stratSoFar $ \reach strat -> do
+            $r $ return btrue
+            lift $ ref btrue
             res <- forAccumLM btrue strat $ \winAccum (fair, strat) -> do
                 tgt            <- target fair goal winN reach
                 (win', strat') <- strategy si rs rd hasOutgoings tgt
-                deref tgt
-                strat''        <- strat' .& bnot reach
-                deref strat'
+                $d deref tgt
+                strat''        <- $r2 band strat' (bnot reach)
+                $d deref strat'
                 --TODO use ite for strat
-                strat'''       <- strat'' .| strat
-                deref strat''
-                deref strat
-                win            <- bforall _untrackedCube win'
-                deref win'
-                winAccum'      <- winAccum .& win
-                mapM deref [win, winAccum]
+                strat'''       <- $r2 bor strat'' strat
+                $d deref strat''
+                $d deref strat
+                win            <- $r1 (bforall _untrackedCube) win'
+                $d deref win'
+                winAccum'      <- $r2 band winAccum win
+                mapM ($d deref) [win, winAccum]
                 return (winAccum', (fair, strat'''))
             return res
 
     strategy SectionInfo{..} RefineStatic{..} RefineDynamic{..} hasOutgoings target = do
-        strt        <- evalResourceT $ cpre' ops si rd (bnot target)
-        stratContHas <- strt .& hasOutgoings
-        stratCont'  <- evalResourceT $ doEnCont ops stratContHas labelPreds
-        deref stratContHas
-        winCont     <- liftM bnot $ andAbstract _labelCube consistentPlusCULCont stratCont'
-        deref stratCont'
-        stratUCont' <- evalResourceT $ doEnCont ops (bnot strt) labelPreds
-        deref strt
-        stratUCont  <- band consistentMinusCULUCont stratUCont'
-        deref stratUCont'
-        winUCont    <- bexists _labelCube stratUCont
-        win         <- bite cont winCont winUCont
-        mapM deref [winCont, winUCont]
+        strt        <- cpre' ops si rd (bnot target)
+        stratContHas <- $r2 band strt hasOutgoings
+        stratCont'  <- doEnCont ops stratContHas labelPreds
+        $d deref stratContHas
+        winCont     <- liftM bnot $ $r2 (andAbstract _labelCube) consistentPlusCULCont stratCont'
+        $d deref stratCont'
+        stratUCont' <- doEnCont ops (bnot strt) labelPreds
+        $d deref strt
+        stratUCont  <- $r2 band consistentMinusCULUCont stratUCont'
+        $d deref stratUCont'
+        winUCont    <- $r1 (bexists _labelCube) stratUCont
+        win         <- $r3 bite cont winCont winUCont
+        mapM ($d deref) [winCont, winUCont]
         return (win, stratUCont)
 
 data RefineInfo s u sp lp = RefineInfo {
@@ -719,10 +729,10 @@ refineInit ops@Ops{..} ts@TheorySolver{..} rs@RefineStatic{..} rd@RefineDynamic{
         True  -> return (rd, True)
 
 --The abstraction-refinement loop
-absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp -> o -> ST s (Bool, RefineInfo s u sp lp)
+absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp -> o -> ResourceT (DDNode s u) (ST s) (Bool, RefineInfo s u sp lp)
 absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
-    idb <- initialDB ops
-    ((winning, (si, rs, rd, lp, wn)), db) <- flip runStateT idb $ hoist evalResourceT $ do
+    idb <- lift $ initialDB ops
+    ((winning, (si, rs, rd, lp, wn)), db) <- flip runStateT idb $ do
         (rd, rs) <- initialAbstraction ops spec
         lift $ lift $ debugDo 1 $ traceST "Refinement state after initial abstraction: " 
         lift $ lift $ debugDo 1 $ traceST $ "Goal is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ goal rs)
@@ -786,7 +796,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                             return (True, (si, rs, rd, lp, winRegion))
                         Just rd -> refineLoop' rd winRegion
 
-cex :: RefineInfo s u sp lp -> ST s [[DDNode s u]]
+cex :: RefineInfo s u sp lp -> ResourceT (DDNode s u) (ST s) [[DDNode s u]]
 cex RefineInfo{..} = counterExample op si rs rd lp wn
 
 strat :: RefineInfo s u sp lp -> ST s [[DDNode s u]]
