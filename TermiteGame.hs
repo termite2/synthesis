@@ -706,7 +706,7 @@ refineInit ops@Ops{..} ts@TheorySolver{..} rs@RefineStatic{..} rd@RefineDynamic{
             lift $ $d deref witness'
             c <- lift $ lift $ presentInLargePrime ops witness
             lift $ $d deref witness
-            let groupedState = groupForUnsatCore (sel2 . fromJustNote "refineInit" . flip Map.lookup _stateVars) $ indicesToStatePreds syi c
+            let groupedState = groupForUnsatCore (sel2 . fromJustNote "refineInit" . flip Map.lookup _stateVars) $ indicesToStatePreds' syi c
             case unsatCoreState groupedState of
                 Nothing -> return (rd, False)
                 Just uc -> do

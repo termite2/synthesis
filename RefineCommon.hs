@@ -8,6 +8,7 @@ module RefineCommon (
     refineLeastPreds,
     partitionStateLabel,
     indicesToStatePreds,
+    indicesToStatePreds',
     indicesToLabelPreds,
     partitionStateLabelPreds,
     stateLabelInconsistent,
@@ -133,6 +134,13 @@ indicesToStatePreds :: SymbolInfo s u sp lp -> [(Int, a)] -> [((Int, sp), a)]
 indicesToStatePreds SymbolInfo{..} = map func
     where
     func = first $ (id &&& fromJustNote "refineConsistency2" . flip Map.lookup _stateRev)
+
+indicesToStatePreds' :: SymbolInfo s u sp lp -> [(Int, a)] -> [((Int, sp), a)]
+indicesToStatePreds' SymbolInfo{..} x = catMaybes $ map func x
+    where
+    func (idx, val) = case Map.lookup idx _stateRev of
+                          Just x  -> Just ((idx, x), val)
+                          Nothing -> Nothing
 
 indicesToLabelPreds :: SymbolInfo s u sp lp -> [(Int, a)] -> [((Int, lp), a)]
 indicesToLabelPreds SymbolInfo{..} = catMaybes . map (uncurry func)
