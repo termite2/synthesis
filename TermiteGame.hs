@@ -573,6 +573,7 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
                 thing2 <- $r2 bor thing soFarOrWinAndGoal
                 $d deref thing
                 (win', strats) <- cpre hasOutgoings thing2
+                $d deref thing2
                 win <- $r2 bor win' accum 
                 $d deref win'
                 when (winFair /= win') (error "wrs not equal")

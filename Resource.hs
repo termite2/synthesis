@@ -61,9 +61,9 @@ rf2 reg loc f arg1 arg2 = ResourceT $ do
 rf3 :: (Monad m, Ord a) => (a -> a) -> String -> (a -> a -> a -> m a) -> a -> a -> a -> ResourceT a m a
 rf3 reg loc f arg1 arg2 arg3 = ResourceT $ do
     mp <- get
-    checkRef loc mp (reg arg1)
-    checkRef loc mp (reg arg2)
-    checkRef loc mp (reg arg3)
+    checkRef (loc ++ " 1") mp (reg arg1)
+    checkRef (loc ++ " 2") mp (reg arg2)
+    checkRef (loc ++ " 3") mp (reg arg3)
     x <- lift $ f arg1 arg2 arg3
     modify $ incRef loc (reg x)
     return x
