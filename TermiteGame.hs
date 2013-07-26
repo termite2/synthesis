@@ -1,4 +1,4 @@
-{-# LANGUAGE PolymorphicComponents, RecordWildCards, ScopedTypeVariables #-}
+{-# LANGUAGE PolymorphicComponents, RecordWildCards, ScopedTypeVariables, TemplateHaskell #-}
 module TermiteGame (
     Abstractor(..),
     absRefineLoop,
@@ -28,6 +28,7 @@ import System.IO
 import Safe
 import Data.Text.Lazy hiding (intercalate, map, take, length, zip, replicate)
 import Text.PrettyPrint.Leijen.Text
+import Control.Monad.Morph
 
 import Util
 import RefineUtil
@@ -36,6 +37,8 @@ import BddUtil
 import BddInterp
 import Interface
 import RefineCommon hiding (doEnVars)
+
+import Resource
 
 debugLevel = 0
 
@@ -118,18 +121,19 @@ dumpSizes Ops{..} RefineDynamic{..} = do
 
 type Lab s u = [([DDNode s u], DDNode s u)]
 
-doEnVars :: (Ops s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)) -> Ops s u -> DDNode s u -> Lab s u -> ST s (DDNode s u)
+doEnVars :: (Ops s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)) -> Ops s u -> DDNode s u -> Lab s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 doEnVars qFunc ops@Ops{..} strat envars = do
-    ref strat
+    $r $ return strat
+    lift $ ref strat
     foldM func strat envars
     where
     func soFar (var, en) = do
-        varCube <- nodesToCube var
-        e <- qFunc ops varCube soFar
-        deref varCube
-        res <- bite en soFar e
-        deref soFar
-        deref e
+        varCube <- $r $ nodesToCube var
+        e <- $r1 (qFunc ops varCube) soFar
+        $d deref varCube
+        res <- $r2 (bite en) soFar e
+        $d deref soFar
+        $d deref e
         return res
 
 doEnCont  = doEnVars bforall
@@ -137,157 +141,175 @@ doEnUCont = doEnVars bexists
 
 groupSize = 1000
 
-andLimit2 :: Ops s u -> Int -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u))
+andLimit2 :: Ops s u -> Int -> DDNode s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (Maybe (DDNode s u))
 andLimit2 Ops{..} limit x y = do
-    dsx <- dagSize x
+    dsx <- lift $ dagSize x
     case dsx > limit of
         True -> return Nothing
         False -> do
-            dsy <- dagSize y
+            dsy <- lift $ dagSize y
             case dsy > limit of 
                 True -> return Nothing
                 False -> do
-                    res <- band x y
-                    dsr <- dagSize res
+                    res <- $r2 band x y
+                    dsr <- lift $ dagSize res
                     case dsr > limit of
                         True -> do
-                            deref res
+                            $d deref res
                             return Nothing
                         False -> return $ Just res
 
-groupTrels :: Ops s u -> [(DDNode s u, DDNode s u)] -> ST s [(DDNode s u, DDNode s u)]
-groupTrels _ [] = return []
-groupTrels ops@Ops{..} (hd:rst) = groupTrels' hd rst
+groupTrels :: Ops s u -> [(DDNode s u, DDNode s u)] -> ResourceT (DDNode s u) (ST s) [(DDNode s u, DDNode s u)]
+groupTrels ops@Ops{..} x = do
+    groupTrels'' x
     where
-    groupTrels' accum [] = return [accum]
-    groupTrels' (accum@(accumCube, accumRel)) (allRels@((hdCube, hdRel):rels)) = do
-        res <- andLimit2 ops groupSize accumRel hdRel 
-        case res of 
-            Nothing -> do
-                sz <- dagSize accumRel
-                res <- groupTrels ops allRels
-                return $ accum : res
-            Just res -> do
-                mapM deref [accumRel, hdRel]
-                cb <- band accumCube hdCube
-                mapM deref [accumCube, hdCube]
-                groupTrels' (cb, res) rels
+    groupTrels'' [] = return []
+    groupTrels'' (hd:rst) = groupTrels' hd rst
+        where
+        groupTrels' accum [] = return [accum]
+        groupTrels' (accum@(accumCube, accumRel)) (allRels@((hdCube, hdRel):rels)) = do
+            res <- andLimit2 ops groupSize accumRel hdRel 
+            case res of 
+                Nothing -> do
+                    sz <- lift $ dagSize accumRel
+                    res <- groupTrels'' allRels
+                    return $ accum : res
+                Just res -> do
+                    mapM ($d deref) [accumRel, hdRel]
+                    cb <- $r2 band accumCube hdCube
+                    mapM ($d deref) [accumCube, hdCube]
+                    groupTrels' (cb, res) rels
 
-partitionedThing :: Ops s u -> [(DDNode s u, DDNode s u)] -> DDNode s u -> ST s (DDNode s u)
+partitionedThing :: Ops s u -> [(DDNode s u, DDNode s u)] -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 partitionedThing Ops{..} pairs win = do
-    ref win
+    $r $ return win
+    lift $ ref win
     forAccumM win pairs $ \win (cube, rel) -> do
-        res <- liftM bnot $ andAbstract cube (bnot win) rel
-        deref win
+        res <- liftM bnot $ $r2 (andAbstract cube) (bnot win) rel
+        $d deref win
         return res
 
-doHasOutgoings :: Ops s u -> [(DDNode s u, DDNode s u)] -> ST s (DDNode s u)
+doHasOutgoings :: Ops s u -> [(DDNode s u, DDNode s u)] -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 doHasOutgoings Ops{..} pairs = do
-    ref btrue
+    $r $ return btrue
+    lift $ ref btrue
     forAccumM btrue pairs $ \has (cube, rel) -> do
-        r <- bexists cube rel
-        a <- band r has
-        deref has
-        deref r
+        rr <- $r1 (bexists cube) rel
+        a <- $r2 band rr has
+        $d deref has
+        $d deref rr
         return a
 
 --Find the <state, untracked, label> tuples that are guaranteed to lead to the goal for a given transition relation
-cpre' :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> ST s (DDNode s u)
+cpre' :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 cpre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} target = do
-    nextWin  <- mapVars target
+    nextWin  <- $r1 mapVars target
     strat    <- partitionedThing ops trans nextWin
-    deref nextWin
+    $d deref nextWin
     return strat
    
 --Returns the set of <state, untracked> pairs that are winning 
-cpre'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+cpre'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> DDNode s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds cc cu target = do
     strat      <- cpre' ops si rd target
-    stratContHas <- strat .& hasOutgoingsCont
+    stratContHas <- $r2 band strat hasOutgoingsCont
     stratCont  <- doEnCont ops stratContHas labelPreds
-    deref stratContHas
+    $d deref stratContHas
     stratUCont <- doEnCont ops (bnot strat) labelPreds
-    deref strat
-    winCont    <- andAbstract _labelCube cc stratCont
-    winUCont   <- liftM bnot $ andAbstract _labelCube cu stratUCont
-    mapM deref [stratCont, stratUCont]
-    win        <- bite cont winCont winUCont
-    mapM deref [winCont, winUCont]
+    $d deref strat
+    winCont    <- $r2 (andAbstract _labelCube) cc stratCont
+    winUCont   <- liftM bnot $ $r2 (andAbstract _labelCube) cu stratUCont
+    mapM ($d deref) [stratCont, stratUCont]
+    win        <- $r3 bite cont winCont winUCont
+    mapM ($d deref) [winCont, winUCont]
     return win
 
 --Returns the set of <state, untracked> pairs that are winning 
-cpreOver' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
+cpreOver' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 cpreOver' ops si rs rd@RefineDynamic{..} hasOutgoingsCont labelPreds = cpre'' ops si rs rd hasOutgoingsCont labelPreds consistentPlusCULCont consistentMinusCULUCont 
     
 --Returns the set of <state, untracked> pairs that are winning 
-cpreUnder' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
+cpreUnder' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 cpreUnder' ops si rs rd@RefineDynamic{..} hasOutgoingsCont labelPreds = cpre'' ops si rs rd hasOutgoingsCont labelPreds consistentMinusCULCont consistentPlusCULUCont
 
 cPreHelper cpreFunc quantFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
     su  <- cpreFunc ops si rs rd hasOutgoingsCont labelPreds target
-    res <- quantFunc _untrackedCube su
-    deref su
+    res <- $r1 (quantFunc _untrackedCube) su
+    $d deref su
     return res
 
-cPreOver :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
+cPreOver :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 cPreOver ops@Ops{..} = cPreHelper cpreOver' bexists ops  
 
-cPreUnder :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ST s (DDNode s u)
+cPreUnder :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 cPreUnder ops@Ops{..} = cPreHelper cpreUnder' bforall ops
 
-solveFair :: (DDNode s u -> ST s (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+fixedPointR :: Ops s u -> (DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)) -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
+fixedPointR ops@Ops{..} func start = do
+    res <- func start
+    $d deref start 
+    case (res==start) of --this is safe 
+        True -> return start
+        False -> fixedPointR ops func res
+
+solveFair :: (DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 solveFair cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt winning fairr = do
-    ref startPt
-    fixedPoint ops func startPt
+    lift $ ref startPt
+    $r $ return startPt
+    fixedPointR ops func startPt
     where
     func target = do
-        debugDo 1 $ traceST "solveFair: iteration"
-        check "solveFair" ops
-        t1 <- target .& fairr
-        t2 <- t1 .| winning
-        deref t1
+        lift $ debugDo 1 $ traceST "solveFair: iteration"
+        lift $ check "solveFair" ops
+        t1 <- $r2 band target fairr
+        t2 <- $r2 bor t1 winning
+        $d deref t1
         res <- cpreFunc t2
-        deref t2
+        $d deref t2
         return res
 
-solveReach :: (DDNode s u -> ST s (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+solveReach :: (DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt goall = do
-    ref bfalse
-    fixedPoint ops func bfalse
+    $r $ return bfalse
+    lift $ ref bfalse
+    fixedPointR ops func bfalse
     where
     func target = do
-        debugDo 1 $ traceST "solveReach: iteration"
-        sz <- dagSize target
-        traceMsg $ "r(" ++ show sz ++ ")"
-        t1 <- target .| goall
-        ref bfalse
+        lift $ debugDo 1 $ traceST "solveReach: iteration"
+        sz <- lift $ dagSize target
+        lift $ traceMsg $ "r(" ++ show sz ++ ")"
+        t1 <- $r2 bor target goall
+        $r $ return bfalse
+        lift $ ref bfalse
         res <- forAccumM bfalse fair $ \accum val -> do
             res' <- solveFair cpreFunc ops rs startPt t1 val
-            res  <- res' .| accum
-            deref res'
-            deref accum
+            res  <- $r2 bor res' accum
+            $d deref res'
+            $d deref accum
             return res
-        deref t1
+        $d deref t1
         return res
 
-solveBuchi :: (DDNode s u -> ST s (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> ST s (DDNode s u)
+solveBuchi :: (DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 solveBuchi cpreFunc ops@Ops{..} rs@RefineStatic{..} startingPoint = do
-    ref startingPoint
-    fixedPoint ops func startingPoint
+    $r $ return startingPoint
+    lift $ ref startingPoint
+    fixedPointR ops func startingPoint
     where
     func reachN = do
-        traceMsg "b"
-        debugDo 1 $ traceST "solveBuchi: iteration"
-        ref btrue
+        lift $ traceMsg "b"
+        lift $ debugDo 1 $ traceST "solveBuchi: iteration"
+        $r $ return btrue
+        lift $ ref btrue
         res <- forAccumM btrue goal $ \accum val -> do
-            traceMsg "g"
-            t1 <- reachN .& val
+            lift $ traceMsg "g"
+            t1 <- $r2 band reachN val
             --TODO terminate when t1s are equal
             res' <- solveReach cpreFunc ops rs reachN t1
-            deref t1
-            res <- res' .& accum
-            deref res'
-            deref accum
+            $d deref t1
+            res <- $r2 band res' accum
+            $d deref res'
+            $d deref accum
             return res
         return res
 
@@ -295,44 +317,53 @@ check msg ops = return ()
 --check msg ops = unsafeIOToST (putStrLn ("checking bdd consistency" ++ msg ++ "\n")) >> debugCheck ops >> checkKeys ops
 
 --Create an initial abstraction and set up the data structures
-initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u sp lp -> StateT (DB s u sp lp) (ST s) (RefineDynamic s u, RefineStatic s u)
+initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u sp lp -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (RefineDynamic s u, RefineStatic s u)
 initialAbstraction ops@Ops{..} Abstractor{..} = do
-    lift $ check "InitialAbstraction start" ops
+    lift $ lift $ check "InitialAbstraction start" ops
     --abstract init
-    initExpr <- doInit ops initAbs
-    lift $ check "After compiling init" ops
+    initExpr <- hoist lift $ doInit ops initAbs
+    lift $ $r $ return initExpr
+    lift $ lift $ check "After compiling init" ops
     --abstract the goal
-    (goalExprs, newVarsGoals) <- doGoal ops goalAbs
-    lift $ check "After compiling goal" ops
+    (goalExprs, newVarsGoals) <- hoist lift $ doGoal ops goalAbs
+    lift $ mapM ($r . return) goalExprs
+    lift $ lift $ check "After compiling goal" ops
     --abstract the fair region
-    (fairExprs, newVarsFairs) <- doGoal ops fairAbs
-    lift $ check "After compiling fair" ops
+    (fairExprs, newVarsFairs) <- hoist lift $ doGoal ops fairAbs
+    lift $ mapM ($r . return) fairExprs
+    lift $ lift $ check "After compiling fair" ops
     --abstract the controllable condition
-    (contExpr, newVarsCont) <- doGoal ops contAbs
-    lift $ check "After compiling fair" ops
+    (contExpr, newVarsCont) <- hoist lift $ doGoal ops contAbs
+    lift $ $r $ return contExpr
+    lift $ lift $ check "After compiling fair" ops
     --get the abstract update functions for the goal predicates and variables
     let toUpdate = nub $ _allocatedStateVars newVarsGoals ++ _allocatedStateVars newVarsFairs ++ _allocatedStateVars newVarsCont
-    lift $ traceST $ "Initial transition relation state vars: \n" ++ (intercalate "\n" $ map (('\t' :) . show . fst) $ toUpdate)
-    updateExprs' <- doUpdate ops (updateAbs toUpdate)
+    lift $ lift $ traceST $ "Initial transition relation state vars: \n" ++ (intercalate "\n" $ map (('\t' :) . show . fst) $ toUpdate)
+    updateExprs' <- hoist lift $ doUpdate ops (updateAbs toUpdate)
+    lift $ mapM ($r . return) updateExprs'
     outcomeCube <- gets $ _outcomeCube . _sections
-    updateExprs <- lift $ mapM (bexists outcomeCube) updateExprs'
-    lift $ mapM deref updateExprs'
-    zipWithM (transSynopsys ops) (map fst toUpdate) updateExprs
-    cubes <- lift $ mapM (nodesToCube . snd) toUpdate
+    updateExprs <- lift $ mapM ($r . bexists outcomeCube) updateExprs'
+    lift $ mapM ($d deref) updateExprs'
+    --zipWithM (hoist lift $ transSynopsys ops) (map fst toUpdate) updateExprs
+    cubes <- lift $ mapM ($r . nodesToCube . snd) toUpdate
     groups <- lift $ groupTrels ops $ zip cubes updateExprs
-    lift $ traceST $ "Number of transition partitions: " ++ show (length groups)
+    lift $ lift $ traceST $ "Number of transition partitions: " ++ show (length groups)
 
     --create the consistency constraints
     let consistentPlusCULCont  = btrue
         consistentPlusCULUCont = btrue
-    lift $ ref consistentPlusCULCont
-    lift $ ref consistentPlusCULUCont
+    lift $ lift $ ref consistentPlusCULCont
+    lift $ lift $ ref consistentPlusCULUCont
+    lift $ $r $ return consistentPlusCULCont
+    lift $ $r $ return consistentPlusCULUCont
     let inconsistentInit = bfalse
-    lift $ ref inconsistentInit
+    lift $ lift $ ref inconsistentInit
+    lift $ $r $ return inconsistentInit
     labelPreds <- gets $ _labelVars . _symbolTable
-    consistentMinusCULCont <- lift $ conj ops $ map (bnot . sel3) $ Map.elems labelPreds
+    consistentMinusCULCont <- lift $ $r $ conj ops $ map (bnot . sel3) $ Map.elems labelPreds
     let consistentMinusCULUCont = consistentMinusCULCont
-    lift $ ref consistentMinusCULUCont
+    lift $ lift $ ref consistentMinusCULUCont
+    lift $ $r $ return consistentMinusCULUCont
     --construct the RefineDynamic and RefineStatic
     let rd = RefineDynamic {
             trans  = groups,
@@ -348,39 +379,40 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
 
 refineStrategy = refineFirstPrime
 
-pickUntrackedToPromote :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> RefineStatic s u -> Lab s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (Maybe [Int])
+pickUntrackedToPromote :: Ops s u -> SectionInfo s u -> RefineDynamic s u -> RefineStatic s u -> Lab s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (Maybe [Int])
 pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} rs@RefineStatic{..} labelPreds hasOutgoings win lastLFP fairr = do
-    win''  <- win .& fairr
-    win'   <- win'' .| lastLFP
-    deref win''
+    win''  <- $r2 band win fairr
+    win'   <- $r2 bor win'' lastLFP
+    $d deref win''
     su     <- cpreOver' ops si rs rd hasOutgoings labelPreds win'
-    deref win'
-    toDrop <- (bnot su) .& win
-    deref su
-    res    <- refineStrategy ops si toDrop
-    deref toDrop
+    $d deref win'
+    toDrop <- $r2 band (bnot su) win
+    $d deref su
+    res    <- lift $ refineStrategy ops si toDrop
+    $d deref toDrop
     return res
 
 --Promote untracked state variables to full state variables so that we can make progress towards the goal. Does not refine the consistency relations.
-promoteUntracked :: (Ord lp, Ord sp, Show sp, Show lp) => Ops s u -> Abstractor s u sp lp -> RefineDynamic s u -> [Int] -> StateT (DB s u sp lp) (ST s) (RefineDynamic s u)
+promoteUntracked :: (Ord lp, Ord sp, Show sp, Show lp) => Ops s u -> Abstractor s u sp lp -> RefineDynamic s u -> [Int] -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (RefineDynamic s u)
 promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     --look up the predicates to promote
     stateRev             <- gets $ _stateRev . _symbolTable
     let refineVars       =  nub $ map (fromJustNote "promoteUntracked: untracked indices not in stateRev" . flip Map.lookup stateRev) indices
-    lift $ traceST $ "* Promoting: \n" ++ (intercalate "\n" $ map (('\t' :) . show) $ refineVars)
+    lift $ lift $ traceST $ "* Promoting: \n" ++ (intercalate "\n" $ map (('\t' :) . show) $ refineVars)
 
-    NewVars{..}          <- promoteUntrackedVars ops refineVars
+    NewVars{..}          <- hoist lift $ promoteUntrackedVars ops refineVars
     labelPredsPreUpdate  <- gets $ _labelVars . _symbolTable
 
     --compute the update functions
-    updateExprs'   <- doUpdate ops (updateAbs _allocatedStateVars)
+    updateExprs'   <- hoist lift $ doUpdate ops (updateAbs _allocatedStateVars)
+    lift $ mapM ($r . return) updateExprs'
     outcomeCube <- gets $ _outcomeCube . _sections
-    updateExprs  <- lift $ mapM (bexists outcomeCube) updateExprs'
-    lift $ mapM deref updateExprs'
-    zipWithM (transSynopsys ops) (map fst _allocatedStateVars) updateExprs
-    cubes <- lift $ mapM (nodesToCube . snd) _allocatedStateVars
+    updateExprs  <- lift $ mapM ($r . bexists outcomeCube) updateExprs'
+    lift $ mapM ($d deref) updateExprs'
+    hoist lift $ zipWithM (transSynopsys ops) (map fst _allocatedStateVars) updateExprs
+    cubes <- lift $ mapM ($r . nodesToCube . snd) _allocatedStateVars
     groups <- lift $ groupTrels ops $ zip cubes updateExprs
-    lift $ traceST $ "Number of transition partitions: " ++ show (length groups)
+    lift $ lift $ traceST $ "Number of transition partitions: " ++ show (length groups)
 
     --TODO why is this commented out?
     {-
@@ -394,106 +426,109 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
         trans  = groups ++ trans
     }
 
-refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
+refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
 refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} hasOutgoings win winning fairr = do
-    r1 <- refineConsistencyCont ops ts rd rs hasOutgoings win winning fairr
-    case r1 of
-        Just res -> do
-            return $ Just res
-        Nothing  -> do
+    (res, rd) <- refineConsistencyCont ops ts rd rs hasOutgoings win winning fairr
+    case res of
+        True -> do
+            return $ (res, rd)
+        False  -> do
             res <- refineConsistencyUCont ops ts rd rs win winning fairr
             return res
 
-refineConsistencyCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
+refineConsistencyCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
 refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} hasOutgoings win winning fairr = do
     lift $ check "refineConsistencyCont" ops
     syi@SymbolInfo{..} <- gets _symbolTable 
     si@SectionInfo{..} <- gets _sections
-    win''              <- lift $ win .& fairr
-    win'               <- lift $ win'' .| winning
-    lift $ deref win''
+    win''              <- lift $ $r2 band win fairr
+    win'               <- lift $ $r2 bor win'' winning
+    lift $ $d deref win''
     winNoConstraint'   <- lift $ cpre' ops si rd win'
-    stratContHas       <- lift $ winNoConstraint' .& hasOutgoings
-    lift $ deref winNoConstraint'
+    stratContHas       <- lift $ $r2 band winNoConstraint' hasOutgoings
+    lift $ $d deref winNoConstraint'
     let lp             =  map (sel1 &&& sel3) $ Map.elems _labelVars
     winNoConstraint    <- lift $ doEnCont ops stratContHas lp
-    lift $ deref stratContHas
-    winNoConstraint2   <- lift $ cont .& winNoConstraint
-    lift $ mapM deref [win', winNoConstraint]
-    res <- doConsistency ops ts consistentPlusCULCont consistentMinusCULCont winNoConstraint2
-    lift $ check "refineConsistencyCont End" ops
-    case res of 
-        Nothing -> return Nothing
-        Just (consistentPlusCULCont', consistentMinusCULCont') -> 
-            return $ Just $ rd {consistentPlusCULCont = consistentPlusCULCont', consistentMinusCULCont = consistentMinusCULCont'}
+    lift $ $d deref stratContHas
+    winNoConstraint2   <- lift $ $r2 band cont winNoConstraint
+    lift $ mapM ($d deref) [win', winNoConstraint]
+    (res, (consistentPlusCULCont', consistentMinusCULCont'))  <- doConsistency ops ts consistentPlusCULCont consistentMinusCULCont winNoConstraint2
+    lift $ lift $ check "refineConsistencyCont End" ops
+    let rd' = rd {consistentPlusCULCont = consistentPlusCULCont', consistentMinusCULCont = consistentMinusCULCont'}
+    return (res, rd')
 
-refineConsistencyUCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (RefineDynamic s u))
+refineConsistencyUCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
 refineConsistencyUCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning fairr = do
     lift $ check "refineConsistencyUCont" ops
     syi@SymbolInfo{..} <- gets _symbolTable 
     si@SectionInfo{..} <- gets _sections
-    win''              <- lift $ win .& fairr
-    win'               <- lift $ win'' .| winning
-    lift $ deref win''
+    win''              <- lift $ $r2 band win fairr
+    win'               <- lift $ $r2 bor  win'' winning
+    lift $ $d deref win''
     winNoConstraint'   <- lift $ liftM bnot $ cpre' ops si rd win'
     let lp             =  map (sel1 &&& sel3) $ Map.elems _labelVars
     winNoConstraint    <- lift $ doEnCont ops winNoConstraint' lp
-    lift $ deref winNoConstraint'
-    winNoConstraint2   <- lift $ bnot cont .& winNoConstraint
-    lift $ mapM deref [win', winNoConstraint]
-    res <- doConsistency ops ts consistentPlusCULUCont consistentMinusCULUCont winNoConstraint2
-    lift $ check "refineConsistencyUCont End" ops
-    case res of 
-        Nothing -> return Nothing
-        Just (consistentPlusCULUCont', consistentMinusCULUCont') -> 
-            return $ Just $ rd {consistentPlusCULUCont = consistentPlusCULUCont', consistentMinusCULUCont = consistentMinusCULUCont'}
+    lift $ $d deref winNoConstraint'
+    winNoConstraint2   <- lift $ $r2 band (bnot cont) winNoConstraint
+    lift $ mapM ($d deref) [win', winNoConstraint]
+    (res, (consistentPlusCULUCont', consistentMinusCULUCont')) <- doConsistency ops ts consistentPlusCULUCont consistentMinusCULUCont winNoConstraint2
+    lift $ lift $ check "refineConsistencyUCont End" ops
+    let rd' = rd {consistentPlusCULUCont = consistentPlusCULUCont', consistentMinusCULUCont = consistentMinusCULUCont'}
+    return (res, rd')
 
-doConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (Maybe (DDNode s u, DDNode s u))
+doConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, (DDNode s u, DDNode s u))
 doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
     syi@SymbolInfo{..} <- gets _symbolTable 
     si@SectionInfo{..} <- gets _sections
-    winActOver         <- lift $ winNoConstraint .& cPlus
-    winActUnder        <- lift $ andAbstract _labelCube winNoConstraint cMinus
-    toCheckConsistency <- lift $ winActOver .& bnot winActUnder
-    lift $ mapM deref [winActOver, winActUnder]
+    winActOver         <- lift $ $r2 band winNoConstraint cPlus
+    winActUnder        <- lift $ $r2 (andAbstract _labelCube) winNoConstraint cMinus
+    toCheckConsistency <- lift $ $r2 band winActOver (bnot winActUnder)
+    lift $ mapM ($d deref) [winActOver, winActUnder]
     --Alive : toCheckConsistency
     case toCheckConsistency==bfalse of 
         True  -> do
             --no refinement of consistency relations will shrink the winning region
-            lift $ debugDo 2 $ traceST "no consistency refinement possible"
-            lift $ mapM deref [toCheckConsistency, winNoConstraint]
-            return Nothing
+            --lift $ lift $ debugDo 2 $ traceST "no consistency refinement possible"
+            lift $ mapM ($d deref) [toCheckConsistency, winNoConstraint]
+            return (False, (cPlus, cMinus))
         False -> do
             --There may be a refinement
             --extract a <s, u, l> pair that will make progress if one exists
-            c <- lift $ presentInLargePrime ops toCheckConsistency
-            lift $ deref toCheckConsistency
+            c <- lift $ lift $ presentInLargePrime ops toCheckConsistency
+            lift $ $d deref toCheckConsistency
 
             let (cStatePreds, cLabelPreds) = partitionStateLabelPreds si syi c
             --Alive : nothing
             let groupedState = groupForUnsatCore (sel2 . fromJustNote "doConsistency" . flip Map.lookup _stateVars) cStatePreds
                 groupedLabel = groupForUnsatCore (sel2 . fromJustNote "doConsistency" . flip Map.lookup _labelVars) cLabelPreds
             let fmt (name, enc) = show name ++ ":" ++ map (alt 'T' 'F') enc
-            lift $ traceMsg $ "* Refining Consistency: " ++ intercalate ", " (map fmt groupedState) ++ " -- " ++ intercalate ", " (map fmt groupedLabel) ++ " ..."
+            lift $ lift $ traceMsg $ "* Refining Consistency: " ++ intercalate ", " (map fmt groupedState) ++ " -- " ++ intercalate ", " (map fmt groupedLabel) ++ " ..."
             case unsatCoreStateLabel groupedState groupedLabel of
                 Just (statePairs, labelPairs) -> do
                     --statePairs, labelPairs is inconsistent so subtract this from consistentPlusCUL
-                    lift $ traceST "UNSAT"
+                    lift $ lift $ traceST "UNSAT"
                     inconsistent       <- lift $ stateLabelInconsistent ops syi statePairs labelPairs
-                    consistentPlusCUL' <- lift $ andDeref ops cPlus (bnot inconsistent)
+                    consistentPlusCUL' <- lift $ $r2 band cPlus (bnot inconsistent)
+                    lift $ $d deref cPlus
+                    lift $ $d deref inconsistent
                     lift $ check "refineConsistency4" ops
                     doConsistency ops ts consistentPlusCUL' cMinus winNoConstraint
                 Nothing -> do
                     --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
-                    lift $ deref winNoConstraint
-                    lift $ traceST "SAT"
-                    eQuantExpr <- doUpdate ops (eQuant groupedLabel)
+                    lift $ $d deref winNoConstraint
+                    lift $ lift $ traceST "SAT"
+                    eQuantExpr <- hoist lift $ doUpdate ops (eQuant groupedLabel)
+                    lift $ $r $ return eQuantExpr
 
                     consistentCube'     <- lift $ stateLabelConsistent ops syi groupedLabel 
-                    consistentCube      <- lift $ andDeref ops consistentCube' eQuantExpr
-                    consistentMinusCUL' <- lift $ orDeref ops cMinus consistentCube
+                    consistentCube      <- lift $ $r2 band consistentCube' eQuantExpr
+                    lift $ $d deref consistentCube'
+                    lift $ $d deref eQuantExpr
+                    consistentMinusCUL' <- lift $ $r2 bor cMinus consistentCube
+                    lift $ $d deref cMinus
+                    lift $ $d deref consistentCube
 
-                    return $ Just (cPlus, consistentMinusCUL')
+                    return $ (True, (cPlus, consistentMinusCUL'))
 
 mSumMaybe :: Monad m => [m (Maybe a)] -> m (Maybe a)
 mSumMaybe (x:xs) = do
@@ -517,7 +552,7 @@ fixedPoint2 ops@Ops{..} start thing func = do
 strategy :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s [[DDNode s u]]
 strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
     traceST "* Computing strategy"
-    hasOutgoings <- doHasOutgoings ops trans
+    hasOutgoings <- evalResourceT $ doHasOutgoings ops trans
     --For each goal
     res <- forM goal $ \goal -> do 
         winAndGoal <- goal .& win
@@ -530,7 +565,7 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
             (res, strats') <- forAccumLM bfalse fair $ \accum fair -> do
                 --Fairness greatest fixedpoint
                 --TODO optimise: dont use btrue below
-                winFair <- solveFair (cPreUnder ops si rs rd hasOutgoings labelPreds)  ops rs btrue soFarOrWinAndGoal fair
+                winFair <- evalResourceT $ solveFair (cPreUnder ops si rs rd hasOutgoings labelPreds)  ops rs btrue soFarOrWinAndGoal fair
                 thing <- winFair .& fair
                 deref winFair
                 thing2 <- thing .| soFarOrWinAndGoal
@@ -560,11 +595,11 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         deref oldC
         return c'
     cpre hasOutgoings target = do
-        strat      <- cpre' ops si rd target
+        strat      <- evalResourceT $ cpre' ops si rd target
         stratContHas <- strat .& hasOutgoings
-        stratCont  <- doEnCont ops stratContHas labelPreds
+        stratCont  <- evalResourceT $ doEnCont ops stratContHas labelPreds
         deref stratContHas
-        stratUCont <- doEnCont ops (bnot strat) labelPreds
+        stratUCont <- evalResourceT $ doEnCont ops (bnot strat) labelPreds
         deref strat
         winCont    <- andAbstract _labelCube consistentMinusCULCont stratCont
         winUCont   <- liftM bnot $ andAbstract _labelCube consistentPlusCULUCont stratUCont
@@ -577,7 +612,7 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
 counterExample :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ST s [[DDNode s u]]
 counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
     traceST "* Computing counterexample"
-    hasOutgoings <- doHasOutgoings ops trans 
+    hasOutgoings <- evalResourceT $ doHasOutgoings ops trans 
     sequence $ replicate (length goal * length fair) (ref bfalse)
     ref bfalse
     (win', strat) <- fixedPoint2 ops bfalse (zip goal $ repeat $ zip fair $ repeat bfalse) $ \win strat -> do
@@ -585,7 +620,7 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
         res <- forAccumLM bfalse strat $ \tot (goal, strats) -> do
             tgt               <- bnot goal .| win
             --TODO optimise: dont use btrue below
-            winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs btrue (bnot tgt)
+            winBuchi          <- liftM bnot $ evalResourceT $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs btrue (bnot tgt)
             (winStrat, strat) <- stratReach si rs rd hasOutgoings fair win strats winBuchi tgt
             when (winStrat /= winBuchi) (traceST "Warning: counterexample winning regions are not equal")
             deref winStrat
@@ -634,13 +669,13 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
             return res
 
     strategy SectionInfo{..} RefineStatic{..} RefineDynamic{..} hasOutgoings target = do
-        strt        <- cpre' ops si rd (bnot target)
+        strt        <- evalResourceT $ cpre' ops si rd (bnot target)
         stratContHas <- strt .& hasOutgoings
-        stratCont'  <- doEnCont ops stratContHas labelPreds
+        stratCont'  <- evalResourceT $ doEnCont ops stratContHas labelPreds
         deref stratContHas
         winCont     <- liftM bnot $ andAbstract _labelCube consistentPlusCULCont stratCont'
         deref stratCont'
-        stratUCont' <- doEnCont ops (bnot strt) labelPreds
+        stratUCont' <- evalResourceT $ doEnCont ops (bnot strt) labelPreds
         deref strt
         stratUCont  <- band consistentMinusCULUCont stratUCont'
         deref stratUCont'
@@ -659,25 +694,27 @@ data RefineInfo s u sp lp = RefineInfo {
     op :: Ops s u
 }
 
-refineInit :: Ord sp => Ops s u -> TheorySolver s u sp lp -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ST s) (RefineDynamic s u, Bool)
+refineInit :: Ord sp => Ops s u -> TheorySolver s u sp lp -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (RefineDynamic s u, Bool)
 refineInit ops@Ops{..} ts@TheorySolver{..} rs@RefineStatic{..} rd@RefineDynamic{..} winRegion = do
     syi@SymbolInfo{..} <- gets _symbolTable 
     si@SectionInfo{..} <- gets _sections
-    winning <- lift $ leqUnless (bnot winRegion) (bnot init) inconsistentInit
+    winning <- lift $ lift $ leqUnless (bnot winRegion) (bnot init) inconsistentInit
     case winning of 
         False -> do
-            witness' <- lift $ init .& bnot winRegion
-            witness  <- lift $ witness' .& bnot inconsistentInit
-            lift $ deref witness'
-            c <- lift $ presentInLargePrime ops witness
-            lift $ deref witness
+            witness' <- lift $ $r2 band init (bnot winRegion)
+            witness  <- lift $ $r2 band witness' (bnot inconsistentInit)
+            lift $ $d deref witness'
+            c <- lift $ lift $ presentInLargePrime ops witness
+            lift $ $d deref witness
             let groupedState = groupForUnsatCore (sel2 . fromJustNote "refineInit" . flip Map.lookup _stateVars) $ indicesToStatePreds syi c
             case unsatCoreState groupedState of
                 Nothing -> return (rd, False)
                 Just uc -> do
-                    lift $ traceST "* Found inconsistent initial state. Refining..."
+                    lift $ lift $ traceST "* Found inconsistent initial state. Refining..."
                     unsat <- lift $ makeCubeInt ops $ map (first (sel1 . fromJustNote "refineInit" . flip Map.lookup _stateVars)) uc
-                    inconsistentInit' <- lift $ orDeref ops inconsistentInit unsat
+                    inconsistentInit' <- lift $ $r2 bor inconsistentInit unsat
+                    lift $ $d deref inconsistentInit 
+                    lift $ $d deref unsat
                     refineInit ops ts rs (rd {inconsistentInit = inconsistentInit'}) winRegion
         True  -> return (rd, True)
 
@@ -685,13 +722,14 @@ refineInit ops@Ops{..} ts@TheorySolver{..} rs@RefineStatic{..} rd@RefineDynamic{
 absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp -> o -> ST s (Bool, RefineInfo s u sp lp)
 absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
     idb <- initialDB ops
-    ((winning, (si, rs, rd, lp, wn)), db) <- flip runStateT idb $ do
+    ((winning, (si, rs, rd, lp, wn)), db) <- flip runStateT idb $ hoist evalResourceT $ do
         (rd, rs) <- initialAbstraction ops spec
-        lift $ debugDo 1 $ traceST "Refinement state after initial abstraction: " 
-        lift $ debugDo 1 $ traceST $ "Goal is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ goal rs)
-        lift $ debugDo 1 $ traceST $ "Fair is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ fair rs)
-        lift $ debugDo 1 $ traceST $ "Init is: " ++ (bddSynopsis ops $ TermiteGame.init rs)
-        lift $ ref bfalse
+        lift $ lift $ debugDo 1 $ traceST "Refinement state after initial abstraction: " 
+        lift $ lift $ debugDo 1 $ traceST $ "Goal is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ goal rs)
+        lift $ lift $ debugDo 1 $ traceST $ "Fair is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ fair rs)
+        lift $ lift $ debugDo 1 $ traceST $ "Init is: " ++ (bddSynopsis ops $ TermiteGame.init rs)
+        lift $ lift $ ref btrue
+        lift $ $r $ return btrue
         refineLoop ops rs rd btrue
     return $ (winning, RefineInfo{op=ops, ..})
     where
@@ -699,54 +737,52 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
         where 
         refineLoop' rd@RefineDynamic{..} lastWin = do
             si@SectionInfo{..} <- gets _sections
-            lift $ setVarMap _trackedNodes _nextNodes
+            lift $ lift $ setVarMap _trackedNodes _nextNodes
             labelPreds <- gets $ _labelVars . _symbolTable
             let lp = map (sel1 &&& sel3) $ Map.elems labelPreds
             hasOutgoings <- lift $ doHasOutgoings ops trans
             winRegion <- lift $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin
-            lift $ traceST ""
-            lift $ deref lastWin
+            lift $ lift $ traceST ""
+            lift $ $d deref lastWin
             (rd, winning) <- refineInit ops ts rs rd winRegion
             --Alive: winRegion, rd, rs, hasOutgoings
             case winning of
                 False -> lift $ do
-                    traceST "Losing"
-                    mapM deref [hasOutgoings]
+                    lift $ traceST "Losing"
+                    mapM ($d deref) [hasOutgoings]
                     return (False, (si, rs, rd, lp, winRegion))
                 True -> do
-                    lift $ debugDo 1 $ traceST "Possibly winning, Confirming with further refinement"
+                    --lift $ lift $ traceST "Possibly winning, Confirming with further refinement"
                     res <- mSumMaybe $ flip map goal $ \g -> do
-                        overAndGoal <- lift $ winRegion .& g
+                        overAndGoal <- lift $ $r2 band winRegion g
                         underReach <- lift $ solveReach (cPreUnder ops si rs rd hasOutgoings lp) ops rs winRegion overAndGoal
-                        lift $ traceST ""
-                        urog <- lift $ underReach .| overAndGoal
-                        lift $ deref underReach
+                        lift $ lift $ traceST ""
+                        urog <- lift $ $r2 bor underReach overAndGoal
+                        lift $ $d deref underReach
                         res <- mSumMaybe $ flip map fair $ \fairr -> do
-                            --TODO this is a hack
-                            lift $ ref consistentPlusCULCont
                             --TODO is this the right cpre?
                             newWin <- lift $ solveFair (cPreOver ops si rs rd hasOutgoings lp) ops rs winRegion urog fairr
-                            res <- refineConsistency ops ts rd rs hasOutgoings newWin urog fairr
+                            (res, rd) <- refineConsistency ops ts rd rs hasOutgoings newWin urog fairr
                             case res of
-                                Just newRD -> do
-                                    lift $ debugDo 1 $ traceST "Refined consistency relations. Re-solving..."
-                                    lift $ mapM deref [newWin]
-                                    return $ Just newRD
-                                Nothing -> do
-                                    lift $ debugDo 1 $ traceST "Could not refine consistency relations. Attempting to refine untracked state variables"
+                                True -> do
+                                    --lift $ lift $ traceST "Refined consistency relations. Re-solving..."
+                                    lift $ mapM ($d deref) [newWin]
+                                    return $ Just rd
+                                False -> do
+                                    --lift $ lift $ traceST "Could not refine consistency relations. Attempting to refine untracked state variables"
                                     res <- lift $ pickUntrackedToPromote ops si rd rs lp hasOutgoings newWin urog fairr
-                                    lift $ mapM deref [newWin]
+                                    lift $ mapM ($d deref) [newWin]
                                     case res of 
                                         Just vars -> do
                                             newRD <- promoteUntracked ops spec rd vars 
                                             return $ Just newRD
                                         Nothing -> lift $ do
                                             return Nothing
-                        lift $ mapM deref [urog, overAndGoal, hasOutgoings]
+                        lift $ mapM ($d deref) [urog, overAndGoal, hasOutgoings]
                         return res
                     case res of 
                         Nothing -> do 
-                            lift $ traceST "Winning"
+                            lift $ lift $ traceST "Winning"
                             return (True, (si, rs, rd, lp, winRegion))
                         Just rd -> refineLoop' rd winRegion
 

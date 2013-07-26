@@ -1,4 +1,4 @@
-{-# LANGUAGE PolymorphicComponents, RecordWildCards, ScopedTypeVariables #-}
+{-# LANGUAGE PolymorphicComponents, RecordWildCards, ScopedTypeVariables, TemplateHaskell #-}
 module RefineCommon (
     TheorySolver(..),
     fixedPoint,
@@ -34,6 +34,7 @@ import BddRecord
 import BddUtil
 import CuddST
 import CuddReorder
+import Resource
 
 --Theory solving
 data TheorySolver s u sp lp = TheorySolver {
@@ -68,9 +69,9 @@ doEnVars Ops{..} trans enVars = do
         deref e1
         return res
 
-refineAny :: Ops s u -> SectionInfo  s u -> DDNode s u -> ST s (Maybe [Int])
+refineAny :: Ops s u -> SectionInfo  s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (Maybe [Int])
 refineAny Ops{..} SectionInfo{..} newSU = do
-    si <- supportIndices newSU
+    si <- lift $ supportIndices newSU
     let ui = si `intersect` _untrackedInds
     return $ case ui of
         []  -> Nothing
@@ -147,23 +148,29 @@ partitionStateLabelPreds si syi x = (statePairs, labelPairs)
     labelPairs = indicesToLabelPreds syi labelIndices
     (stateIndices, labelIndices) = partitionStateLabel si x
 
-makeCubeInt :: Ops s u -> [([DDNode s u], [Bool])] -> ST s (DDNode s u)
-makeCubeInt ops x = makeCube ops $ concatMap (uncurry zip ) x
+makeCubeInt :: Ops s u -> [([DDNode s u], [Bool])] -> ResourceT (DDNode s u) (ST s) (DDNode s u)
+makeCubeInt ops@Ops{..} x = $r $ makeCube ops $ concatMap (uncurry zip ) x
 
-stateLabelInconsistent :: (Ord sp, Ord lp) => Ops s u -> SymbolInfo s u sp lp -> [(sp, [Bool])] -> [(lp, [Bool])] -> ST s (DDNode s u)
+stateLabelInconsistent :: (Ord sp, Ord lp) => Ops s u -> SymbolInfo s u sp lp -> [(sp, [Bool])] -> [(lp, [Bool])] -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 stateLabelInconsistent ops@Ops{..} SymbolInfo{..} statePairs labelPairs = do
     inconsistentState <- makeCubeInt ops $ map (first getStates) statePairs
     inconsistentLabel <- makeCubeInt ops $ map (first getLabels) labelPairs
-    andDeref ops inconsistentState inconsistentLabel
+    res <- $r $ band inconsistentState inconsistentLabel
+    $d deref inconsistentLabel
+    $d deref inconsistentState
+    return res
     where
     getStates = sel1 . fromJustNote "refineConsistency" . flip Map.lookup _stateVars
     getLabels = sel1 . fromJustNote "refineConsistency" . flip Map.lookup _labelVars
 
-stateLabelConsistent :: (Ord sp, Ord lp) => Ops s u -> SymbolInfo s u sp lp -> [(lp, [Bool])] -> ST s (DDNode s u) 
+stateLabelConsistent :: (Ord sp, Ord lp) => Ops s u -> SymbolInfo s u sp lp -> [(lp, [Bool])] -> ResourceT (DDNode s u) (ST s) (DDNode s u) 
 stateLabelConsistent ops@Ops{..} SymbolInfo{..} cLabelPreds = do
     labelCube <- makeCubeInt ops $ concatMap func labelPreds'
-    otherCube <- makeCube ops    $ zip otherEnabling (repeat False)
-    andDeref ops labelCube otherCube
+    otherCube <- $r $ makeCube ops    $ zip otherEnabling (repeat False)
+    res <- $r $ band labelCube otherCube
+    $d deref labelCube
+    $d deref otherCube
+    return res
     where
     otherEnabling = map (sel3 . snd) $ filter (\(p, _) -> not $ p `elem` map fst cLabelPreds) $ Map.toList _labelVars
     labelPreds' = map (first $ fromJustNote "refineConsistency" . flip Map.lookup _labelVars) cLabelPreds
