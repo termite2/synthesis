@@ -66,19 +66,21 @@ transSynopsys Ops{..} name trans = do
 
 --Input to the refinement algorithm. Represents the spec.
 data Abstractor s u sp lp = Abstractor {
-    goalAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) [DDNode s u],
-    fairAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) [DDNode s u],
-    initAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
-    contAbs    :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
-    updateAbs  :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) ([DDNode s u])
+    goalAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) [DDNode s u],
+    fairAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) [DDNode s u],
+    initAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
+    contAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
+    stateLabelConstraintAbs :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
+    updateAbs               :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) ([DDNode s u])
 }
 
 -- ===Data structures for keeping track of abstraction state===
 data RefineStatic s u = RefineStatic {
-    cont :: DDNode s u,
-    goal :: [DDNode s u],
-    fair :: [DDNode s u],
-    init :: DDNode s u
+    slRel :: DDNode s u,
+    cont  :: DDNode s u,
+    goal  :: [DDNode s u],
+    fair  :: [DDNode s u],
+    init  :: DDNode s u
 }
 
 derefStatic :: Ops s u -> RefineStatic s u -> ST s ()
@@ -211,16 +213,18 @@ cpre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} target = do
 --Returns the set of <state, untracked> pairs that are winning 
 cpre'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> DDNode s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds cc cu target = do
-    strat      <- cpre' ops si rd target
+    strat'       <- cpre' ops si rd target
+    strat        <- $r2 band strat' slRel
+    $d deref strat'
     stratContHas <- $r2 band strat hasOutgoingsCont
-    stratCont  <- doEnCont ops stratContHas labelPreds
+    stratCont    <- doEnCont ops stratContHas labelPreds
     $d deref stratContHas
-    stratUCont <- doEnCont ops (bnot strat) labelPreds
+    stratUCont   <- doEnCont ops (bnot strat) labelPreds
     $d deref strat
-    winCont    <- $r2 (andAbstract _labelCube) cc stratCont
-    winUCont   <- liftM bnot $ $r2 (andAbstract _labelCube) cu stratUCont
+    winCont      <- $r2 (andAbstract _labelCube) cc stratCont
+    winUCont     <- liftM bnot $ $r2 (andAbstract _labelCube) cu stratUCont
     mapM ($d deref) [stratCont, stratUCont]
-    win        <- $r3 bite cont winCont winUCont
+    win          <- $r3 bite cont winCont winUCont
     mapM ($d deref) [winCont, winUCont]
     return win
 
@@ -336,6 +340,10 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     (contExpr, newVarsCont) <- hoist lift $ doGoal ops contAbs
     lift $ $r $ return contExpr
     lift $ lift $ check "After compiling fair" ops
+    --abstract the stateLabelConstraint 
+    (stateLabelExpr, newVarsStateLabel) <- hoist lift $ doGoal ops stateLabelConstraintAbs
+    lift $ $r $ return stateLabelExpr
+    lift $ lift $ check "After compiling stateLabelConstraint" ops
     --get the abstract update functions for the goal predicates and variables
     let toUpdate = nub $ _allocatedStateVars newVarsGoals ++ _allocatedStateVars newVarsFairs ++ _allocatedStateVars newVarsCont
     lift $ lift $ traceST $ "Initial transition relation state vars: \n" ++ (intercalate "\n" $ map (('\t' :) . show . fst) $ toUpdate)
@@ -370,10 +378,11 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
             ..
         }
         rs = RefineStatic {
-            goal = goalExprs,
-            fair = fairExprs,
-            init = initExpr,
-            cont = contExpr
+            slRel = stateLabelExpr,
+            goal  = goalExprs,
+            fair  = fairExprs,
+            init  = initExpr,
+            cont  = contExpr
         }
     return (rd, rs)
 
