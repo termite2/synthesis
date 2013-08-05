@@ -454,7 +454,9 @@ refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Re
     win'               <- lift $ $r2 bor win'' winning
     lift $ $d deref win''
     winNoConstraint'   <- lift $ cpre' ops si rd win'
-    stratContHas       <- lift $ $r2 band winNoConstraint' hasOutgoings
+    stratContHas'      <- lift $ $r2 band winNoConstraint' hasOutgoings
+    stratContHas       <- lift $ $r2 band stratContHas' slRel
+    lift $ $d deref stratContHas'
     lift $ $d deref winNoConstraint'
     let lp             =  map (sel1 &&& sel3) $ Map.elems _labelVars
     winNoConstraint    <- lift $ doEnCont ops stratContHas lp
@@ -474,7 +476,9 @@ refineConsistencyUCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@R
     win''              <- lift $ $r2 band win fairr
     win'               <- lift $ $r2 bor  win'' winning
     lift $ $d deref win''
-    winNoConstraint'   <- lift $ liftM bnot $ cpre' ops si rd win'
+    winNoConstraint''  <- lift $ cpre' ops si rd win'
+    winNoConstraint'   <- lift $ liftM bnot $ $r2 band winNoConstraint'' slRel
+    lift $ $d deref winNoConstraint''
     let lp             =  map (sel1 &&& sel3) $ Map.elems _labelVars
     winNoConstraint    <- lift $ doEnCont ops winNoConstraint' lp
     lift $ $d deref winNoConstraint'
