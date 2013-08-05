@@ -341,7 +341,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     lift $ $r $ return contExpr
     lift $ lift $ check "After compiling fair" ops
     --abstract the stateLabelConstraint 
-    (stateLabelExpr, newVarsStateLabel) <- hoist lift $ doGoal ops stateLabelConstraintAbs
+    (stateLabelExpr, newVarsStateLabel) <- hoist lift $ doStateLabel ops stateLabelConstraintAbs
     lift $ $r $ return stateLabelExpr
     lift $ lift $ check "After compiling stateLabelConstraint" ops
     --get the abstract update functions for the goal predicates and variables
