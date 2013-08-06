@@ -329,15 +329,15 @@ mkVarsMap args = foldl f Map.empty args
             Just x  -> Map.insert b (a:x) mp
             Nothing -> Map.insert b [a] mp
 
-mkInitConsistency :: (Ord lv, Ord lp) => Ops s u -> (lp -> [lv]) -> Map lv [lp] -> Map lp (DDNode s u) -> [(lp, DDNode s u)] -> ResourceT (DDNode s u) (ST s) (DDNode s u)
-mkInitConsistency Ops{..} getVars mp mp2 labs = do
+mkInitConsistency :: (Ord lv, Ord lp) => Ops s u -> (lp -> [lv]) -> Map lv [lp] -> Map lp (DDNode s u) -> [(lp, DDNode s u)] -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
+mkInitConsistency Ops{..} getVars mp mp2 labs initCons = do
     $r $ return btrue
     lift $ ref btrue
     forAccumM btrue labs $ \accum (lp, en) -> do
         let theOperlappingPreds = concatMap (fromJustNote "mkInitConsistency" . flip Map.lookup mp) (getVars lp)
             theEns              = map (fromJustNote "mkInitConsistency2" . flip Map.lookup mp2) theOperlappingPreds
         forAccumM accum theEns $ \accum theEn -> do
-            constr <- $r $ bimp en (bnot theEn)
+            constr <- $r $ bnot en .| bnot theEn
             res <- $r2 band accum constr
             mapM ($d deref) [constr, accum]
             return res
@@ -393,7 +393,10 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     --compute the initial consistentMinus being as liberal as possible
     labelPreds <- gets $ _labelVars . _symbolTable
     let theMap = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys labelPreds
-    consistentMinusCULCont <- lift $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList labelPreds)
+    lift $ $r $ return btrue
+    lift $ lift $ ref btrue
+    consistentMinusCULCont <- lift $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList labelPreds) btrue
+    --lift $ lift $ traceST $ bddSynopsis ops consistentMinusCULCont 
 
     --consistentMinusCULCont <- lift $ $r $ conj ops $ map (bnot . sel3) $ Map.elems labelPreds
 
@@ -430,8 +433,8 @@ pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} rs@Re
     return res
 
 --Promote untracked state variables to full state variables so that we can make progress towards the goal. Does not refine the consistency relations.
-promoteUntracked :: (Ord lp, Ord sp, Show sp, Show lp) => Ops s u -> Abstractor s u sp lp -> RefineDynamic s u -> [Int] -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (RefineDynamic s u)
-promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
+promoteUntracked :: (Ord lp, Ord sp, Ord lv, Show sp, Show lp) => Ops s u -> Abstractor s u sp lp -> TheorySolver s u sp lp lv -> RefineDynamic s u -> [Int] -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (RefineDynamic s u)
+promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..} indices = do
     --look up the predicates to promote
     stateRev             <- gets $ _stateRev . _symbolTable
     let refineVars       =  nub $ map (fromJustNote "promoteUntracked: untracked indices not in stateRev" . flip Map.lookup stateRev) indices
@@ -451,16 +454,16 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
     groups <- lift $ groupTrels ops $ zip cubes updateExprs
     lift $ lift $ traceST $ "Number of transition partitions: " ++ show (length groups)
 
-    --TODO why is this commented out?
-    {-
-    labelPreds           <- gets $ _labelVars . _symbolTable
-    consistentMinusCUL'' <- lift $ conj ops $ map (bnot . fst . snd) $ Map.elems $ labelPreds Map.\\ labelPredsPreUpdate
-    consistentMinusCUL'  <- lift $ andDeref ops consistentMinusCUL consistentMinusCUL''
-    -}
+    labelPreds              <- gets $ _labelVars . _symbolTable
+    let newLabelPreds       = labelPreds Map.\\ labelPredsPreUpdate
+    let theMap              = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys labelPreds
+    consistentMinusCULCont' <- lift $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList newLabelPreds) consistentMinusCULCont
+    --TODO update uncontrollable consistency as well
 
     return rd {
-        --TODO does this order matter
-        trans  = groups ++ trans
+        --TODO does this order matter?
+        trans  = groups ++ trans,
+        consistentMinusCULCont = consistentMinusCULCont'
     }
 
 refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp lv -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
@@ -828,7 +831,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                                     lift $ mapM ($d deref) [newWin]
                                     case res of 
                                         Just vars -> do
-                                            newRD <- promoteUntracked ops spec rd vars 
+                                            newRD <- promoteUntracked ops spec ts rd vars 
                                             return $ Just newRD
                                         Nothing -> lift $ do
                                             return Nothing
