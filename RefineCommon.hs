@@ -38,10 +38,11 @@ import CuddReorder
 import Resource
 
 --Theory solving
-data TheorySolver s u sp lp = TheorySolver {
+data TheorySolver s u sp lp lv = TheorySolver {
     unsatCoreState      :: [(sp, [Bool])] -> Maybe [(sp, [Bool])],
     unsatCoreStateLabel :: [(sp, [Bool])] -> [(lp, [Bool])] -> Maybe ([(sp, [Bool])], [(lp, [Bool])]),
-    eQuant              :: forall pdb. [(lp, [Bool])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u)
+    eQuant              :: forall pdb. [(lp, [Bool])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
+    getVarsLabel        :: lp -> [lv]
 }
 
 fixedPoint :: Ops s u -> (DDNode s u -> ST s (DDNode s u)) -> DDNode s u -> ST s (DDNode s u)

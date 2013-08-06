@@ -26,7 +26,7 @@ import Control.Monad.State
 import System.IO
 
 import Safe
-import Data.Text.Lazy hiding (intercalate, map, take, length, zip, replicate)
+import Data.Text.Lazy hiding (intercalate, map, take, length, zip, replicate, foldl, concatMap)
 import Text.PrettyPrint.Leijen.Text
 import Control.Monad.Morph
 
@@ -70,8 +70,8 @@ data Abstractor s u sp lp = Abstractor {
     fairAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) [DDNode s u],
     initAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
     contAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
-    stateLabelConstraintAbs :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
-    updateAbs               :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) ([DDNode s u])
+    updateAbs               :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) ([DDNode s u]),
+    stateLabelConstraintAbs :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u)
 }
 
 -- ===Data structures for keeping track of abstraction state===
@@ -320,9 +320,31 @@ solveBuchi cpreFunc ops@Ops{..} rs@RefineStatic{..} startingPoint = do
 check msg ops = return ()
 --check msg ops = unsafeIOToST (putStrLn ("checking bdd consistency" ++ msg ++ "\n")) >> debugCheck ops >> checkKeys ops
 
+mkVarsMap :: (Ord b) => [(a, [b])] -> Map b [a]
+mkVarsMap args = foldl f Map.empty args
+    where
+    f mp (a, bs) = foldl g mp bs 
+        where
+        g mp b = case Map.lookup b mp of
+            Just x  -> Map.insert b (a:x) mp
+            Nothing -> Map.insert b [a] mp
+
+mkInitConsistency :: (Ord lv, Ord lp) => Ops s u -> (lp -> [lv]) -> Map lv [lp] -> Map lp (DDNode s u) -> [(lp, DDNode s u)] -> ResourceT (DDNode s u) (ST s) (DDNode s u)
+mkInitConsistency Ops{..} getVars mp mp2 labs = do
+    $r $ return btrue
+    lift $ ref btrue
+    forAccumM btrue labs $ \accum (lp, en) -> do
+        let theOperlappingPreds = concatMap (fromJustNote "mkInitConsistency" . flip Map.lookup mp) (getVars lp)
+            theEns              = map (fromJustNote "mkInitConsistency2" . flip Map.lookup mp2) theOperlappingPreds
+        forAccumM accum theEns $ \accum theEn -> do
+            constr <- $r $ bimp en (bnot theEn)
+            res <- $r2 band accum constr
+            mapM ($d deref) [constr, accum]
+            return res
+
 --Create an initial abstraction and set up the data structures
-initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp) => Ops s u -> Abstractor s u sp lp -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (RefineDynamic s u, RefineStatic s u)
-initialAbstraction ops@Ops{..} Abstractor{..} = do
+initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp, Ord lv) => Ops s u -> Abstractor s u sp lp -> TheorySolver s u sp lp lv -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (RefineDynamic s u, RefineStatic s u)
+initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     lift $ lift $ check "InitialAbstraction start" ops
     --abstract init
     initExpr <- hoist lift $ doInit ops initAbs
@@ -339,7 +361,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     --abstract the controllable condition
     (contExpr, newVarsCont) <- hoist lift $ doGoal ops contAbs
     lift $ $r $ return contExpr
-    lift $ lift $ check "After compiling fair" ops
+    lift $ lift $ check "After compiling controllable" ops
     --abstract the stateLabelConstraint 
     (stateLabelExpr, newVarsStateLabel) <- hoist lift $ doStateLabel ops stateLabelConstraintAbs
     lift $ $r $ return stateLabelExpr
@@ -367,8 +389,14 @@ initialAbstraction ops@Ops{..} Abstractor{..} = do
     let inconsistentInit = bfalse
     lift $ lift $ ref inconsistentInit
     lift $ $r $ return inconsistentInit
+
+    --compute the initial consistentMinus being as liberal as possible
     labelPreds <- gets $ _labelVars . _symbolTable
-    consistentMinusCULCont <- lift $ $r $ conj ops $ map (bnot . sel3) $ Map.elems labelPreds
+    let theMap = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys labelPreds
+    consistentMinusCULCont <- lift $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList labelPreds)
+
+    --consistentMinusCULCont <- lift $ $r $ conj ops $ map (bnot . sel3) $ Map.elems labelPreds
+
     let consistentMinusCULUCont = consistentMinusCULCont
     lift $ lift $ ref consistentMinusCULUCont
     lift $ $r $ return consistentMinusCULUCont
@@ -435,7 +463,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} rd@RefineDynamic{..} indices = do
         trans  = groups ++ trans
     }
 
-refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
+refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp lv -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
 refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} hasOutgoings win winning fairr = do
     (res, rd) <- refineConsistencyCont ops ts rd rs hasOutgoings win winning fairr
     case res of
@@ -445,7 +473,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
             res <- refineConsistencyUCont ops ts rd rs win winning fairr
             return res
 
-refineConsistencyCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
+refineConsistencyCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp lv -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
 refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} hasOutgoings win winning fairr = do
     lift $ check "refineConsistencyCont" ops
     syi@SymbolInfo{..} <- gets _symbolTable 
@@ -468,7 +496,7 @@ refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Re
     let rd' = rd {consistentPlusCULCont = consistentPlusCULCont', consistentMinusCULCont = consistentMinusCULCont'}
     return (res, rd')
 
-refineConsistencyUCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
+refineConsistencyUCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp lv -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
 refineConsistencyUCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning fairr = do
     lift $ check "refineConsistencyUCont" ops
     syi@SymbolInfo{..} <- gets _symbolTable 
@@ -489,7 +517,7 @@ refineConsistencyUCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@R
     let rd' = rd {consistentPlusCULUCont = consistentPlusCULUCont', consistentMinusCULUCont = consistentMinusCULUCont'}
     return (res, rd')
 
-doConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, (DDNode s u, DDNode s u))
+doConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp lv -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, (DDNode s u, DDNode s u))
 doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
     syi@SymbolInfo{..} <- gets _symbolTable 
     si@SectionInfo{..} <- gets _sections
@@ -720,7 +748,7 @@ data RefineInfo s u sp lp = RefineInfo {
     op :: Ops s u
 }
 
-refineInit :: Ord sp => Ops s u -> TheorySolver s u sp lp -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (RefineDynamic s u, Bool)
+refineInit :: Ord sp => Ops s u -> TheorySolver s u sp lp lv -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (RefineDynamic s u, Bool)
 refineInit ops@Ops{..} ts@TheorySolver{..} rs@RefineStatic{..} rd@RefineDynamic{..} winRegion = do
     syi@SymbolInfo{..} <- gets _symbolTable 
     si@SectionInfo{..} <- gets _sections
@@ -745,11 +773,11 @@ refineInit ops@Ops{..} ts@TheorySolver{..} rs@RefineStatic{..} rd@RefineDynamic{
         True  -> return (rd, True)
 
 --The abstraction-refinement loop
-absRefineLoop :: forall s u o sp lp. (Ord sp, Ord lp, Show sp, Show lp) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp -> o -> ResourceT (DDNode s u) (ST s) (Bool, RefineInfo s u sp lp)
+absRefineLoop :: forall s u o sp lp lv. (Ord sp, Ord lp, Show sp, Show lp, Ord lv) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp lv -> o -> ResourceT (DDNode s u) (ST s) (Bool, RefineInfo s u sp lp)
 absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
     idb <- lift $ initialDB ops
     ((winning, (si, rs, rd, lp, wn)), db) <- flip runStateT idb $ do
-        (rd, rs) <- initialAbstraction ops spec
+        (rd, rs) <- initialAbstraction ops spec ts
         lift $ lift $ debugDo 1 $ traceST "Refinement state after initial abstraction: " 
         lift $ lift $ debugDo 1 $ traceST $ "Goal is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ goal rs)
         lift $ lift $ debugDo 1 $ traceST $ "Fair is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ fair rs)
