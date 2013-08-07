@@ -26,9 +26,11 @@ import Control.Monad.State
 import System.IO
 
 import Safe
-import Data.Text.Lazy hiding (intercalate, map, take, length, zip, replicate, foldl, concatMap)
+import Data.Text.Lazy hiding (intercalate, map, take, length, zip, replicate, foldl, concatMap, filter)
 import Text.PrettyPrint.Leijen.Text
 import Control.Monad.Morph
+import Data.Graph
+import Data.Tree
 
 import Util
 import RefineUtil
@@ -466,7 +468,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
         consistentMinusCULCont = consistentMinusCULCont'
     }
 
-refineConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp lv -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
+refineConsistency :: (Ord sp, Ord lp, Ord lv, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp lv -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
 refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} hasOutgoings win winning fairr = do
     (res, rd) <- refineConsistencyCont ops ts rd rs hasOutgoings win winning fairr
     case res of
@@ -476,7 +478,7 @@ refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Refine
             res <- refineConsistencyUCont ops ts rd rs win winning fairr
             return res
 
-refineConsistencyCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp lv -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
+refineConsistencyCont :: (Ord sp, Ord lp, Ord lv, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp lv -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
 refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} hasOutgoings win winning fairr = do
     lift $ check "refineConsistencyCont" ops
     syi@SymbolInfo{..} <- gets _symbolTable 
@@ -499,7 +501,7 @@ refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Re
     let rd' = rd {consistentPlusCULCont = consistentPlusCULCont', consistentMinusCULCont = consistentMinusCULCont'}
     return (res, rd')
 
-refineConsistencyUCont :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp lv -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
+refineConsistencyUCont :: (Ord sp, Ord lp, Ord lv, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp lv -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
 refineConsistencyUCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning fairr = do
     lift $ check "refineConsistencyUCont" ops
     syi@SymbolInfo{..} <- gets _symbolTable 
@@ -520,7 +522,16 @@ refineConsistencyUCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@R
     let rd' = rd {consistentPlusCULUCont = consistentPlusCULUCont', consistentMinusCULUCont = consistentMinusCULUCont'}
     return (res, rd')
 
-doConsistency :: (Ord sp, Ord lp, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp lv -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, (DDNode s u, DDNode s u))
+sccs :: (Ord lv, Ord lp, Show lp) => SymbolInfo s u sp lp -> TheorySolver s u sp lp lv -> [(lp, a)] -> [[(lp, a)]]
+sccs SymbolInfo{..} TheorySolver{..} labelCube = fmap (flatten . fmap (sel1 . func)) $ components theGraph
+    where
+    list             = map func labelCube
+        where
+        func pred    = (pred, fst pred, filter (flip elem (map fst labelCube)) $ concatMap (fromJust . flip Map.lookup vMap) $ getVarsLabel (fst pred))
+    (theGraph, func) = graphFromEdges' list 
+    vMap             = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys _labelVars
+
+doConsistency :: (Ord sp, Ord lp, Ord lv, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp lv -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, (DDNode s u, DDNode s u))
 doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
     syi@SymbolInfo{..} <- gets _symbolTable 
     si@SectionInfo{..} <- gets _sections
@@ -561,18 +572,43 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
                     --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
                     lift $ $d deref winNoConstraint
                     lift $ lift $ traceST "SAT"
-                    eQuantExpr <- hoist lift $ doUpdate ops (eQuant groupedLabel)
-                    lift $ $r $ return eQuantExpr
 
-                    consistentCube'     <- lift $ stateLabelConsistent ops syi groupedLabel 
-                    consistentCube      <- lift $ $r2 band consistentCube' eQuantExpr
-                    lift $ $d deref consistentCube'
-                    lift $ $d deref eQuantExpr
-                    consistentMinusCUL' <- lift $ $r2 bor cMinus consistentCube
-                    lift $ $d deref cMinus
-                    lift $ $d deref consistentCube
+                    let scs = sccs syi ts groupedLabel
+                    let labelPreds = _labelVars 
+                    let theMap = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys labelPreds
+                    cMinus' <- forAccumM cMinus scs $ \cons scc_val -> do
+                        let scc = map fst scc_val
+                        lift $ lift $ traceST $ "SCC: " ++ show scc
+                        let allPreds = concatMap (fromJustNote "doConsistency" . flip Map.lookup theMap) $ nub $ concatMap getVarsLabel scc
+                        lift $ lift $ traceST $ "All preds: " ++ show allPreds
+                        let fringePreds = allPreds \\ scc
+                        lift $ lift $ traceST $ "Fringe Preds: " ++ show fringePreds
+                        lift $ lift $ traceST ""
+                        let labelPreds' = map (first $ fromJustNote "refineConsistency" . flip Map.lookup _labelVars) scc_val
+                        let func (l, pol) = [(sel1 l, pol), ([sel3 l], [True])]
+                        let allEns = map (sel3 . fromJustNote "refineConsistency" . flip Map.lookup _labelVars) allPreds
+                        thisLabel <- lift $ makeCubeInt ops $ concatMap func labelPreds'
+                        eQuantExpr <- hoist lift $ doUpdate ops (eQuant scc_val)
+                        lift $ $r $ return eQuantExpr
+                        allCube <- lift $ $r $ nodesToCube allEns
+                        allCubeFalse <- lift $ $r $ makeCube ops $ zip allEns (repeat False)
+                        cons1 <- lift $ $r2 band cons allCubeFalse
+                        lift $ $d deref allCubeFalse
+                        cons2 <- lift $ $r2 bexists allCube cons1
+                        lift $ $d deref allCube
+                        lift $ $d deref cons1
+                        cons3 <- lift $ $r2 band cons2 eQuantExpr
+                        lift $ $d deref cons2
+                        lift $ $d deref eQuantExpr
+                        cons4 <- lift $ $r2 band cons3 thisLabel
+                        lift $ $d deref cons3
+                        lift $ $d deref thisLabel
+                        cons5 <- lift $ $r2 bor cons4 cons
+                        lift $ $d deref cons4
+                        lift $ $d deref cons
+                        return cons5
 
-                    return $ (True, (cPlus, consistentMinusCUL'))
+                    return $ (True, (cPlus, cMinus'))
 
 mSumMaybe :: Monad m => [m (Maybe a)] -> m (Maybe a)
 mSumMaybe (x:xs) = do
