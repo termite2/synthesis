@@ -215,14 +215,16 @@ cpre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} target = do
 --Returns the set of <state, untracked> pairs that are winning 
 cpre'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> DDNode s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds cc cu target = do
-    strat'       <- cpre' ops si rd target
-    strat        <- $r2 band strat' slRel
-    $d deref strat'
-    stratContHas <- $r2 band strat hasOutgoingsCont
+    strat       <- cpre' ops si rd target
+    stratContHas' <- $r2 band strat hasOutgoingsCont
+    stratContHas <- $r2 band stratContHas' slRel
+    $d deref stratContHas'
     stratCont    <- doEnCont ops stratContHas labelPreds
     $d deref stratContHas
-    stratUCont   <- doEnCont ops (bnot strat) labelPreds
+    asdf         <- $r2 band slRel (bnot strat)
     $d deref strat
+    stratUCont   <- doEnCont ops asdf labelPreds
+    $d deref asdf
     winCont      <- $r2 (andAbstract _labelCube) cc stratCont
     winUCont     <- liftM bnot $ $r2 (andAbstract _labelCube) cu stratUCont
     mapM ($d deref) [stratCont, stratUCont]
@@ -510,7 +512,7 @@ refineConsistencyUCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@R
     win'               <- lift $ $r2 bor  win'' winning
     lift $ $d deref win''
     winNoConstraint''  <- lift $ cpre' ops si rd win'
-    winNoConstraint'   <- lift $ liftM bnot $ $r2 band winNoConstraint'' slRel
+    winNoConstraint'   <- lift $ $r2 band (bnot winNoConstraint'') slRel
     lift $ $d deref winNoConstraint''
     let lp             =  map (sel1 &&& sel3) $ Map.elems _labelVars
     winNoConstraint    <- lift $ doEnCont ops winNoConstraint' lp
