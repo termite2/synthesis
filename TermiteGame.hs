@@ -814,7 +814,7 @@ refineInit ops@Ops{..} ts@TheorySolver{..} rs@RefineStatic{..} rd@RefineDynamic{
         True  -> return (rd, True)
 
 --The abstraction-refinement loop
-absRefineLoop :: forall s u o sp lp lv. (Ord sp, Ord lp, Show sp, Show lp, Ord lv) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp lv -> o -> ResourceT (DDNode s u) (ST s) (Bool, RefineInfo s u sp lp)
+absRefineLoop :: forall s u o sp lp lv. (Ord sp, Ord lp, Show sp, Show lp, Show lv, Ord lv) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp lv -> o -> ResourceT (DDNode s u) (ST s) (Bool, RefineInfo s u sp lp)
 absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
     idb <- lift $ initialDB ops
     ((winning, (si, rs, rd, lp, wn)), db) <- flip runStateT idb $ do
