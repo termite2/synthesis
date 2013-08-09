@@ -333,21 +333,22 @@ mkVarsMap args = foldl f Map.empty args
             Just x  -> Map.insert b (a:x) mp
             Nothing -> Map.insert b [a] mp
 
-mkInitConsistency :: (Ord lv, Ord lp) => Ops s u -> (lp -> [lv]) -> Map lv [lp] -> Map lp (DDNode s u) -> [(lp, DDNode s u)] -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
+mkInitConsistency :: (Ord lv, Ord lp, Show lp) => Ops s u -> (lp -> [lv]) -> Map lv [lp] -> Map lp (DDNode s u) -> [(lp, DDNode s u)] -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 mkInitConsistency Ops{..} getVars mp mp2 labs initCons = do
     $r $ return btrue
     lift $ ref btrue
     forAccumM btrue labs $ \accum (lp, en) -> do
         let theOperlappingPreds = concatMap (fromJustNote "mkInitConsistency" . flip Map.lookup mp) (getVars lp)
             theEns              = map (fromJustNote "mkInitConsistency2" . flip Map.lookup mp2) theOperlappingPreds
-        forAccumM accum theEns $ \accum theEn -> do
+        lift $ traceST $ show lp ++ " clashes with " ++ show theOperlappingPreds
+        forAccumM accum (delete en theEns) $ \accum theEn -> do
             constr <- $r $ bnot en .| bnot theEn
             res <- $r2 band accum constr
             mapM ($d deref) [constr, accum]
             return res
 
 --Create an initial abstraction and set up the data structures
-initialAbstraction :: (Show sp, Show lp, Ord sp, Ord lp, Ord lv) => Ops s u -> Abstractor s u sp lp -> TheorySolver s u sp lp lv -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (RefineDynamic s u, RefineStatic s u)
+initialAbstraction :: (Show sp, Show lp, Show lv, Ord sp, Ord lp, Ord lv) => Ops s u -> Abstractor s u sp lp -> TheorySolver s u sp lp lv -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (RefineDynamic s u, RefineStatic s u)
 initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     lift $ lift $ check "InitialAbstraction start" ops
     --abstract init
@@ -397,6 +398,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     --compute the initial consistentMinus being as liberal as possible
     labelPreds <- gets $ _labelVars . _symbolTable
     let theMap = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys labelPreds
+    lift $ lift $ traceST $ show theMap
     lift $ $r $ return btrue
     lift $ lift $ ref btrue
     consistentMinusCULCont <- lift $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList labelPreds) btrue
