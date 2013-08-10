@@ -565,7 +565,8 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
             case unsatCoreStateLabel groupedState groupedLabel of
                 Just (statePairs, labelPairs) -> do
                     --statePairs, labelPairs is inconsistent so subtract this from consistentPlusCUL
-                    lift $ lift $ traceST "UNSAT"
+                    lift $ lift $ traceST $ "UNSAT"
+                    lift $ lift $ traceST $ "Core is" ++ show statePairs ++ " " ++ show labelPairs
                     inconsistent       <- lift $ stateLabelInconsistent ops syi statePairs labelPairs
                     consistentPlusCUL' <- lift $ $r2 band cPlus (bnot inconsistent)
                     lift $ $d deref cPlus
