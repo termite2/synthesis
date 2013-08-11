@@ -572,7 +572,8 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
                     lift $ $d deref cPlus
                     lift $ $d deref inconsistent
                     lift $ check "refineConsistency4" ops
-                    doConsistency ops ts consistentPlusCUL' cMinus winNoConstraint
+                    return $ (True, (consistentPlusCUL', cMinus))
+                    --doConsistency ops ts consistentPlusCUL' cMinus winNoConstraint
                 Nothing -> do
                     --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
                     lift $ $d deref winNoConstraint
