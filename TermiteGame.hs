@@ -674,7 +674,7 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
     win' <- $r $ conj ops wins
     mapM ($d deref) wins
     $d deref win'
-    when (win' /= win) (error "Winning regions are not equal in strategy generation")
+    when (win' /= win) (lift $ traceST "Winning regions are not equal in strategy generation")
     return strats
     where
     combineStrats prevWin oldC newC = do
@@ -684,18 +684,22 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         $d deref oldC
         return c'
     cpre hasOutgoings target = do
-        strat      <- cpre' ops si rd target
-        stratContHas <- $r2 band strat hasOutgoings
-        stratCont  <- doEnCont ops stratContHas labelPreds
+        strat       <- cpre' ops si rd target
+        stratContHas' <- $r2 band strat hasOutgoings
+        stratContHas <- $r2 band stratContHas' slRel
+        $d deref stratContHas'
+        stratCont    <- doEnCont ops stratContHas labelPreds
         $d deref stratContHas
-        stratUCont <- doEnCont ops (bnot strat) labelPreds
+        asdf         <- $r2 band slRel (bnot strat)
         $d deref strat
-        winCont    <- $r2 (andAbstract _labelCube) consistentMinusCULCont stratCont
-        winUCont   <- liftM bnot $ $r2 (andAbstract _labelCube) consistentPlusCULUCont stratUCont
-        su         <- $r3 bite cont winCont winUCont
-        win        <- $r1 (bforall _untrackedCube) su
-        $d deref su
-        mapM ($d deref) [winCont, stratUCont, winUCont]
+        stratUCont   <- doEnCont ops asdf labelPreds
+        $d deref asdf
+        winCont      <- $r2 (andAbstract _labelCube) consistentMinusCULCont stratCont
+        winUCont     <- liftM bnot $ $r2 (andAbstract _labelCube) consistentPlusCULUCont stratUCont
+        mapM ($d deref) [stratUCont]
+        win'         <- $r3 bite cont winCont winUCont
+        mapM ($d deref) [winCont, winUCont]
+        win          <- $r1 (bforall _untrackedCube) win'
         return (win, stratCont)
 
 fixedPoint2R :: Ops s u -> DDNode s u -> a -> (DDNode s u -> a -> ResourceT (DDNode s u) (ST s) (DDNode s u, a)) -> ResourceT (DDNode s u) (ST s) (DDNode s u, a)
