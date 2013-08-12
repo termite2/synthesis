@@ -845,50 +845,59 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
             labelPreds <- gets $ _labelVars . _symbolTable
             let lp = map (sel1 &&& sel3) $ Map.elems labelPreds
             hasOutgoings <- lift $ doHasOutgoings ops trans
-            winRegion <- lift $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin
-            lift $ lift $ traceST ""
-            lift $ $d deref lastWin
-            (rd, winning) <- refineInit ops ts rs rd winRegion
-            --Alive: winRegion, rd, rs, hasOutgoings
+
+            winRegionUnder <- lift $ solveBuchi (cPreUnder ops si rs rd hasOutgoings lp) ops rs lastWin
+            (rd, winning) <- refineInit ops ts rs rd winRegionUnder
             case winning of
-                False -> lift $ do
-                    lift $ traceST "Losing"
-                    mapM ($d deref) [hasOutgoings]
-                    return (False, (si, rs, rd, lp, winRegion))
                 True -> do
-                    --lift $ lift $ traceST "Possibly winning, Confirming with further refinement"
-                    res <- mSumMaybe $ flip map goal $ \g -> do
-                        overAndGoal <- lift $ $r2 band winRegion g
-                        underReach <- lift $ solveReach (cPreUnder ops si rs rd hasOutgoings lp) ops rs winRegion overAndGoal
-                        lift $ lift $ traceST ""
-                        urog <- lift $ $r2 bor underReach overAndGoal
-                        lift $ $d deref underReach
-                        res <- mSumMaybe $ flip map fair $ \fairr -> do
-                            --TODO is this the right cpre?
-                            newWin <- lift $ solveFair (cPreOver ops si rs rd hasOutgoings lp) ops rs winRegion urog fairr
-                            (res, rd) <- refineConsistency ops ts rd rs hasOutgoings newWin urog fairr
-                            case res of
-                                True -> do
-                                    --lift $ lift $ traceST "Refined consistency relations. Re-solving..."
-                                    lift $ mapM ($d deref) [newWin]
-                                    return $ Just rd
-                                False -> do
-                                    --lift $ lift $ traceST "Could not refine consistency relations. Attempting to refine untracked state variables"
-                                    res <- lift $ pickUntrackedToPromote ops si rd rs lp hasOutgoings newWin urog fairr
-                                    lift $ mapM ($d deref) [newWin]
-                                    case res of 
-                                        Just vars -> do
-                                            newRD <- promoteUntracked ops spec ts rd vars 
-                                            return $ Just newRD
-                                        Nothing -> lift $ do
-                                            return Nothing
-                        lift $ mapM ($d deref) [urog, overAndGoal, hasOutgoings]
-                        return res
-                    case res of 
-                        Nothing -> do 
-                            lift $ lift $ traceST "Winning"
-                            return (True, (si, rs, rd, lp, winRegion))
-                        Just rd -> refineLoop' rd winRegion
+                    lift $ lift $ traceST "Winning: Early termination"
+                    return (True, (si, rs, rd, lp, winRegionUnder))
+                False -> do
+                    lift $ $d deref winRegionUnder
+                    winRegion <- lift $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin
+                    lift $ lift $ traceST ""
+                    lift $ $d deref lastWin
+                    (rd, winning) <- refineInit ops ts rs rd winRegion
+                    --Alive: winRegion, rd, rs, hasOutgoings
+                    case winning of
+                        False -> lift $ do
+                            lift $ traceST "Losing"
+                            mapM ($d deref) [hasOutgoings]
+                            return (False, (si, rs, rd, lp, winRegion))
+                        True -> do
+                            --lift $ lift $ traceST "Possibly winning, Confirming with further refinement"
+                            res <- mSumMaybe $ flip map goal $ \g -> do
+                                overAndGoal <- lift $ $r2 band winRegion g
+                                underReach <- lift $ solveReach (cPreUnder ops si rs rd hasOutgoings lp) ops rs winRegion overAndGoal
+                                lift $ lift $ traceST ""
+                                urog <- lift $ $r2 bor underReach overAndGoal
+                                lift $ $d deref underReach
+                                res <- mSumMaybe $ flip map fair $ \fairr -> do
+                                    --TODO is this the right cpre?
+                                    newWin <- lift $ solveFair (cPreOver ops si rs rd hasOutgoings lp) ops rs winRegion urog fairr
+                                    (res, rd) <- refineConsistency ops ts rd rs hasOutgoings newWin urog fairr
+                                    case res of
+                                        True -> do
+                                            --lift $ lift $ traceST "Refined consistency relations. Re-solving..."
+                                            lift $ mapM ($d deref) [newWin]
+                                            return $ Just rd
+                                        False -> do
+                                            --lift $ lift $ traceST "Could not refine consistency relations. Attempting to refine untracked state variables"
+                                            res <- lift $ pickUntrackedToPromote ops si rd rs lp hasOutgoings newWin urog fairr
+                                            lift $ mapM ($d deref) [newWin]
+                                            case res of 
+                                                Just vars -> do
+                                                    newRD <- promoteUntracked ops spec ts rd vars 
+                                                    return $ Just newRD
+                                                Nothing -> lift $ do
+                                                    return Nothing
+                                lift $ mapM ($d deref) [urog, overAndGoal, hasOutgoings]
+                                return res
+                            case res of 
+                                Nothing -> do 
+                                    lift $ lift $ traceST "Winning"
+                                    return (True, (si, rs, rd, lp, winRegion))
+                                Just rd -> refineLoop' rd winRegion
 
 cex :: RefineInfo s u sp lp -> ResourceT (DDNode s u) (ST s) [[DDNode s u]]
 cex RefineInfo{..} = counterExample op si rs rd lp wn
