@@ -63,6 +63,9 @@ data SymbolInfo s u sp lp = SymbolInfo {
 makeLenses ''SymbolInfo
 initialSymbolTable = SymbolInfo Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty 
 
+extractStatePreds :: SymbolInfo s u sp lp -> [sp]
+extractStatePreds SymbolInfo{..} = Map.keys _stateVars
+
 --Sections
 data SectionInfo s u = SectionInfo {
     _trackedCube   :: DDNode s u,

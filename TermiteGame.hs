@@ -834,6 +834,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
         lift $ lift $ ref btrue
         lift $ $r $ return btrue
         refineLoop ops rs rd btrue
+    lift $ traceST $ "Preds: \n" ++ intercalate "\n" (map show $ extractStatePreds $ _symbolTable db)
     return $ (winning, RefineInfo{op=ops, ..})
     where
     refineLoop ops@Ops{..} rs@RefineStatic{..} = refineLoop'
