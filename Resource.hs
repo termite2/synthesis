@@ -41,6 +41,11 @@ evalResourceT = flip evalStateT (Map.empty) . unResourceT
 instance MonadTrans (ResourceT t) where
     lift = ResourceT . lift
 
+checkResource :: (Monad m, Ord a) => (a -> a) -> String -> a -> ResourceT a m ()
+checkResource reg loc x = ResourceT $ do
+    mp <- get
+    checkRef loc mp (reg x)
+
 rf1 :: (Monad m, Ord a) => (a -> a) -> String -> (a -> m a) -> a -> ResourceT a m a
 rf1 reg loc f arg = ResourceT $ do
     mp <- get
