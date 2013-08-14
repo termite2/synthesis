@@ -644,6 +644,7 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         winAndGoal <- $r2 band goal win
         $r $ return bfalse
         lift $ ref bfalse
+        sequence $ replicate (length fair) ($r $ return bfalse)
         --Reachabiliy least fixedpoint
         res <- fixedPoint2R ops bfalse (repeat bfalse) $ \soFar strats -> do 
             soFarOrWinAndGoal <- $r2 bor soFar winAndGoal
