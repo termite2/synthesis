@@ -335,9 +335,7 @@ mkVarsMap args = foldl f Map.empty args
 
 mkInitConsistency :: (Ord lv, Ord lp, Show lp) => Ops s u -> (lp -> [lv]) -> Map lv [lp] -> Map lp (DDNode s u) -> [(lp, DDNode s u)] -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 mkInitConsistency Ops{..} getVars mp mp2 labs initCons = do
-    $r $ return btrue
-    lift $ ref btrue
-    forAccumM btrue labs $ \accum (lp, en) -> do
+    forAccumM initCons labs $ \accum (lp, en) -> do
         let theOperlappingPreds = concatMap (fromJustNote "mkInitConsistency" . flip Map.lookup mp) (getVars lp)
             theEns              = map (fromJustNote "mkInitConsistency2" . flip Map.lookup mp2) theOperlappingPreds
         lift $ traceST $ show lp ++ " clashes with " ++ show theOperlappingPreds
