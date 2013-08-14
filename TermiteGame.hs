@@ -464,12 +464,14 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
     let newLabelPreds       = labelPreds Map.\\ labelPredsPreUpdate
     let theMap              = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys labelPreds
     consistentMinusCULCont' <- lift $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList newLabelPreds) consistentMinusCULCont
+    consistentMinusCULUCont' <- lift $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList newLabelPreds) consistentMinusCULUCont
     --TODO update uncontrollable consistency as well
 
     return rd {
         --TODO does this order matter?
         trans  = groups ++ trans,
-        consistentMinusCULCont = consistentMinusCULCont'
+        consistentMinusCULCont = consistentMinusCULCont',
+        consistentMinusCULUCont = consistentMinusCULUCont'
     }
 
 refineConsistency :: (Ord sp, Ord lp, Ord lv, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp lv -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
@@ -593,15 +595,15 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
                         let labelPreds' = map (first $ fromJustNote "refineConsistency" . flip Map.lookup _labelVars) scc_val
                         let func (l, pol) = [(sel1 l, pol), ([sel3 l], [True])]
                         let allEns = map (sel3 . fromJustNote "refineConsistency" . flip Map.lookup _labelVars) allPreds
+                        thisLabelCube <- lift $ $r $ nodesToCube $ map (sel3 . sel1) labelPreds'
                         thisLabel <- lift $ makeCubeInt ops $ concatMap func labelPreds'
                         eQuantExpr <- hoist lift $ doUpdate ops (eQuant scc_val)
                         lift $ $r $ return eQuantExpr
-                        allCube <- lift $ $r $ nodesToCube allEns
                         allCubeFalse <- lift $ $r $ makeCube ops $ zip allEns (repeat False)
                         cons1 <- lift $ $r2 band cons allCubeFalse
                         lift $ $d deref allCubeFalse
-                        cons2 <- lift $ $r2 bexists allCube cons1
-                        lift $ $d deref allCube
+                        cons2 <- lift $ $r2 bexists thisLabelCube cons1
+                        lift $ $d deref thisLabelCube
                         lift $ $d deref cons1
                         cons3 <- lift $ $r2 band cons2 eQuantExpr
                         lift $ $d deref cons2
