@@ -656,10 +656,10 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
                 --TODO optimise: dont use btrue below
                 winFair <- solveFair (cPreUnder ops si rs rd hasOutgoings labelPreds)  ops rs btrue soFarOrWinAndGoal fair
                 thing <- $r2 band winFair fair
-                $d deref winFair
                 thing2 <- $r2 bor thing soFarOrWinAndGoal
                 $d deref thing
                 (win', strats) <- cpre hasOutgoings thing2
+                $d deref winFair
                 $d deref thing2
                 win <- $r2 bor win' accum 
                 $d deref win'
@@ -695,13 +695,15 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         $d deref strat
         stratUCont   <- doEnCont ops asdf labelPreds
         $d deref asdf
-        winCont      <- $r2 (andAbstract _labelCube) consistentMinusCULCont stratCont
+        stratCont'   <- $r2 band consistentMinusCULCont stratCont
+        $d deref stratCont
+        winCont      <- $r1 (bexists _labelCube) stratCont'
         winUCont     <- liftM bnot $ $r2 (andAbstract _labelCube) consistentPlusCULUCont stratUCont
         mapM ($d deref) [stratUCont]
         win'         <- $r3 bite cont winCont winUCont
         mapM ($d deref) [winCont, winUCont]
         win          <- $r1 (bforall _untrackedCube) win'
-        return (win, stratCont)
+        return (win, stratCont')
 
 fixedPoint2R :: Ops s u -> DDNode s u -> a -> (DDNode s u -> a -> ResourceT (DDNode s u) (ST s) (DDNode s u, a)) -> ResourceT (DDNode s u) (ST s) (DDNode s u, a)
 fixedPoint2R ops@Ops{..} start thing func = do
