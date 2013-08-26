@@ -240,9 +240,8 @@ addVarToUntracked ops@Ops {..} name vars idxs vars' idxs' = do
 allocLabelVar :: (Ord lp) => Ops s u -> lp -> Int -> StateT (DB s u sp lp) (ST s) [DDNode s u]
 allocLabelVar ops@Ops{..} var size = do
     (vars, idxs) <- allocN ops size
-    lift $ makeTreeNode (head idxs) size 4
     (en, enIdx) <- alloc ops
-    --TODO include this in above group?
+    lift $ makeTreeNode (head idxs) (size + 1) 4
     symbolTable . labelVars %= Map.insert var (vars, idxs, en, enIdx)
     symbolTable . labelRev  %= (
         flip (foldl (func vars idxs)) idxs >>>
