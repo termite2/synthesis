@@ -714,7 +714,7 @@ fixedPoint2R ops@Ops{..} start thing func = do
         False -> fixedPoint2R ops res thing' func
 
 counterExample :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) [[DDNode s u]]
-counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
+counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds winGame = do
     lift $ traceST "* Computing counterexample"
     hasOutgoings <- doHasOutgoings ops trans 
     lift $ sequence $ replicate (length goal * length fair) (ref bfalse)
@@ -727,7 +727,7 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
             tgt               <- $r2 bor (bnot goal) win
             --TODO optimise: dont use btrue below
             winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs btrue (bnot tgt)
-            (winStrat, strat) <- stratReach si rs rd hasOutgoings fair win strats winBuchi tgt
+            (winStrat, strat) <- stratReach si rs rd hasOutgoings win strats winBuchi tgt
             when (winStrat /= winBuchi) (lift $ traceST "Warning: counterexample winning regions are not equal")
             $d deref winStrat
             $d deref tgt
@@ -735,8 +735,8 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
             mapM ($d deref) [tot, winBuchi]
             return (tot', (goal, strat))
         return res
-    when (win /= bnot win') (error "the counterexample winning region is not the complement of the game winning region")
-    lift $ traceST $ bddSynopsis ops win
+    when (winGame /= bnot win') (error "the counterexample winning region is not the complement of the game winning region")
+    lift $ traceST $ bddSynopsis ops winGame
     $d deref hasOutgoings
     return $ map (map snd . snd) strat
 
@@ -751,7 +751,7 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
         return c
 
     --TODO check winning regions coincide
-    stratReach si rs rd hasOutgoings fairs startingWin stratSoFar winN goal = do
+    stratReach si rs rd hasOutgoings startingWin stratSoFar winN goal = do
         $r $ return startingWin
         lift $ ref startingWin
         fixedPoint2R ops startingWin stratSoFar $ \reach strat -> do
