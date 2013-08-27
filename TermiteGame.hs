@@ -789,13 +789,17 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
 
     strategy SectionInfo{..} RefineStatic{..} RefineDynamic{..} hasOutgoings target = do
         strt        <- cpre' ops si rd (bnot target)
-        stratContHas <- $r2 band strt hasOutgoings
+        stratContHas' <- $r2 band strt hasOutgoings
+        stratContHas <- $r2 band stratContHas' slRel
+        $d deref stratContHas'
         stratCont'  <- doEnCont ops stratContHas labelPreds
         $d deref stratContHas
         winCont     <- liftM bnot $ $r2 (andAbstract _labelCube) consistentPlusCULCont stratCont'
         $d deref stratCont'
-        stratUCont' <- doEnCont ops (bnot strt) labelPreds
+        asdf         <- $r2 band slRel (bnot strt)
         $d deref strt
+        stratUCont' <- doEnCont ops asdf labelPreds
+        $d deref asdf
         stratUCont  <- $r2 band consistentMinusCULUCont stratUCont'
         $d deref stratUCont'
         winUCont    <- $r1 (bexists _labelCube) stratUCont
