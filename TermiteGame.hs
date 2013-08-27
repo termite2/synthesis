@@ -713,6 +713,19 @@ fixedPoint2R ops@Ops{..} start thing func = do
         True -> return (start, thing')
         False -> fixedPoint2R ops res thing' func
 
+{-
+
+Game is 
+    vX. uY. vZ. cpre_driver( Z .& F .| X .& G .| Y )
+
+Complement is
+    uX. vY. uZ. cpre_env((Z .| not F) .& (X .| not G) .& Y)
+
+Inner 2 fixedpoints are: Reach fair region infinitely often staying out of the goal
+Outer fixpoint is: as above but (never getting in goal, getting in goal once, getting in goal twice...) i.e. only hit the goal some finite number of times
+
+-}
+
 counterExample :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) [[DDNode s u]]
 counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds winGame = do
     lift $ traceST "* Computing counterexample"
@@ -720,14 +733,14 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
     lift $ sequence $ replicate (length goal * length fair) (ref bfalse)
     sequence $ replicate (length goal * length fair + 1) ($r $ return bfalse)
     lift $ ref bfalse
-    (win', strat) <- fixedPoint2R ops bfalse (zip goal $ repeat $ zip fair $ repeat bfalse) $ \win strat -> do
+    (win', strat) <- fixedPoint2R ops bfalse (zip goal $ repeat $ zip fair $ repeat bfalse) $ \x strat -> do
         lift $ ref bfalse
         $r $ return bfalse
         res <- forAccumLM bfalse strat $ \tot (goal, strats) -> do
-            tgt               <- $r2 bor (bnot goal) win
+            tgt               <- $r2 bor (bnot goal) x
             --TODO optimise: dont use btrue below
             winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs btrue (bnot tgt)
-            (winStrat, strat) <- stratReach si rs rd hasOutgoings win strats winBuchi tgt
+            (winStrat, strat) <- stratReach si rs rd hasOutgoings strats x winBuchi tgt
             when (winStrat /= winBuchi) (lift $ traceST "Warning: counterexample winning regions are not equal")
             $d deref winStrat
             $d deref tgt
@@ -742,26 +755,26 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
 
     where
 
-    target fair goal winN reach = do
-        a   <- $r2 bor reach fair
-        b   <- $r2 band a winN
+    target fair nGoalOrX y z = do
+        a   <- $r2 bor z (bnot fair)
+        b   <- $r2 band a y
         $d deref a
-        c   <- $r2 band b goal
+        c   <- $r2 band b nGoalOrX
         $d deref b
         return c
 
-    --TODO check winning regions coincide
-    stratReach si rs rd hasOutgoings startingWin stratSoFar winN goal = do
-        $r $ return startingWin
-        lift $ ref startingWin
-        fixedPoint2R ops startingWin stratSoFar $ \reach strat -> do
+    --Below effectively skipps the middle fixed point
+    stratReach si rs rd hasOutgoings stratSoFar x y nGoalOrX = do
+        $r $ return y
+        lift $ ref y
+        fixedPoint2R ops x stratSoFar $ \z strat -> do
             $r $ return btrue
             lift $ ref btrue
             res <- forAccumLM btrue strat $ \winAccum (fair, strat) -> do
-                tgt            <- target fair goal winN reach
+                tgt            <- target fair nGoalOrX y z
                 (win', strat') <- strategy si rs rd hasOutgoings tgt
                 $d deref tgt
-                strat''        <- $r2 band strat' (bnot reach)
+                strat''        <- $r2 band strat' (bnot z)
                 $d deref strat'
                 --TODO use ite for strat
                 strat'''       <- $r2 bor strat'' strat
