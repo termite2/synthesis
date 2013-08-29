@@ -26,7 +26,7 @@ import Control.Monad.State
 import System.IO
 
 import Safe
-import Data.Text.Lazy hiding (intercalate, map, take, length, zip, replicate, foldl, concatMap, filter)
+import Data.Text.Lazy hiding (intercalate, map, take, length, zip, replicate, foldl, concatMap, filter, last, init)
 import Text.PrettyPrint.Leijen.Text
 import Control.Monad.Morph
 import Data.Graph
@@ -167,22 +167,23 @@ groupTrels :: Ops s u -> [(DDNode s u, DDNode s u)] -> ResourceT (DDNode s u) (S
 groupTrels ops@Ops{..} x = do
     groupTrels'' x
     where
-    groupTrels'' [] = return []
-    groupTrels'' (hd:rst) = groupTrels' hd rst
-        where
-        groupTrels' accum [] = return [accum]
-        groupTrels' (accum@(accumCube, accumRel)) (allRels@((hdCube, hdRel):rels)) = do
-            res <- andLimit2 ops groupSize accumRel hdRel 
-            case res of 
-                Nothing -> do
-                    sz <- lift $ dagSize accumRel
-                    res <- groupTrels'' allRels
-                    return $ accum : res
-                Just res -> do
-                    mapM ($d deref) [accumRel, hdRel]
-                    cb <- $r2 band accumCube hdCube
-                    mapM ($d deref) [accumCube, hdCube]
-                    groupTrels' (cb, res) rels
+    groupTrels'' []       = return []
+    groupTrels'' (hd:rst) = groupTrels' ops hd rst
+
+groupTrels' :: Ops s u -> (DDNode s u, DDNode s u) -> [(DDNode s u, DDNode s u)] -> ResourceT (DDNode s u) (ST s) [(DDNode s u, DDNode s u)]
+groupTrels' _ accum [] = return [accum]
+groupTrels' ops@Ops{..} accum@(accumCube, accumRel) allRels@((hdCube, hdRel):rels) = do
+    res <- andLimit2 ops groupSize accumRel hdRel 
+    case res of 
+        Nothing -> do
+            sz <- lift $ dagSize accumRel
+            res <- groupTrels ops allRels
+            return $ accum : res
+        Just res -> do
+            mapM ($d deref) [accumRel, hdRel]
+            cb <- $r2 band accumCube hdCube
+            mapM ($d deref) [accumCube, hdCube]
+            groupTrels' ops (cb, res) rels
 
 partitionedThing :: Ops s u -> [(DDNode s u, DDNode s u)] -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 partitionedThing Ops{..} pairs win = do
@@ -455,7 +456,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
     lift $ mapM ($d deref) updateExprs'
     hoist lift $ zipWithM (transSynopsys ops) (map fst _allocatedStateVars) updateExprs
     cubes <- lift $ mapM ($r . nodesToCube . snd) _allocatedStateVars
-    groups <- lift $ groupTrels ops $ zip cubes updateExprs
+    groups <- lift $ groupTrels' ops (last trans) $ zip cubes updateExprs
     lift $ lift $ traceST $ "Number of transition partitions: " ++ show (length groups)
 
     labelPreds              <- gets $ _labelVars . _symbolTable
@@ -467,7 +468,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
 
     return rd {
         --TODO does this order matter?
-        trans  = groups ++ trans,
+        trans  = Data.List.init trans ++ groups,
         consistentMinusCULCont = consistentMinusCULCont',
         consistentMinusCULUCont = consistentMinusCULUCont'
     }
@@ -584,7 +585,7 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
                     let theMap = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys labelPreds
                     cMinus' <- forAccumM cMinus scs $ \cons scc_val -> do
                         let scc = map fst scc_val
-                        lift $ lift $ traceST $ "SCC: " ++ show scc
+                        lift $ lift $ traceST $ "CC: " ++ show scc
                         let allPreds = concatMap (fromJustNote "doConsistency" . flip Map.lookup theMap) $ nub $ concatMap getVarsLabel scc
                         lift $ lift $ traceST $ "All preds: " ++ show allPreds
                         let fringePreds = allPreds \\ scc
