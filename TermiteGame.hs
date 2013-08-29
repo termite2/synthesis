@@ -26,7 +26,7 @@ import Control.Monad.State
 import System.IO
 
 import Safe
-import Data.Text.Lazy hiding (intercalate, map, take, length, zip, replicate, foldl, concatMap, filter, last, init)
+import qualified Data.Text.Lazy as T
 import Text.PrettyPrint.Leijen.Text
 import Control.Monad.Morph
 import Data.Graph
@@ -63,7 +63,7 @@ transSynopsys Ops{..} name trans = do
         let stateSup = nub $ catMaybes $ map (flip Map.lookup _stateRev) support
             labelSup = nub $ map fst $ catMaybes $ map (flip Map.lookup _labelRev) support
         --let doc = text (pack $ show name) <$$> indent 4 (text (pack $ "size: " ++ show sz) <$$> text (pack $ show stateSup ++ show labelSup)) 
-        let doc = text (pack $ show name) <$$> indent 4 (text (pack $ "size: " ++ show sz) <$$> (list $ map (text . pack . show) stateSup ++ map (text . pack . show) labelSup))
+        let doc = text (T.pack $ show name) <$$> indent 4 (text (T.pack $ "size: " ++ show sz) <$$> (list $ map (text . T.pack . show) stateSup ++ map (text . T.pack . show) labelSup))
         traceST $ show $ renderPretty 0.8 100 doc
 
 --Input to the refinement algorithm. Represents the spec.
