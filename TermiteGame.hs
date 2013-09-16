@@ -72,7 +72,7 @@ data Abstractor s u sp lp = Abstractor {
     fairAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) [DDNode s u],
     initAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
     contAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
-    updateAbs               :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) ([DDNode s u]),
+    updateAbs               :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) ([DDNode s u], DDNode s u),
     stateLabelConstraintAbs :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u)
 }
 
@@ -377,7 +377,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     --get the abstract update functions for the goal predicates and variables
     let toUpdate = nub $ _allocatedStateVars newVarsGoals ++ _allocatedStateVars newVarsFairs ++ _allocatedStateVars newVarsCont
     lift $ lift $ traceST $ "Initial transition relation state vars: \n" ++ (intercalate "\n" $ map (('\t' :) . show . fst) $ toUpdate)
-    updateExprs' <- hoist lift $ doUpdate ops (updateAbs toUpdate)
+    (updateExprs', inconsistent) <- hoist lift $ doUpdate ops (updateAbs toUpdate)
     lift $ mapM ($r . return) updateExprs'
     outcomeCube <- gets $ _outcomeCube . _sections
     updateExprs <- lift $ mapM ($r . bexists outcomeCube) updateExprs'
@@ -388,8 +388,8 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     lift $ lift $ traceST $ "Number of transition partitions: " ++ show (length groups)
 
     --create the consistency constraints
-    let consistentPlusCULCont  = btrue
-        consistentPlusCULUCont = btrue
+    let consistentPlusCULCont  = bnot inconsistent
+        consistentPlusCULUCont = bnot inconsistent
     lift $ lift $ ref consistentPlusCULCont
     lift $ lift $ ref consistentPlusCULUCont
     lift $ $r $ return consistentPlusCULCont
@@ -453,7 +453,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
     labelPredsPreUpdate  <- gets $ _labelVars . _symbolTable
 
     --compute the update functions
-    updateExprs'   <- hoist lift $ doUpdate ops (updateAbs _allocatedStateVars)
+    (updateExprs', inconsistent)   <- hoist lift $ doUpdate ops (updateAbs _allocatedStateVars)
     lift $ mapM ($r . return) updateExprs'
     outcomeCube <- gets $ _outcomeCube . _sections
     updateExprs  <- lift $ mapM ($r . bexists outcomeCube) updateExprs'
@@ -468,13 +468,18 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
     let theMap              = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys labelPreds
     consistentMinusCULCont' <- lift $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList newLabelPreds) consistentMinusCULCont
     consistentMinusCULUCont' <- lift $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList newLabelPreds) consistentMinusCULUCont
-    --TODO update uncontrollable consistency as well
+    
+    consistentPlusCULCont'  <- lift $ $r2 band consistentPlusCULCont  (bnot inconsistent)
+    consistentPlusCULUCont' <- lift $ $r2 band consistentPlusCULUCont (bnot inconsistent)
+    lift $ $d deref inconsistent
 
     return rd {
         --TODO does this order matter?
         trans  = Data.List.init trans ++ groups,
         consistentMinusCULCont = consistentMinusCULCont',
-        consistentMinusCULUCont = consistentMinusCULUCont'
+        consistentMinusCULUCont = consistentMinusCULUCont',
+        consistentPlusCULCont = consistentPlusCULCont',
+        consistentPlusCULUCont = consistentPlusCULUCont'
     }
 
 refineConsistency :: (Ord sp, Ord lp, Ord lv, Show sp, Show lp) => Ops s u -> TheorySolver s u sp lp lv -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (Bool, RefineDynamic s u)
