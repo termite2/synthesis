@@ -127,8 +127,7 @@ type Lab s u = [([DDNode s u], DDNode s u)]
 
 doEnVars :: (Ops s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)) -> Ops s u -> DDNode s u -> Lab s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 doEnVars qFunc ops@Ops{..} strat envars = do
-    $r $ return strat
-    lift $ ref strat
+    $rp ref strat
     foldM func strat envars
     where
     func soFar (var, en) = do
@@ -187,8 +186,7 @@ groupTrels' ops@Ops{..} accum@(accumCube, accumRel) allRels@((hdCube, hdRel):rel
 
 partitionedThing :: Ops s u -> [(DDNode s u, DDNode s u)] -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 partitionedThing Ops{..} pairs win = do
-    $r $ return win
-    lift $ ref win
+    $rp ref win
     forAccumM win pairs $ \win (cube, rel) -> do
         res <- liftM bnot $ $r2 (andAbstract cube) (bnot win) rel
         $d deref win
@@ -196,8 +194,7 @@ partitionedThing Ops{..} pairs win = do
 
 doHasOutgoings :: Ops s u -> [(DDNode s u, DDNode s u)] -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 doHasOutgoings Ops{..} pairs = do
-    $r $ return btrue
-    lift $ ref btrue
+    $rp ref btrue
     forAccumM btrue pairs $ \has (cube, rel) -> do
         rr <- $r1 (bexists cube) rel
         a <- $r2 band rr has
@@ -267,8 +264,7 @@ fixedPointR ops@Ops{..} func start = do
 
 solveFair :: (DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 solveFair cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt winning fairr = do
-    lift $ ref startPt
-    $r $ return startPt
+    $rp ref startPt
     fixedPointR ops func startPt
     where
     func target = do
@@ -283,8 +279,7 @@ solveFair cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt winning fairr = do
 
 solveReach :: (DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt goall = do
-    $r $ return bfalse
-    lift $ ref bfalse
+    $rp ref bfalse
     fixedPointR ops func bfalse
     where
     func target = do
@@ -292,8 +287,7 @@ solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt goall = do
         sz <- lift $ dagSize target
         lift $ traceMsg $ "r(" ++ show sz ++ ")"
         t1 <- $r2 bor target goall
-        $r $ return bfalse
-        lift $ ref bfalse
+        $rp ref bfalse
         res <- forAccumM bfalse fair $ \accum val -> do
             res' <- solveFair cpreFunc ops rs startPt t1 val
             res  <- $r2 bor res' accum
@@ -305,15 +299,13 @@ solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt goall = do
 
 solveBuchi :: (DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 solveBuchi cpreFunc ops@Ops{..} rs@RefineStatic{..} startingPoint = do
-    $r $ return startingPoint
-    lift $ ref startingPoint
+    $rp ref startingPoint
     fixedPointR ops func startingPoint
     where
     func reachN = do
         lift $ traceMsg "b"
         lift $ debugDo 1 $ traceST "solveBuchi: iteration"
-        $r $ return btrue
-        lift $ ref btrue
+        $rp ref btrue
         res <- forAccumM btrue goal $ \accum val -> do
             lift $ traceMsg "g"
             t1 <- $r2 band reachN val
@@ -390,28 +382,23 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     --create the consistency constraints
     let consistentPlusCULCont  = bnot inconsistent
         consistentPlusCULUCont = bnot inconsistent
-    lift $ lift $ ref consistentPlusCULCont
-    lift $ lift $ ref consistentPlusCULUCont
-    lift $ $r $ return consistentPlusCULCont
-    lift $ $r $ return consistentPlusCULUCont
+    lift $ $rp ref consistentPlusCULCont
+    lift $ $rp ref consistentPlusCULUCont
     let inconsistentInit = bfalse
-    lift $ lift $ ref inconsistentInit
-    lift $ $r $ return inconsistentInit
+    lift $ $rp ref inconsistentInit
 
     --compute the initial consistentMinus being as liberal as possible
     labelPreds <- gets $ _labelVars . _symbolTable
     let theMap = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys labelPreds
     lift $ lift $ traceST $ show theMap
-    lift $ $r $ return btrue
-    lift $ lift $ ref btrue
+    lift $ $rp ref btrue
     consistentMinusCULCont <- lift $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList labelPreds) btrue
     --lift $ lift $ traceST $ bddSynopsis ops consistentMinusCULCont 
 
     --consistentMinusCULCont <- lift $ $r $ conj ops $ map (bnot . sel3) $ Map.elems labelPreds
 
     let consistentMinusCULUCont = consistentMinusCULCont
-    lift $ lift $ ref consistentMinusCULUCont
-    lift $ $r $ return consistentMinusCULUCont
+    lift $ $rp ref consistentMinusCULUCont
     --construct the RefineDynamic and RefineStatic
     let rd = RefineDynamic {
             trans  = groups,
@@ -652,14 +639,12 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
     --For each goal
     res <- forM goal $ \goal -> do 
         winAndGoal <- $r2 band goal win
-        $r $ return bfalse
-        lift $ ref bfalse
+        $rp ref bfalse
         sequence $ replicate (length fair) ($r $ return bfalse)
         --Reachabiliy least fixedpoint
         res <- fixedPoint2R ops bfalse (repeat bfalse) $ \soFar strats -> do 
             soFarOrWinAndGoal <- $r2 bor soFar winAndGoal
-            $r $ return bfalse
-            lift $ ref bfalse
+            $rp ref bfalse
             --For each fair
             (res, strats') <- forAccumLM bfalse fair $ \accum fair -> do
                 --Fairness greatest fixedpoint
@@ -744,8 +729,7 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
     sequence $ replicate (length goal * length fair + 1) ($r $ return bfalse)
     lift $ ref bfalse
     (win', strat) <- fixedPoint2R ops bfalse (zip goal $ repeat $ zip fair $ repeat bfalse) $ \x strat -> do
-        lift $ ref bfalse
-        $r $ return bfalse
+        $rp ref bfalse
         res <- forAccumLM bfalse strat $ \tot (goal, strats) -> do
             tgt               <- $r2 bor (bnot goal) x
             --TODO optimise: dont use btrue below
@@ -775,11 +759,9 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
 
     --Below effectively skipps the middle fixed point
     stratReach si rs rd hasOutgoings stratSoFar x y nGoalOrX = do
-        $r $ return y
-        lift $ ref y
+        $rp ref y
         fixedPoint2R ops x stratSoFar $ \z strat -> do
-            $r $ return btrue
-            lift $ ref btrue
+            $rp ref btrue
             res <- forAccumLM btrue strat $ \winAccum (fair, strat) -> do
                 tgt            <- target fair nGoalOrX y z
                 (win', strat') <- strategy si rs rd hasOutgoings tgt
@@ -861,8 +843,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
         lift $ lift $ debugDo 1 $ traceST $ "Goal is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ goal rs)
         lift $ lift $ debugDo 1 $ traceST $ "Fair is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ fair rs)
         lift $ lift $ debugDo 1 $ traceST $ "Init is: " ++ (bddSynopsis ops $ TermiteGame.init rs)
-        lift $ lift $ ref btrue
-        lift $ $r $ return btrue
+        lift $ $rp ref btrue
         refineLoop ops rs rd btrue
     lift $ traceST $ "Preds: \n" ++ intercalate "\n" (map show $ extractStatePreds $ _symbolTable db)
     return $ (winning, RefineInfo{op=ops, ..})

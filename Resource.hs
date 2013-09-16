@@ -92,6 +92,11 @@ de reg loc f x = ResourceT $ do
     st <- get
     st `seq` return ()
 
+rp' :: (Monad m, Ord a) => (a -> a) -> String -> (a -> m ()) -> a -> ResourceT a m ()
+rp' reg loc f x = ResourceT $ do
+    modify $ incRef loc (reg x)
+    lift $ f x
+
 withLocatedError :: Q Exp -> Q Exp
 withLocatedError f = do
     let error = locatedError =<< location
@@ -109,6 +114,9 @@ appToReg :: Q Exp -> Q Exp
 appToReg f = appE f $ liftM (VarE . fromJust) $ lookupValueName "regular"
 
 --Template haskell to increment the reference counter of a resource
+rp :: Q Exp
+rp = withLocatedError $ appToReg [| rp' |]
+
 r :: Q Exp
 r = withLocatedError $ appToReg [| rf |]
 
