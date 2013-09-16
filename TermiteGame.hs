@@ -217,19 +217,23 @@ cpre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} target = do
 cpre'' :: Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> DDNode s u -> DDNode s u -> ResourceT (DDNode s u) (ST s) (DDNode s u)
 cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds cc cu target = do
     strat       <- cpre' ops si rd target
-    stratContHas' <- $r2 band strat hasOutgoingsCont
+    stratC      <- $r2 band strat cont
+    stratU      <- $r2 band strat (bnot cont)
+    $d deref strat
+    stratContHas' <- $r2 band stratC hasOutgoingsCont
+    $d deref stratC
     stratContHas <- $r2 band stratContHas' slRel
     $d deref stratContHas'
     stratCont    <- doEnCont ops stratContHas labelPreds
     $d deref stratContHas
-    asdf         <- $r2 band slRel (bnot strat)
-    $d deref strat
+    asdf         <- $r2 band slRel (bnot stratU)
+    $d deref stratU
     stratUCont   <- doEnCont ops asdf labelPreds
     $d deref asdf
     winCont      <- $r2 (andAbstract _labelCube) cc stratCont
     winUCont     <- liftM bnot $ $r2 (andAbstract _labelCube) cu stratUCont
     mapM ($d deref) [stratCont, stratUCont]
-    win          <- $r3 bite cont winCont winUCont
+    win          <- $r2 bor winCont winUCont
     mapM ($d deref) [winCont, winUCont]
     return win
 
