@@ -441,6 +441,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
 
     --compute the update functions
     (updateExprs', inconsistent)   <- hoist lift $ doUpdate ops (updateAbs _allocatedStateVars)
+    lift $ $rp ref inconsistent
     lift $ mapM ($r . return) updateExprs'
     outcomeCube <- gets $ _outcomeCube . _sections
     updateExprs  <- lift $ mapM ($r . bexists outcomeCube) updateExprs'
