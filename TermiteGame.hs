@@ -230,7 +230,7 @@ cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} h
     winCont      <- $r2 (andAbstract _labelCube) cc stratCont
     winUCont     <- liftM bnot $ $r2 (andAbstract _labelCube) cu stratUCont
     mapM ($d deref) [stratCont, stratUCont]
-    win          <- $r2 bor winCont winUCont
+    win          <- $r3 bite cont winCont winUCont
     mapM ($d deref) [winCont, winUCont]
     return win
 
