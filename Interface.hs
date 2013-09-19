@@ -26,7 +26,7 @@ data BAVar sp lp where
 
 --Operations that are given to the backend for compilation. 
 data VarOps pdb v s u = VarOps {
-    getVar  :: v -> StateT pdb (ST s) [DDNode s u],
+    getVar  :: v -> Maybe String -> StateT pdb (ST s) [DDNode s u],
     withTmp :: forall a. (DDNode s u -> StateT pdb (ST s) a) -> StateT pdb (ST s) a,
     allVars :: StateT pdb (ST s) [v]
 }
@@ -307,10 +307,10 @@ allVars' = do
 goalOps :: Ord sp => Ops s u -> VarOps (GoalState s u sp lp) (BAVar sp lp) s u
 goalOps ops = VarOps {withTmp = withTmpGoal' ops, allVars = liftToGoalState allVars', ..}
     where
-    getVar  (StateVar var size) = do
+    getVar (StateVar var size) _ = do
         SymbolInfo{..} <- use $ db . symbolTable
         findWithDefaultM sel1 var _stateVars $ findWithDefaultProcessM sel1 var _initVars (allocStateVar ops var size) (uncurryN $ addVarToState ops var)
-    getVar  _ = error "Requested non-state variable when compiling goal section"
+    getVar  _ _ = error "Requested non-state variable when compiling goal section"
 
 doGoal :: Ord sp => Ops s u -> (VarOps (GoalState s u sp lp) (BAVar sp lp) s u -> StateT (GoalState s u sp lp) (ST s) a) -> StateT (DB s u sp lp) (ST s) (a, NewVars s u sp)
 doGoal ops complFunc = StateT $ \st -> do
@@ -320,13 +320,13 @@ doGoal ops complFunc = StateT $ \st -> do
 stateLabelOps :: (Ord sp, Ord lp) => Ops s u -> VarOps (GoalState s u sp lp) (BAVar sp lp) s u
 stateLabelOps ops = VarOps {withTmp = withTmpGoal' ops, allVars = liftToGoalState allVars', ..}
     where
-    getVar  (StateVar var size) = do
+    getVar  (StateVar var size) _ = do
         SymbolInfo{..} <- use $ db . symbolTable
         findWithDefaultM sel1 var _stateVars $ findWithDefaultProcessM sel1 var _initVars (allocStateVar ops var size) (uncurryN $ addVarToState ops var)
-    getVar  (LabelVar var size) = do
+    getVar  (LabelVar var size) _ = do
         SymbolInfo{..} <- use $ db . symbolTable
         liftToGoalState $ findWithDefaultM sel1 var _labelVars $ allocLabelVar ops var size
-    getVar  _ = error "Requested non-state variable when compiling goal section"
+    getVar  _ _ = error "Requested non-state variable when compiling goal section"
 
 doStateLabel :: (Ord sp, Ord lp) => Ops s u -> (VarOps (GoalState s u sp lp) (BAVar sp lp) s u -> StateT (GoalState s u sp lp) (ST s) a) -> StateT (DB s u sp lp) (ST s) (a, NewVars s u sp)
 doStateLabel ops complFunc = StateT $ \st -> do
@@ -336,10 +336,10 @@ doStateLabel ops complFunc = StateT $ \st -> do
 initOps :: Ord sp => Ops s u -> VarOps (DB s u sp lp) (BAVar sp lp) s u
 initOps ops = VarOps {withTmp = withTmp' ops, allVars = allVars', ..}
     where
-    getVar  (StateVar var size) = do
+    getVar  (StateVar var size) _ = do
         SymbolInfo{..} <- use symbolTable
         findWithDefaultM sel1 var _initVars (allocInitVar ops var size)
-    getVar _ = error "Requested non-state variable when compiling init section"
+    getVar _ _ = error "Requested non-state variable when compiling init section"
 
 doInit :: Ord sp => Ops s u -> (VarOps (DB s u sp lp) (BAVar sp lp) s u -> StateT (DB s u sp lp) (ST s) (DDNode s u)) -> StateT (DB s u sp lp) (ST s) (DDNode s u)
 doInit ops complFunc = complFunc (initOps ops)
@@ -347,13 +347,13 @@ doInit ops complFunc = complFunc (initOps ops)
 updateOps :: (Ord sp, Ord lp) => Ops s u -> VarOps (DB s u sp lp) (BAVar sp lp) s u
 updateOps ops = VarOps {withTmp = withTmp' ops, allVars = allVars', ..}
     where
-    getVar (StateVar var size) = do
+    getVar (StateVar var size) _ = do
         SymbolInfo{..} <- use symbolTable
         findWithDefaultM sel1 var _stateVars $ findWithDefaultProcessM sel1 var _initVars (allocUntrackedVar ops var size) (uncurryN $ addVarToUntracked ops var)
-    getVar (LabelVar var size) = do
+    getVar (LabelVar var size) _ = do
         SymbolInfo{..} <- use symbolTable
         findWithDefaultM sel1 var _labelVars $ allocLabelVar ops var size
-    getVar (OutVar var size) = do
+    getVar (OutVar var size) _ = do
         SymbolInfo{..} <- use symbolTable
         findWithDefaultM sel1 var _outcomeVars $ allocOutcomeVar ops var size
 
