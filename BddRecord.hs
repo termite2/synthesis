@@ -16,6 +16,7 @@ import qualified CuddExplicitDeref as C
 import qualified CuddST as C
 import qualified CuddReorder as C
 import CuddExplicitDeref (DDNode, STDdManager)
+import qualified MTR as C
 
 data Ops s u = Ops {
     band, bor, bxor, bxnor, bimp, bnand, bnor :: DDNode s u -> DDNode s u -> ST s (DDNode s u),
@@ -31,6 +32,7 @@ data Ops s u = Ops {
     largestCube                               :: DDNode s u -> ST s (DDNode s u, Int),
     supportIndices                            :: DDNode s u -> ST s [Int],
     ithVar                                    :: Int -> ST s (DDNode s u),
+    varAtLevel                                :: Int -> ST s (DDNode s u),
     shift                                     :: [DDNode s u] -> [DDNode s u] -> DDNode s u -> ST s (DDNode s u),
     ref                                       :: DDNode s u -> ST s (),
     deref                                     :: DDNode s u -> ST s (),
@@ -54,7 +56,8 @@ data Ops s u = Ops {
     readPeakNodeCount                         :: ST s Integer,
     regular                                   :: DDNode s u -> DDNode s u,
     reduceHeap                                :: C.CuddReorderingType -> Int -> ST s Int,
-    andLimit                                  :: DDNode s u -> DDNode s u -> Int -> ST s (Maybe (DDNode s u))
+    andLimit                                  :: DDNode s u -> DDNode s u -> Int -> ST s (Maybe (DDNode s u)),
+    readTree                                  :: ST s (C.MtrNode)
 }
 
 constructOps :: STDdManager s u -> Ops s u
@@ -80,6 +83,7 @@ constructOps m = Ops {..}
     xorExistAbstract c f g = C.xorExistAbstract m f g c
     supportIndices         = C.supportIndices   m
     ithVar                 = C.bvar             m
+    varAtLevel             = C.newVarAtLevel    m
     leq                    = C.leq              m
     leqUnless              = C.leqUnless        m
     shift                  = C.shift            m
@@ -108,4 +112,5 @@ constructOps m = Ops {..}
     regular                = C.regular
     reduceHeap             = C.cuddReduceHeap m
     andLimit               = C.andLimit m
+    readTree               = C.readTree m
     
