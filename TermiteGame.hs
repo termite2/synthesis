@@ -838,6 +838,13 @@ refineInit ops@Ops{..} ts@TheorySolver{..} rs@RefineStatic{..} rd@RefineDynamic{
                     refineInit ops ts rs (rd {inconsistentInit = inconsistentInit'}) winRegion
         True  -> return (rd, True)
 
+showResources :: Ops s u -> InUse (DDNode s u) -> ST s String
+showResources Ops{..} mp = liftM (intercalate "\n") $ mapM (uncurry func) (Map.toList mp)
+    where
+    func res (locs, numRefs) = do
+        sz <- dagSize res
+        return $ show sz ++ " refs: " ++ show numRefs ++ " " ++ show locs 
+
 --The abstraction-refinement loop
 absRefineLoop :: forall s u o sp lp lv. (Ord sp, Ord lp, Show sp, Show lp, Show lv, Ord lv) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp lv -> o -> ResourceT (DDNode s u) (ST s) (Bool, RefineInfo s u sp lp)
 absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
