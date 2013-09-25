@@ -41,6 +41,9 @@ evalResourceT = flip evalStateT (Map.empty) . unResourceT
 instance MonadTrans (ResourceT t) where
     lift = ResourceT . lift
 
+getInUse :: (Monad m, Ord a) => ResourceT a m (InUse a)
+getInUse = ResourceT $ get
+
 checkResource :: (Monad m, Ord a) => (a -> a) -> String -> a -> ResourceT a m ()
 checkResource reg loc x = ResourceT $ do
     mp <- get
