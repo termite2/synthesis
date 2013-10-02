@@ -858,6 +858,9 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
         lift $ $rp ref btrue
         refineLoop ops rs rd btrue
     lift $ traceST $ "Preds: \n" ++ intercalate "\n" (map show $ extractStatePreds $ _symbolTable db)
+    dc <- lift $ debugCheck
+    ck <- lift $ checkKeys
+    lift $ when (dc /= 0 || ck /= 0) (traceST "########################################################## Cudd inconsistent")
     return $ (winning, RefineInfo{op=ops, ..})
     where
     refineLoop ops@Ops{..} rs@RefineStatic{..} = refineLoop'
