@@ -139,5 +139,5 @@ addBdd Ops{..} thing toAdd = do
     return res
 
 checkManagerConsistency :: String -> Ops s u -> ST s ()
-checkManagerConsistency msg ops = unsafeIOToST (putStrLn ("checking bdd consistency" ++ msg ++ "\n")) >> debugCheck ops >> checkKeys ops
+checkManagerConsistency msg ops = void $ unsafeIOToST (putStrLn ("checking bdd consistency" ++ msg ++ "\n")) >> debugCheck ops >> checkKeys ops
 
