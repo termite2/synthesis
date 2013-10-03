@@ -854,9 +854,6 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
     refineLoop ops@Ops{..} rs@RefineStatic{..} = refineLoop'
         where 
         refineLoop' rd@RefineDynamic{..} lastWin = do
-            tr <- lift $ lift readTree
-            lift $ lift $ traceST "Tree is: "
-            lift $ lift $ unsafeIOToST $ mtrPrintGroups tr 0
             si@SectionInfo{..} <- gets _sections
             lift $ lift $ setVarMap _trackedNodes _nextNodes
             labelPreds <- gets $ _labelVars . _symbolTable
