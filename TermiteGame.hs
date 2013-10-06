@@ -356,7 +356,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     lift $ mapM ($r . return) goalExprs
     lift $ lift $ check "After compiling goal" ops
     --abstract the fair region
-    (fairExprs, newVarsFairs) <- hoist lift $ doGoal ops fairAbs
+    (fairExprs, newVarsFairs) <- hoist lift $ doStateLabel ops fairAbs
     lift $ mapM ($r . return) fairExprs
     lift $ lift $ check "After compiling fair" ops
     --abstract the controllable condition
