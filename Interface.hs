@@ -358,6 +358,25 @@ doStateLabel ops complFunc = StateT $ \st -> do
     (res, GoalState{..}) <- runStateT (complFunc $ stateLabelOps ops) (GoalState (NewVars []) st)
     return ((res, _nv), _db)
 
+stateLabelOutcomeOps :: (Ord sp, Ord lp) => Ops s u -> VarOps (GoalState s u sp lp) (BAVar sp lp) s u
+stateLabelOutcomeOps ops = VarOps {withTmp = withTmpGoal' ops, allVars = liftToGoalState allVars', ..}
+    where
+    getVar  (StateVar var size) group = do
+        SymbolInfo{..} <- use $ db . symbolTable
+        findWithDefaultM sel1 var _stateVars $ findWithDefaultProcessM sel1 var _initVars (allocStateVar ops var size group) (uncurryN $ addVarToState ops var)
+    getVar  (LabelVar var size) group = do
+        SymbolInfo{..} <- use $ db . symbolTable
+        liftToGoalState $ findWithDefaultM sel1 var _labelVars $ allocLabelVar ops var size group
+    getVar  (OutVar var size) group = do
+        SymbolInfo{..} <- use $ db . symbolTable
+        liftToGoalState $ findWithDefaultM sel1 var _outcomeVars $ allocOutcomeVar ops var size group
+    getVar  _ _ = error "Requested non-state variable when compiling goal section"
+
+doStateLabelOutcome :: (Ord sp, Ord lp) => Ops s u -> (VarOps (GoalState s u sp lp) (BAVar sp lp) s u -> StateT (GoalState s u sp lp) (ST s) a) -> StateT (DB s u sp lp) (ST s) (a, NewVars s u sp)
+doStateLabelOutcome ops complFunc = StateT $ \st -> do
+    (res, GoalState{..}) <- runStateT (complFunc $ stateLabelOps ops) (GoalState (NewVars []) st)
+    return ((res, _nv), _db)
+
 initOps :: Ord sp => Ops s u -> VarOps (DB s u sp lp) (BAVar sp lp) s u
 initOps ops = VarOps {withTmp = withTmp' ops, allVars = allVars', ..}
     where
