@@ -194,7 +194,9 @@ allocInitVar  :: (Ord sp) => Ops s u -> sp -> Int -> Maybe String -> StateT (DB 
 allocInitVar ops@Ops{..} v size group = do
     ((cn, ci), (nn, ni)) <- allocNPair ops size group
     symbolTable . initVars %= Map.insert v (cn, ci, nn, ni)
+    symbolTable . stateRev  %= flip (foldl func) ci
     return cn
+        where func theMap idx = Map.insert idx v theMap
 
 -- === goal helpers ===
 data NewVars s u sp = NewVars {
@@ -224,6 +226,7 @@ type Update a = a -> a
 addStateVarSymbol :: (Ord sp) => sp -> [DDNode s u] -> [Int] -> [DDNode s u] -> [Int] -> Update (SymbolInfo s u sp lp)
 addStateVarSymbol name vars idxs vars' idxs' = 
     stateVars %~ Map.insert name (vars, idxs, vars', idxs') >>>
+    --TODO dont need to do this every time
     stateRev  %~ flip (foldl func) idxs 
         where func theMap idx = Map.insert idx name theMap
 

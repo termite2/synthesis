@@ -812,7 +812,7 @@ data RefineInfo s u sp lp = RefineInfo {
     op :: Ops s u
 }
 
-refineInit :: Ord sp => Ops s u -> TheorySolver s u sp lp lv -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (RefineDynamic s u, Bool)
+refineInit :: (Ord sp, Show sp) => Ops s u -> TheorySolver s u sp lp lv -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (ResourceT (DDNode s u) (ST s)) (RefineDynamic s u, Bool)
 refineInit ops@Ops{..} ts@TheorySolver{..} rs@RefineStatic{..} rd@RefineDynamic{..} winRegion = do
     syi@SymbolInfo{..} <- gets _symbolTable 
     si@SectionInfo{..} <- gets _sections
@@ -824,12 +824,14 @@ refineInit ops@Ops{..} ts@TheorySolver{..} rs@RefineStatic{..} rd@RefineDynamic{
             lift $ $d deref witness'
             c <- lift $ lift $ presentInLargePrime ops witness
             lift $ $d deref witness
-            let groupedState = groupForUnsatCore (sel2 . fromJustNote "refineInit" . flip Map.lookup _stateVars) $ indicesToStatePreds' syi c
+            let groupedState = groupForUnsatCore (sel2 . fromJustNote "refineInit1" . flip Map.lookup (_stateVars `Map.union` _initVars)) $ indicesToStatePreds syi c
             case unsatCoreState groupedState of
-                Nothing -> return (rd, False)
+                Nothing -> do
+                    lift $ lift $ traceST $ "* Found consistent losing state: " ++ show groupedState
+                    return (rd, False)
                 Just uc -> do
                     lift $ lift $ traceST "* Found inconsistent initial state. Refining..."
-                    unsat <- lift $ makeCubeInt ops $ map (first (sel1 . fromJustNote "refineInit" . flip Map.lookup _stateVars)) uc
+                    unsat <- lift $ makeCubeInt ops $ map (first (sel1 . fromJustNote "refineInit2" . flip Map.lookup (_stateVars `Map.union` _initVars))) uc
                     inconsistentInit' <- lift $ $r2 bor inconsistentInit unsat
                     lift $ $d deref inconsistentInit 
                     lift $ $d deref unsat
