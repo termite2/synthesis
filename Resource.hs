@@ -1,4 +1,4 @@
-{-# LANGUAGE NoMonomorphismRestriction, GeneralizedNewtypeDeriving, TemplateHaskell, MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances #-}
+{-# LANGUAGE NoMonomorphismRestriction, GeneralizedNewtypeDeriving, TemplateHaskell, MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances, UndecidableInstances #-}
 module Resource where
 
 import Control.Monad.State.Strict
@@ -10,7 +10,7 @@ import Control.Arrow
 import Data.List
 import Data.Maybe
 import Control.Monad.ST
-
+import Control.Monad.Trans.Identity
 import Language.Haskell.TH
 
 --Resource monad class definition
@@ -145,4 +145,9 @@ instance (Ord r, Monad m) => MonadResource r m (ResourceT r) where
 
 getInUse :: (Monad m, Ord a) => ResourceT a m (InUse a)
 getInUse = ResourceT $ get
+
+instance (Monad m) => MonadResource r m IdentityT where
+    checkResource x y = return ()
+    refResource   x y = return ()
+    derefResource x y = return ()
 
