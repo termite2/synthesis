@@ -763,7 +763,7 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
 
     --Below effectively skipps the middle fixed point
     stratReach si rs rd hasOutgoings stratSoFar x y nGoalOrX = do
-        $rp ref y
+        $rp ref x
         fixedPoint2R ops x stratSoFar $ \z strat -> do
             $rp ref btrue
             res <- forAccumLM btrue strat $ \winAccum (fair, strat) -> do
