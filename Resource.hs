@@ -1,4 +1,4 @@
-{-# LANGUAGE NoMonomorphismRestriction, GeneralizedNewtypeDeriving, TemplateHaskell #-}
+{-# LANGUAGE NoMonomorphismRestriction, GeneralizedNewtypeDeriving, TemplateHaskell, MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances #-}
 module Resource where
 
 import Control.Monad.State.Strict
@@ -13,95 +13,61 @@ import Control.Monad.ST
 
 import Language.Haskell.TH
 
-{-# NOINLINE trace #-}
-trace :: String -> ST s ()
-trace = unsafeIOToST . putStrLn
+--Resource monad class definition
+class Monad m => MonadResource r m | m -> r where
+    checkResource :: String -> r -> m ()
+    refResource   :: String -> r -> m ()
+    derefResource :: String -> r -> m ()
 
-type InUse k = Map k (Set String, Int)
-
-incRef n = Map.alter func 
-    where
-    func Nothing        = Just (Set.singleton n, 1)
-    func (Just (ns, x)) = Just (Set.insert n ns, x+1)
-
-decRef loc = Map.alter func 
-    where
-    func Nothing       = error $ "tried to delete key that wasn't referenced: " ++ loc
-    func (Just (_, 1)) = Nothing
-    func (Just (n, x)) = Just $ (n, x - 1)
-
-checkRef loc mp x = case Map.lookup x mp of
-    Nothing -> error $ "Argument is not in map: " ++ loc
-    Just _  -> return $ ()
-
-newtype ResourceT t m a = ResourceT {unResourceT :: StateT (InUse t) m a} deriving (Monad)
-
-runResourceT = flip runStateT (Map.empty) . unResourceT
-
-evalResourceT = flip evalStateT (Map.empty) . unResourceT
-
-instance MonadTrans (ResourceT t) where
-    lift = ResourceT . lift
-
-getInUse :: (Monad m, Ord a) => ResourceT a m (InUse a)
-getInUse = ResourceT $ get
-
-checkResource :: (Monad m, Ord a) => (a -> a) -> String -> a -> ResourceT a m ()
-checkResource reg loc x = ResourceT $ do
-    mp <- get
-    checkRef loc mp (reg x)
-
-rf1 :: (Monad m, Ord a) => (a -> a) -> String -> (a -> m a) -> a -> ResourceT a m a
-rf1 reg loc f arg = ResourceT $ do
-    mp <- get
-    checkRef loc mp (reg arg)
+--Helper functions for use in this monad
+rf1 :: (MonadResource a (t m), Monad m, MonadTrans t, Ord a) => (a -> a) -> String -> (a -> m a) -> a -> t m a
+rf1 reg loc f arg = do
+    checkResource loc (reg arg)
     x <- lift $ f arg
-    modify $ incRef loc (reg x)
+    refResource loc (reg x)
     return x
 
-rf2 :: (Monad m, Ord a) => (a -> a) -> String -> (a -> a -> m a) -> a -> a -> ResourceT a m a
-rf2 reg loc f arg1 arg2 = ResourceT $ do
-    mp <- get
-    checkRef (loc ++ " 1") mp (reg arg1)
-    checkRef (loc ++ " 2") mp (reg arg2)
+rf2 :: (MonadResource a (t m), Monad m, MonadTrans t) => (a -> a) -> String -> (a -> a -> m a) -> a -> a -> t m a
+rf2 reg loc f arg1 arg2 = do
+    checkResource (loc ++ " 1") (reg arg1)
+    checkResource (loc ++ " 2") (reg arg2)
     x <- lift $ f arg1 arg2
-    modify $ incRef loc (reg x)
+    refResource loc (reg x)
     return x
 
-rf3 :: (Monad m, Ord a) => (a -> a) -> String -> (a -> a -> a -> m a) -> a -> a -> a -> ResourceT a m a
-rf3 reg loc f arg1 arg2 arg3 = ResourceT $ do
-    mp <- get
-    checkRef (loc ++ " 1") mp (reg arg1)
-    checkRef (loc ++ " 2") mp (reg arg2)
-    checkRef (loc ++ " 3") mp (reg arg3)
+rf3 :: (MonadResource a (t m), Monad m, MonadTrans t) => (a -> a) -> String -> (a -> a -> a -> m a) -> a -> a -> a -> t m a
+rf3 reg loc f arg1 arg2 arg3 = do
+    checkResource (loc ++ " 1") (reg arg1)
+    checkResource (loc ++ " 2") (reg arg2)
+    checkResource (loc ++ " 3") (reg arg3)
     x <- lift $ f arg1 arg2 arg3
-    modify $ incRef loc (reg x)
+    refResource loc (reg x)
     return x
 
-rf :: (Monad m, Ord a) => (a -> a) -> String -> m a -> ResourceT a m a
-rf reg loc m = ResourceT $ do
+rf :: (MonadResource a (t m), Monad m, MonadTrans t) => (a -> a) -> String -> m a -> t m a
+rf reg loc m = do
     x <- lift $ m
-    modify $ incRef loc (reg x)
+    refResource loc (reg x)
     return x
 
-rrf :: (Monad m, Ord a) => (a -> a) -> String -> ResourceT a m a -> ResourceT a m a
-rrf reg loc m = ResourceT $ do
-    x <- unResourceT m
-    modify $ incRef loc (reg x)
+rrf :: (MonadResource a (t m), Monad m, MonadTrans t) => (a -> a) -> String -> t m a -> t m a
+rrf reg loc m = do
+    x <- m
+    refResource loc (reg x)
     return x
 
-de :: (Monad m, Ord a) => (a -> a) -> String -> (a -> m ()) -> a -> ResourceT a m ()
-de reg loc f x = ResourceT $ do
-    modify $ decRef loc (reg x)
+de :: (MonadResource a (t m), Monad m, MonadTrans t) => (a -> a) -> String -> (a -> m ()) -> a -> t m ()
+de reg loc f x = do
+    derefResource loc (reg x)
     lift $ f x
-    st <- get
-    st `seq` return ()
+    return ()
 
-rp' :: (Monad m, Ord a) => (a -> a) -> String -> (a -> m ()) -> a -> ResourceT a m ()
-rp' reg loc f x = ResourceT $ do
-    modify $ incRef loc (reg x)
+rp' :: (MonadResource a (t m), Monad m, MonadTrans t) => (a -> a) -> String -> (a -> m ()) -> a -> t m ()
+rp' reg loc f x = do
+    refResource loc (reg x)
     lift $ f x
 
+--Template haskell
 withLocatedError :: Q Exp -> Q Exp
 withLocatedError f = do
     let error = locatedError =<< location
@@ -141,3 +107,42 @@ rr = withLocatedError $ appToReg [| rrf |]
 --Template haskell to decrement the reference counter of a resource
 d :: Q Exp
 d = withLocatedError $ appToReg [| de |]
+
+--A concrete type implementing the Resource class
+type InUse k = Map k (Set String, Int)
+newtype ResourceT t m a = ResourceT {unResourceT :: StateT (InUse t) m a} deriving (Monad)
+
+runResourceT = flip runStateT (Map.empty) . unResourceT
+evalResourceT = flip evalStateT (Map.empty) . unResourceT
+
+instance MonadTrans (ResourceT t) where
+    lift = ResourceT . lift
+
+incRef n = Map.alter func 
+    where
+    func Nothing        = Just (Set.singleton n, 1)
+    func (Just (ns, x)) = Just (Set.insert n ns, x+1)
+
+decRef loc = Map.alter func 
+    where
+    func Nothing       = error $ "tried to delete key that wasn't referenced: " ++ loc
+    func (Just (_, 1)) = Nothing
+    func (Just (n, x)) = Just $ (n, x - 1)
+
+checkRef loc mp x = case Map.lookup x mp of
+    Nothing -> error $ "Argument is not in map: " ++ loc
+    Just _  -> return $ ()
+
+instance (Monad m, Ord r) => MonadResource r (ResourceT r m) where
+
+    checkResource loc x = ResourceT $ do
+        mp <- get
+        checkRef loc mp x
+
+    refResource   loc x = ResourceT $ modify $ incRef loc x
+
+    derefResource loc x = ResourceT $ modify $ decRef loc x
+
+getInUse :: (Monad m, Ord a) => ResourceT a m (InUse a)
+getInUse = ResourceT $ get
+
