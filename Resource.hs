@@ -14,20 +14,20 @@ import Control.Monad.ST
 import Language.Haskell.TH
 
 --Resource monad class definition
-class (MonadTrans t) => MonadResource r t | t -> r where
-    checkResource :: Monad m => String -> r -> t m ()
-    refResource   :: Monad m => String -> r -> t m ()
-    derefResource :: Monad m => String -> r -> t m ()
+class (MonadTrans t, Monad m, Monad (t m)) => MonadResource r m t | t -> r where
+    checkResource :: String -> r -> t m ()
+    refResource   :: String -> r -> t m ()
+    derefResource :: String -> r -> t m ()
 
 --Helper functions for use in this monad
-rf1 :: (MonadResource a t, Monad (t m), Monad m, MonadTrans t, Ord a) => (a -> a) -> String -> (a -> m a) -> a -> t m a
+rf1 :: (MonadResource a m t, Ord a) => (a -> a) -> String -> (a -> m a) -> a -> t m a
 rf1 reg loc f arg = do
     checkResource loc (reg arg)
     x <- lift $ f arg
     refResource loc (reg x)
     return x
 
-rf2 :: (MonadResource a t, Monad (t m), Monad m, MonadTrans t) => (a -> a) -> String -> (a -> a -> m a) -> a -> a -> t m a
+rf2 :: (MonadResource a m t) => (a -> a) -> String -> (a -> a -> m a) -> a -> a -> t m a
 rf2 reg loc f arg1 arg2 = do
     checkResource (loc ++ " 1") (reg arg1)
     checkResource (loc ++ " 2") (reg arg2)
@@ -35,7 +35,7 @@ rf2 reg loc f arg1 arg2 = do
     refResource loc (reg x)
     return x
 
-rf3 :: (MonadResource a t, Monad (t m), Monad m, MonadTrans t) => (a -> a) -> String -> (a -> a -> a -> m a) -> a -> a -> a -> t m a
+rf3 :: (MonadResource a m t) => (a -> a) -> String -> (a -> a -> a -> m a) -> a -> a -> a -> t m a
 rf3 reg loc f arg1 arg2 arg3 = do
     checkResource (loc ++ " 1") (reg arg1)
     checkResource (loc ++ " 2") (reg arg2)
@@ -44,25 +44,25 @@ rf3 reg loc f arg1 arg2 arg3 = do
     refResource loc (reg x)
     return x
 
-rf :: (MonadResource a t, Monad (t m), Monad m, MonadTrans t) => (a -> a) -> String -> m a -> t m a
+rf :: (MonadResource a m t) => (a -> a) -> String -> m a -> t m a
 rf reg loc m = do
     x <- lift $ m
     refResource loc (reg x)
     return x
 
-rrf :: (MonadResource a t, Monad (t m), Monad m, MonadTrans t) => (a -> a) -> String -> t m a -> t m a
+rrf :: (MonadResource a m t) => (a -> a) -> String -> t m a -> t m a
 rrf reg loc m = do
     x <- m
     refResource loc (reg x)
     return x
 
-de :: (MonadResource a t, Monad (t m), Monad m, MonadTrans t) => (a -> a) -> String -> (a -> m ()) -> a -> t m ()
+de :: (MonadResource a m t) => (a -> a) -> String -> (a -> m ()) -> a -> t m ()
 de reg loc f x = do
     derefResource loc (reg x)
     lift $ f x
     return ()
 
-rp' :: (MonadResource a t, Monad (t m), Monad m, MonadTrans t) => (a -> a) -> String -> (a -> m ()) -> a -> t m ()
+rp' :: (MonadResource a m t) => (a -> a) -> String -> (a -> m ()) -> a -> t m ()
 rp' reg loc f x = do
     refResource loc (reg x)
     lift $ f x
@@ -133,7 +133,7 @@ checkRef loc mp x = case Map.lookup x mp of
     Nothing -> error $ "Argument is not in map: " ++ loc
     Just _  -> return $ ()
 
-instance (Ord r) => MonadResource r (ResourceT r) where
+instance (Ord r, Monad m) => MonadResource r m (ResourceT r) where
 
     checkResource loc x = ResourceT $ do
         mp <- get
