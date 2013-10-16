@@ -4,6 +4,8 @@ module Resource where
 import Control.Monad.State.Strict
 import qualified Data.Map.Strict as Map
 import Data.Map.Strict (Map)
+import qualified Data.Set as Set
+import Data.Set (Set)
 import Control.Arrow
 import Data.List
 import Data.Maybe
@@ -15,12 +17,12 @@ import Language.Haskell.TH
 trace :: String -> ST s ()
 trace = unsafeIOToST . putStrLn
 
-type InUse k = Map k ([String], Int)
+type InUse k = Map k (Set String, Int)
 
 incRef n = Map.alter func 
     where
-    func Nothing        = Just ([n], 1)
-    func (Just (ns, x)) = Just (nub (n:ns), x+1)
+    func Nothing        = Just (Set.singleton n, 1)
+    func (Just (ns, x)) = Just (Set.insert n ns, x+1)
 
 decRef loc = Map.alter func 
     where
