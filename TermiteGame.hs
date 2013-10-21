@@ -204,9 +204,20 @@ doHasOutgoings Ops{..} pairs = do
         return a
 
 --Find the <state, untracked, label> tuples that are guaranteed to lead to the goal for a given transition relation
-cpre' :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> t (ST s) (DDNode s u)
-cpre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} target = do
-    nextWin  <- $r1 mapVars target
+cpreCont' :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
+cpreCont' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} cont target = do
+    nextWin' <- $r1 mapVars target
+    nextWin  <- $r2 bor nextWin' (bnot cont)
+    $d deref nextWin'
+    strat    <- partitionedThing ops trans nextWin
+    $d deref nextWin
+    return strat
+
+cpreUCont' :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
+cpreUCont' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} cont target = do
+    nextWin' <- $r1 mapVars target
+    nextWin  <- $r2 bor nextWin' cont
+    $d deref nextWin'
     strat    <- partitionedThing ops trans nextWin
     $d deref nextWin
     return strat
@@ -214,24 +225,16 @@ cpre' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} target = do
 --Returns the set of <state, untracked> pairs that are winning 
 cpre'' :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
 cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds cc cu target = do
-    strat       <- cpre' ops si rd target
-    stratC      <- $r2 band strat cont
-    stratU      <- $r2 band strat (bnot cont)
-    $d deref strat
-    stratContHas' <- $r2 band stratC hasOutgoingsCont
+    stratC       <- cpreCont' ops si rd cont target
+    stratU       <- cpreUCont' ops si rd cont target
+    stratCont    <- doEnCont ops stratC labelPreds
     $d deref stratC
-    stratContHas <- $r2 band stratContHas' slRel
-    $d deref stratContHas'
-    stratCont    <- doEnCont ops stratContHas labelPreds
-    $d deref stratContHas
-    asdf         <- $r2 band slRel (bnot stratU)
+    stratUCont   <- doEnCont ops (bnot stratU) labelPreds
     $d deref stratU
-    stratUCont   <- doEnCont ops asdf labelPreds
-    $d deref asdf
     winCont      <- $r2 (andAbstract _labelCube) cc stratCont
     winUCont     <- liftM bnot $ $r2 (andAbstract _labelCube) cu stratUCont
     mapM ($d deref) [stratCont, stratUCont]
-    win          <- $r3 bite cont winCont winUCont
+    win          <- $r2 band winCont winUCont
     mapM ($d deref) [winCont, winUCont]
     return win
 
@@ -489,17 +492,12 @@ refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Re
     win''              <- lift $ $r2 band win fairr
     win'               <- lift $ $r2 bor win'' winning
     lift $ $d deref win''
-    winNoConstraint'   <- lift $ cpre' ops si rd win'
-    stratContHas'      <- lift $ $r2 band winNoConstraint' hasOutgoings
-    stratContHas       <- lift $ $r2 band stratContHas' slRel
-    lift $ $d deref stratContHas'
-    lift $ $d deref winNoConstraint'
+    winNoConstraint'   <- lift $ cpreCont' ops si rd cont win'
     let lp             =  map (sel1 &&& sel3) $ Map.elems _labelVars
-    winNoConstraint    <- lift $ doEnCont ops stratContHas lp
-    lift $ $d deref stratContHas
-    winNoConstraint2   <- lift $ $r2 band cont winNoConstraint
-    lift $ mapM ($d deref) [win', winNoConstraint]
-    (res, (consistentPlusCULCont', consistentMinusCULCont'))  <- doConsistency ops ts consistentPlusCULCont consistentMinusCULCont winNoConstraint2
+    winNoConstraint    <- lift $ doEnCont ops winNoConstraint' lp
+    lift $ $d deref winNoConstraint'
+    lift $ mapM ($d deref) [win']
+    (res, (consistentPlusCULCont', consistentMinusCULCont'))  <- doConsistency ops ts consistentPlusCULCont consistentMinusCULCont winNoConstraint
     lift $ lift $ check "refineConsistencyCont End" ops
     let rd' = rd {consistentPlusCULCont = consistentPlusCULCont', consistentMinusCULCont = consistentMinusCULCont'}
     return (res, rd')
@@ -512,15 +510,12 @@ refineConsistencyUCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@R
     win''              <- lift $ $r2 band win fairr
     win'               <- lift $ $r2 bor  win'' winning
     lift $ $d deref win''
-    winNoConstraint''  <- lift $ cpre' ops si rd win'
-    winNoConstraint'   <- lift $ $r2 band (bnot winNoConstraint'') slRel
-    lift $ $d deref winNoConstraint''
+    winNoConstraint'  <- lift $ cpreUCont' ops si rd cont win'
     let lp             =  map (sel1 &&& sel3) $ Map.elems _labelVars
     winNoConstraint    <- lift $ doEnCont ops winNoConstraint' lp
     lift $ $d deref winNoConstraint'
-    winNoConstraint2   <- lift $ $r2 band (bnot cont) winNoConstraint
-    lift $ mapM ($d deref) [win', winNoConstraint]
-    (res, (consistentPlusCULUCont', consistentMinusCULUCont')) <- doConsistency ops ts consistentPlusCULUCont consistentMinusCULUCont winNoConstraint2
+    lift $ mapM ($d deref) [win']
+    (res, (consistentPlusCULUCont', consistentMinusCULUCont')) <- doConsistency ops ts consistentPlusCULUCont consistentMinusCULUCont winNoConstraint
     lift $ lift $ check "refineConsistencyUCont End" ops
     let rd' = rd {consistentPlusCULUCont = consistentPlusCULUCont', consistentMinusCULUCont = consistentMinusCULUCont'}
     return (res, rd')
@@ -635,6 +630,7 @@ fixedPoint2 ops@Ops{..} start thing func = do
         True -> return (start, thing')
         False -> fixedPoint2 ops res thing' func
 
+{-
 strategy :: forall s u t. (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> t (ST s) [[DDNode s u]]
 strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
     lift $ traceST "* Computing strategy"
@@ -803,6 +799,8 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
         mapM ($d deref) [winCont, winUCont]
         return (win, stratUCont)
 
+-}
+
 data RefineInfo s u sp lp = RefineInfo {
     si :: SectionInfo s u,
     rs :: RefineStatic s u,
@@ -927,8 +925,8 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                                 Just rd -> refineLoop' rd winRegion
 
 cex :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp -> t (ST s) [[DDNode s u]]
-cex RefineInfo{..} = counterExample op si rs rd lp wn
+cex RefineInfo{..} = undefined --counterExample op si rs rd lp wn
 
 strat :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp -> t (ST s) [[DDNode s u]]
-strat RefineInfo{..} = strategy op si rs rd lp wn
+strat RefineInfo{..} = undefined --strategy op si rs rd lp wn
 
