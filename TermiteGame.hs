@@ -689,7 +689,7 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         strat        <- doEnCont ops strat' labelPreds
         $d deref strat'
         stratUCont'  <- cpreUCont' ops si rd cont target
-        stratUCont   <- doEnCont ops stratUCont' labelPreds
+        stratUCont   <- doEnCont ops (bnot stratUCont') labelPreds
         $d deref stratUCont'
 
         stratCont    <- $r2 band consistentMinusCULCont strat
