@@ -369,7 +369,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     lift $ mapM ($r . return) fairExprs
     lift $ lift $ check "After compiling fair" ops
     --abstract the controllable condition
-    (contExpr, newVarsCont) <- hoist lift $ doGoal ops contAbs
+    (contExpr, newVarsCont) <- hoist lift $ doStateLabel ops contAbs
     lift $ $r $ return contExpr
     lift $ lift $ check "After compiling controllable" ops
     --abstract the stateLabelConstraint 
