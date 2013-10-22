@@ -204,13 +204,15 @@ doHasOutgoings Ops{..} pairs = do
         return a
 
 --Find the <state, untracked, label> tuples that are guaranteed to lead to the goal for a given transition relation
-cpreCont' :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
-cpreCont' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} cont target = do
+cpreCont' :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
+cpreCont' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} cont hasOutgoings target = do
     nextWin' <- $r1 mapVars target
     nextWin  <- $r2 bor nextWin' (bnot cont)
     $d deref nextWin'
-    strat    <- partitionedThing ops trans nextWin
+    strat'   <- partitionedThing ops trans nextWin
     $d deref nextWin
+    strat    <- $r2 band hasOutgoings strat'
+    $d deref strat'
     return strat
 
 cpreUCont' :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineDynamic s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
@@ -225,13 +227,17 @@ cpreUCont' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} cont target = do
 --Returns the set of <state, untracked> pairs that are winning 
 cpre'' :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
 cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds cc cu target = do
-    stratC       <- cpreCont' ops si rd cont target
+    stratC       <- cpreCont' ops si rd cont hasOutgoingsCont target
     stratU       <- cpreUCont' ops si rd cont target
     stratCont    <- doEnCont ops stratC labelPreds
     $d deref stratC
     stratUCont   <- doEnCont ops (bnot stratU) labelPreds
     $d deref stratU
-    winCont      <- $r2 (andAbstract _labelCube) cc stratCont
+    winCont'     <- $r2 (andAbstract _labelCube) cc stratCont
+    en           <- $r1 (bexists _labelCube) hasOutgoingsCont
+    winCont      <- $r2 bimp en winCont'
+    $d deref winCont'
+    $d deref en
     winUCont     <- liftM bnot $ $r2 (andAbstract _labelCube) cu stratUCont
     mapM ($d deref) [stratCont, stratUCont]
     win          <- $r2 band winCont winUCont
@@ -492,7 +498,7 @@ refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@Re
     win''              <- lift $ $r2 band win fairr
     win'               <- lift $ $r2 bor win'' winning
     lift $ $d deref win''
-    winNoConstraint'   <- lift $ cpreCont' ops si rd cont win'
+    winNoConstraint'   <- lift $ cpreCont' ops si rd cont hasOutgoings win'
     let lp             =  map (sel1 &&& sel3) $ Map.elems _labelVars
     winNoConstraint    <- lift $ doEnCont ops winNoConstraint' lp
     lift $ $d deref winNoConstraint'
