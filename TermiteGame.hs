@@ -636,7 +636,6 @@ fixedPoint2 ops@Ops{..} start thing func = do
         True -> return (start, thing')
         False -> fixedPoint2 ops res thing' func
 
-{-
 strategy :: forall s u t. (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> t (ST s) [[DDNode s u]]
 strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
     lift $ traceST "* Computing strategy"
@@ -654,7 +653,7 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
             (res, strats') <- forAccumLM bfalse fair $ \accum fair -> do
                 --Fairness greatest fixedpoint
                 --TODO optimise: dont use btrue below
-                winFair <- solveFair (cPreUnder ops si rs rd hasOutgoings labelPreds)  ops rs btrue soFarOrWinAndGoal fair
+                winFair <- solveFair (cPreUnder ops si rs rd hasOutgoings labelPreds) ops rs btrue soFarOrWinAndGoal fair
                 thing <- $r2 band winFair fair
                 thing2 <- $r2 bor thing soFarOrWinAndGoal
                 $d deref thing
@@ -686,25 +685,26 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         $d deref oldC
         return c'
     cpre hasOutgoings target = do
-        strat       <- cpre' ops si rd target
-        stratContHas' <- $r2 band strat hasOutgoings
-        stratContHas <- $r2 band stratContHas' slRel
-        $d deref stratContHas'
-        stratCont    <- doEnCont ops stratContHas labelPreds
-        $d deref stratContHas
-        asdf         <- $r2 band slRel (bnot strat)
+        strat'       <- cpreCont' ops si rd cont hasOutgoings target
+        strat        <- doEnCont ops strat' labelPreds
+        $d deref strat'
+        stratUCont'  <- cpreUCont' ops si rd cont target
+        stratUCont   <- doEnCont ops stratUCont' labelPreds
+        $d deref stratUCont'
+
+        stratCont    <- $r2 band consistentMinusCULCont strat
         $d deref strat
-        stratUCont   <- doEnCont ops asdf labelPreds
-        $d deref asdf
-        stratCont'   <- $r2 band consistentMinusCULCont stratCont
-        $d deref stratCont
-        winCont      <- $r1 (bexists _labelCube) stratCont'
+        winCont'      <- $r1 (bexists _labelCube) stratCont
+        en           <- $r1 (bexists _labelCube) hasOutgoings
+        winCont      <- $r2 bimp en winCont'
+        $d deref winCont'
+        $d deref en
         winUCont     <- liftM bnot $ $r2 (andAbstract _labelCube) consistentPlusCULUCont stratUCont
         mapM ($d deref) [stratUCont]
-        win'         <- $r3 bite cont winCont winUCont
+        win'         <- $r2 band winCont winUCont
         mapM ($d deref) [winCont, winUCont]
         win          <- $r1 (bforall _untrackedCube) win'
-        return (win, stratCont')
+        return (win, stratCont)
 
 fixedPoint2R :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> a -> (DDNode s u -> a -> t (ST s) (DDNode s u, a)) -> t (ST s) (DDNode s u, a)
 fixedPoint2R ops@Ops{..} start thing func = do
@@ -726,6 +726,8 @@ Inner 2 fixedpoints are: Reach fair region infinitely often staying out of the g
 Outer fixpoint is: as above but (never getting in goal, getting in goal once, getting in goal twice...) i.e. only hit the goal some finite number of times
 
 -}
+
+{-
 
 counterExample :: forall t s u. (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> t (ST s) [[DDNode s u]]
 counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds winGame = do
