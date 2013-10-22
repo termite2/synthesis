@@ -936,5 +936,5 @@ cex :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp -> t (ST s)
 cex RefineInfo{..} = undefined --counterExample op si rs rd lp wn
 
 strat :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp -> t (ST s) [[DDNode s u]]
-strat RefineInfo{..} = undefined --strategy op si rs rd lp wn
+strat RefineInfo{..} = strategy op si rs rd lp wn
 
