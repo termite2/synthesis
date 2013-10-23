@@ -236,7 +236,9 @@ cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} h
     stratUCont   <- doEnCont ops (bnot stratU) labelPreds
     $d deref stratU
     winCont'     <- $r2 (andAbstract _labelCube) cc stratCont
-    en           <- $r1 (bexists _labelCube) hasOutgoingsCont
+    hasOutgoingsC <- $r2 band hasOutgoingsCont cont
+    en           <- $r1 (bexists _labelCube) hasOutgoingsC
+    $d deref hasOutgoingsC
     winCont      <- $r2 bimp en winCont'
     $d deref winCont'
     $d deref en
@@ -697,7 +699,10 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         stratCont    <- $r2 band consistentMinusCULCont strat
         $d deref strat
         winCont'      <- $r1 (bexists _labelCube) stratCont
-        en           <- $r1 (bexists _labelCube) hasOutgoings
+
+        hasOutgoingsC <- $r2 band hasOutgoings cont
+        en           <- $r1 (bexists _labelCube) hasOutgoingsC
+        $d deref hasOutgoingsC
         
         winCont      <- $r2 bimp en winCont'
         $d deref winCont'
