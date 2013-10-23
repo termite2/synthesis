@@ -794,8 +794,8 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
             return res
 
     strategy si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoings target = do
-        stratC <- cpreCont' ops si rd cont hasOutgoings target
-        stratU <- cpreUCont' ops si rd cont target
+        stratC <- cpreCont' ops si rd cont hasOutgoings (bnot target)
+        stratU <- cpreUCont' ops si rd cont (bnot target)
         stratCont    <- doEnCont ops stratC labelPreds
         $d deref stratC
         stratUCont'   <- doEnCont ops (bnot stratU) labelPreds
