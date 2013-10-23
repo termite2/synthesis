@@ -211,7 +211,9 @@ cpreCont' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} cont hasOutgoings 
     $d deref nextWin'
     strat'   <- partitionedThing ops trans nextWin
     $d deref nextWin
-    strat    <- $r2 band hasOutgoings strat'
+    hasOutgoingsC <- $r2 band hasOutgoings cont
+    strat    <- $r2 band hasOutgoingsC strat'
+    $d deref hasOutgoingsC
     $d deref strat'
     return strat
 
@@ -696,6 +698,7 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         $d deref strat
         winCont'      <- $r1 (bexists _labelCube) stratCont
         en           <- $r1 (bexists _labelCube) hasOutgoings
+        
         winCont      <- $r2 bimp en winCont'
         $d deref winCont'
         $d deref en
