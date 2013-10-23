@@ -735,8 +735,6 @@ Outer fixpoint is: as above but (never getting in goal, getting in goal once, ge
 
 -}
 
-{-
-
 counterExample :: forall t s u. (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> t (ST s) [[DDNode s u]]
 counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds winGame = do
     lift $ traceST "* Computing counterexample"
@@ -795,27 +793,26 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
                 return (winAccum', (fair, strat'''))
             return res
 
-    strategy SectionInfo{..} RefineStatic{..} RefineDynamic{..} hasOutgoings target = do
-        strt        <- cpre' ops si rd (bnot target)
-        stratContHas' <- $r2 band strt hasOutgoings
-        stratContHas <- $r2 band stratContHas' slRel
-        $d deref stratContHas'
-        stratCont'  <- doEnCont ops stratContHas labelPreds
-        $d deref stratContHas
-        winCont     <- liftM bnot $ $r2 (andAbstract _labelCube) consistentPlusCULCont stratCont'
-        $d deref stratCont'
-        asdf         <- $r2 band slRel (bnot strt)
-        $d deref strt
-        stratUCont' <- doEnCont ops asdf labelPreds
-        $d deref asdf
-        stratUCont  <- $r2 band consistentMinusCULUCont stratUCont'
-        $d deref stratUCont'
-        winUCont    <- $r1 (bexists _labelCube) stratUCont
-        win         <- $r3 bite cont winCont winUCont
+    strategy si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoings target = do
+        stratC <- cpreCont' ops si rd cont hasOutgoings target
+        stratU <- cpreUCont' ops si rd cont target
+        stratCont    <- doEnCont ops stratC labelPreds
+        $d deref stratC
+        stratUCont'   <- doEnCont ops (bnot stratU) labelPreds
+        $d deref stratU
+        winCont'     <- $r2 (andAbstract _labelCube) consistentPlusCULCont stratCont
+        hasOutgoingsC <- $r2 band hasOutgoings cont
+        en           <- $r1 (bexists _labelCube) hasOutgoingsC
+        $d deref hasOutgoingsC
+        winCont      <- liftM bnot $ $r2 bimp en winCont'
+        $d deref winCont'
+        $d deref en
+        stratUCont   <- $r2 band consistentPlusCULUCont stratUCont'
+        winUCont     <- $r1 (bexists _labelCube) stratUCont
+        mapM ($d deref) [stratCont, stratUCont']
+        win          <- $r2 bor winCont winUCont
         mapM ($d deref) [winCont, winUCont]
         return (win, stratUCont)
-
--}
 
 data RefineInfo s u sp lp = RefineInfo {
     si :: SectionInfo s u,
@@ -941,7 +938,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                                 Just rd -> refineLoop' rd winRegion
 
 cex :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp -> t (ST s) [[DDNode s u]]
-cex RefineInfo{..} = undefined --counterExample op si rs rd lp wn
+cex RefineInfo{..} = counterExample op si rs rd lp wn
 
 strat :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp -> t (ST s) [[DDNode s u]]
 strat RefineInfo{..} = strategy op si rs rd lp wn
