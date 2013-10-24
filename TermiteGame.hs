@@ -237,7 +237,9 @@ cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} h
     $d deref stratU
     winCont'     <- $r2 (andAbstract _labelCube) cc stratCont
     hasOutgoingsC <- $r2 band hasOutgoingsCont cont
-    en           <- $r1 (bexists _labelCube) hasOutgoingsC
+    en'          <- $r2 band hasOutgoingsC cc
+    en           <- $r1 (bexists _labelCube) en'
+    $d deref en'
     $d deref hasOutgoingsC
     winCont      <- $r2 bimp en winCont'
     $d deref winCont'
@@ -705,7 +707,9 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         winCont'      <- $r1 (bexists _labelCube) stratCont
 
         hasOutgoingsC <- $r2 band hasOutgoings cont
-        en           <- $r1 (bexists _labelCube) hasOutgoingsC
+        en'          <- $r2 band hasOutgoingsC consistentMinusCULCont
+        en           <- $r1 (bexists _labelCube) en'
+        $d deref en'
         $d deref hasOutgoingsC
         
         winCont      <- $r2 bimp en winCont'
@@ -806,7 +810,9 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
         $d deref stratU
         winCont'     <- $r2 (andAbstract _labelCube) consistentPlusCULCont stratCont
         hasOutgoingsC <- $r2 band hasOutgoings cont
-        en           <- $r1 (bexists _labelCube) hasOutgoingsC
+        en'          <- $r2 band hasOutgoingsC consistentPlusCULCont
+        en           <- $r1 (bexists _labelCube) en'
+        $d deref en'
         $d deref hasOutgoingsC
         winCont      <- liftM bnot $ $r2 bimp en winCont'
         $d deref winCont'
