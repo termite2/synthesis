@@ -406,13 +406,12 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     let theMap = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys labelPreds
     lift $ lift $ traceST $ show theMap
     lift $ $rp ref btrue
-    consistentMinusCULCont <- lift $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList labelPreds) btrue
-    --lift $ lift $ traceST $ bddSynopsis ops consistentMinusCULCont 
-
-    --consistentMinusCULCont <- lift $ $r $ conj ops $ map (bnot . sel3) $ Map.elems labelPreds
-
+    consistentMinusCULCont' <- lift $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList labelPreds) btrue
+    consistentMinusCULCont <- lift $ $r2 band consistentMinusCULCont' consistentPlusCULCont
+    lift $ $d deref consistentMinusCULCont'
     let consistentMinusCULUCont = consistentMinusCULCont
     lift $ $rp ref consistentMinusCULUCont
+
     --construct the RefineDynamic and RefineStatic
     let rd = RefineDynamic {
             trans  = groups,
@@ -468,8 +467,13 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
     labelPreds              <- gets $ _labelVars . _symbolTable
     let newLabelPreds       = labelPreds Map.\\ labelPredsPreUpdate
     let theMap              = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys labelPreds
-    consistentMinusCULCont' <- lift $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList newLabelPreds) consistentMinusCULCont
-    consistentMinusCULUCont' <- lift $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList newLabelPreds) consistentMinusCULUCont
+    consistentMinusCULCont'' <- lift $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList newLabelPreds) consistentMinusCULCont
+    consistentMinusCULCont' <- lift $ $r2 band consistentMinusCULCont'' (bnot inconsistent)
+    lift $ $d deref consistentMinusCULCont''
+
+    consistentMinusCULUCont'' <- lift $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList newLabelPreds) consistentMinusCULUCont
+    consistentMinusCULUCont' <- lift $ $r2 band consistentMinusCULUCont'' (bnot inconsistent)
+    lift $ $d deref consistentMinusCULUCont''
     
     consistentPlusCULCont'  <- lift $ $r2 band consistentPlusCULCont  (bnot inconsistent)
     consistentPlusCULUCont' <- lift $ $r2 band consistentPlusCULUCont (bnot inconsistent)
