@@ -673,6 +673,7 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
                 win <- $r2 bor win' accum 
                 $d deref win'
                 when (winFair /= win') (error "wrs not equal")
+                $d deref accum
                 return (win, strats)
             $d deref soFarOrWinAndGoal
             strats <- zipWithM (combineStrats soFar) strats strats'
@@ -939,8 +940,9 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                                                     return $ Just newRD
                                                 Nothing -> lift $ do
                                                     return Nothing
-                                lift $ mapM ($d deref) [urog, overAndGoal, hasOutgoings]
+                                lift $ mapM ($d deref) [urog, overAndGoal]
                                 return res
+                            lift $ $d deref hasOutgoings   
                             case res of 
                                 Nothing -> do 
                                     lift $ lift $ traceST "Winning"
