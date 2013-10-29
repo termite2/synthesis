@@ -594,48 +594,6 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
         consistentPlusCULUCont = consistentPlusCULUCont'
     }
 
-refineConsistency :: (Ord sp, Ord lp, Ord lv, Show sp, Show lp, MonadResource (DDNode s u) (ST s) t) => Ops s u -> TheorySolver s u sp lp lv -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (t (ST s)) (Bool, RefineDynamic s u)
-refineConsistency ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} hasOutgoings win winning fairr = do
-    (res, rd) <- refineConsistencyCont ops ts rd rs hasOutgoings win winning fairr
-    case res of
-        True -> do
-            return $ (res, rd)
-        False  -> do
-            res <- refineConsistencyUCont ops ts rd rs win winning fairr
-            return res
-
-refineConsistencyCont :: (Ord sp, Ord lp, Ord lv, Show sp, Show lp, MonadResource (DDNode s u) (ST s) t) => Ops s u -> TheorySolver s u sp lp lv -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (t (ST s)) (Bool, RefineDynamic s u)
-refineConsistencyCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} hasOutgoings win winning fairr = do
-    lift $ check "refineConsistencyCont" ops
-    syi@SymbolInfo{..} <- gets _symbolTable 
-    si@SectionInfo{..} <- gets _sections
-    win''              <- lift $ $r2 band win fairr
-    win'               <- lift $ $r2 bor win'' winning
-    lift $ $d deref win''
-    let labelPreds = map (sel1 &&& sel3) $ Map.elems _labelVars
-    winNoConstraint   <- lift $ cpreCont' ops si rd labelPreds cont hasOutgoings win'
-    lift $ mapM ($d deref) [win']
-    (res, (consistentPlusCULCont', consistentMinusCULCont'))  <- doConsistency ops ts consistentPlusCULCont consistentMinusCULCont winNoConstraint
-    lift $ lift $ check "refineConsistencyCont End" ops
-    let rd' = rd {consistentPlusCULCont = consistentPlusCULCont', consistentMinusCULCont = consistentMinusCULCont'}
-    return (res, rd')
-
-refineConsistencyUCont :: (Ord sp, Ord lp, Ord lv, Show sp, Show lp, MonadResource (DDNode s u) (ST s) t) => Ops s u -> TheorySolver s u sp lp lv -> RefineDynamic s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (t (ST s)) (Bool, RefineDynamic s u)
-refineConsistencyUCont ops@Ops{..} ts@TheorySolver{..} rd@RefineDynamic{..} rs@RefineStatic{..} win winning fairr = do
-    lift $ check "refineConsistencyUCont" ops
-    syi@SymbolInfo{..} <- gets _symbolTable 
-    si@SectionInfo{..} <- gets _sections
-    win''              <- lift $ $r2 band win fairr
-    win'               <- lift $ $r2 bor  win'' winning
-    lift $ $d deref win''
-    let labelPreds = map (sel1 &&& sel3) $ Map.elems _labelVars
-    winNoConstraint  <- lift $ cpreUCont' ops si rd labelPreds cont win'
-    lift $ mapM ($d deref) [win']
-    (res, (consistentPlusCULUCont', consistentMinusCULUCont')) <- doConsistency ops ts consistentPlusCULUCont consistentMinusCULUCont winNoConstraint
-    lift $ lift $ check "refineConsistencyUCont End" ops
-    let rd' = rd {consistentPlusCULUCont = consistentPlusCULUCont', consistentMinusCULUCont = consistentMinusCULUCont'}
-    return (res, rd')
-
 sccs :: (Ord lv, Ord lp, Show lp) => SymbolInfo s u sp lp -> TheorySolver s u sp lp lv -> [(lp, a)] -> [[(lp, a)]]
 sccs SymbolInfo{..} TheorySolver{..} labelCube = fmap (flatten . fmap (sel1 . func)) $ components theGraph
     where
