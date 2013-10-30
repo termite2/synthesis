@@ -435,6 +435,7 @@ solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt goall = do
         $d deref t1
         return res
 
+--TODO check if this consumes the initial state on each iteration
 solveBuchi :: (MonadResource (DDNode s u) (ST s) t) => (DDNode s u -> t (ST s) (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> t (ST s) (DDNode s u)
 solveBuchi cpreFunc ops@Ops{..} rs@RefineStatic{..} startingPoint = do
     $rp ref startingPoint
@@ -620,6 +621,7 @@ sccs SymbolInfo{..} TheorySolver{..} labelCube = fmap (flatten . fmap (sel1 . fu
     (theGraph, func) = graphFromEdges' list 
     vMap             = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys _labelVars
 
+--TODO is it correct to use this for gfp and lfp refinements?
 doConsistency :: (Ord sp, Ord lp, Ord lv, Show sp, Show lp, MonadResource (DDNode s u) (ST s) t) => Ops s u -> TheorySolver s u sp lp lv -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (t (ST s)) (Maybe (RefineType, (DDNode s u, DDNode s u)))
 doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
     syi@SymbolInfo{..} <- gets _symbolTable 
