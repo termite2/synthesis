@@ -43,11 +43,6 @@ import MTR
 
 import Resource
 
-debugLevel = 0
-
-debugDo :: Monad m => Int -> m () -> m ()
-debugDo lvl = when (lvl <= debugLevel) 
-
 traceMsg :: String -> ST s ()
 traceMsg m = unsafeIOToST $ do
     putStr m
@@ -86,12 +81,13 @@ data RefineStatic s u = RefineStatic {
     init  :: DDNode s u
 }
 
-derefStatic :: Ops s u -> RefineStatic s u -> ST s ()
+derefStatic :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> RefineStatic s u -> t (ST s) ()
 derefStatic Ops{..} RefineStatic{..} = do
-    deref cont
-    mapM deref goal
-    mapM deref fair
-    deref init
+    $d deref slRel
+    $d deref cont
+    mapM ($d deref) goal
+    mapM ($d deref) fair
+    $d deref init
 
 data RefineDynamic s u = RefineDynamic {
     --relations
@@ -104,25 +100,14 @@ data RefineDynamic s u = RefineDynamic {
     inconsistentInit        :: DDNode s u
 }
 
-derefDynamic :: Ops s u -> RefineDynamic s u -> ST s ()
+derefDynamic :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> RefineDynamic s u -> t (ST s) ()
 derefDynamic Ops{..} RefineDynamic{..} = do
-    mapM (deref . fst) trans
-    mapM (deref . snd) trans
-    deref consistentMinusCULCont
-    deref consistentPlusCULCont
-    deref consistentMinusCULUCont
-    deref consistentPlusCULUCont
-
-dumpSizes :: Ops s u -> RefineDynamic s u -> ST s ()
-dumpSizes Ops{..} RefineDynamic{..} = do
-    let func x = do
-        ds <- dagSize x
-        traceST $ show ds
-    mapM (func . snd) trans
-    func consistentMinusCULCont
-    func consistentPlusCULCont
-    func consistentMinusCULUCont
-    func consistentPlusCULUCont
+    mapM ($d deref . fst) trans
+    mapM ($d deref . snd) trans
+    $d deref consistentMinusCULCont
+    $d deref consistentPlusCULCont
+    $d deref consistentMinusCULUCont
+    $d deref consistentPlusCULUCont
 
 type Lab s u = [([DDNode s u], DDNode s u)]
 
@@ -141,7 +126,6 @@ doEnVars qFunc ops@Ops{..} strat envars = do
         return res
 
 doEnCont  = doEnVars bforall
-doEnUCont = doEnVars bexists
 
 groupSize = 1000
 
@@ -284,8 +268,6 @@ solveFair cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt winning fairr = do
     fixedPointR ops func startPt
     where
     func target = do
-        lift $ debugDo 1 $ traceST "solveFair: iteration"
-        lift $ check "solveFair" ops
         t1 <- $r2 band target fairr
         t2 <- $r2 bor t1 winning
         $d deref t1
@@ -359,7 +341,7 @@ refineLFP ops@Ops{..} spec ts rs si labelPreds hasOutgoingsCont cpreUnder tgt mu
                     rd'' <- promoteUntracked ops spec ts rd vars
                     return $ Just rd''
 
-refineFair :: (MonadResource (DDNode s u) (ST s) t) => 
+refine :: (MonadResource (DDNode s u) (ST s) t) => 
               CPreFunc t s u -> 
               CPreFunc t s u -> 
               RefineFunc t s u sp lp -> 
@@ -369,7 +351,7 @@ refineFair :: (MonadResource (DDNode s u) (ST s) t) =>
               DDNode s u -> 
               RefineDynamic s u -> 
               StateT (DB s u sp lp) (t (ST s)) (Maybe (RefineDynamic s u))
-refineFair cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStatic{..} buchiWinning rd = do
+refine cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStatic{..} buchiWinning rd = do
     let buchiRefine = do
         res <- refineFuncGFP buchiWinning buchiWinning rd
         case res of 
@@ -420,7 +402,6 @@ solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt goall = do
     fixedPointR ops func bfalse
     where
     func target = do
-        lift $ debugDo 1 $ traceST "solveReach: iteration"
         sz <- lift $ dagSize target
         lift $ traceMsg $ "r(" ++ show sz ++ ")"
         t1 <- $r2 bor target goall
@@ -441,7 +422,6 @@ solveBuchi cpreFunc ops@Ops{..} rs@RefineStatic{..} startingPoint = do
     where
     func reachN = do
         lift $ traceMsg "b"
-        lift $ debugDo 1 $ traceST "solveBuchi: iteration"
         $rp ref btrue
         res <- forAccumM btrue goal $ \accum val -> do
             lift $ traceMsg "g"
@@ -656,7 +636,6 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
                     consistentPlusCUL' <- lift $ $r2 band cPlus (bnot inconsistent)
                     lift $ $d deref cPlus
                     lift $ $d deref inconsistent
-                    lift $ check "refineConsistency4" ops
                     lift $ $d deref winNoConstraint
                     return $ (True, (consistentPlusCUL', cMinus))
                     --doConsistency ops ts consistentPlusCUL' cMinus winNoConstraint
@@ -941,10 +920,6 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
     idb <- lift $ initialDB ops
     ((winning, (si, rs, rd, lp, wn)), db) <- flip runStateT idb $ do
         (rd, rs) <- initialAbstraction ops spec ts
-        lift $ lift $ debugDo 1 $ traceST "Refinement state after initial abstraction: " 
-        lift $ lift $ debugDo 1 $ traceST $ "Goal is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ goal rs)
-        lift $ lift $ debugDo 1 $ traceST $ "Fair is: " ++ (intercalate ", " $ map (bddSynopsis ops) $ fair rs)
-        lift $ lift $ debugDo 1 $ traceST $ "Init is: " ++ (bddSynopsis ops $ TermiteGame.init rs)
         lift $ $rp ref btrue
         refineLoop ops rs rd btrue
     lift $ traceST $ "Preds: \n" ++ intercalate "\n" (map show $ extractStatePreds $ _symbolTable db)
@@ -989,7 +964,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                                 rfG  = refineGFP  ops spec ts rs si lp hasOutgoings cpo'
                                 rfL  = refineLFP  ops spec ts rs si lp hasOutgoings cpu'
 
-                            res <- refineFair cpo cpu rfG rfL ops rs winRegion rd
+                            res <- refine cpo cpu rfG rfL ops rs winRegion rd
                             lift $ $d deref hasOutgoings   
                             case res of 
                                 Nothing -> do 
