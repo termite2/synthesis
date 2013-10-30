@@ -310,7 +310,7 @@ refineConsistency2 ops ts rd@RefineDynamic{..} rs@RefineStatic{..} si labelPreds
 type CPreFunc   t s u        = DDNode s u -> t (ST s) (DDNode s u)
 type RefineFunc t s u sp lp  = DDNode s u -> DDNode s u -> RefineDynamic s u -> StateT (DB s u sp lp) (t (ST s)) (Maybe (RefineDynamic s u))
 
-refineGFP :: (Show lp, Show sp, Ord lv, Ord lp, Ord sp, MonadResource (DDNode s u) (ST s) t) => 
+refineGFP, refineLFP :: (Show lp, Show sp, Ord lv, Ord lp, Ord sp, MonadResource (DDNode s u) (ST s) t) => 
              Ops s u -> 
              Abstractor s u sp lp -> 
              TheorySolver s u sp lp lv -> 
@@ -341,37 +341,78 @@ refineGFP ops@Ops{..} spec ts rs si labelPreds hasOutgoingsCont cpreOver tgt may
                     rd'' <- promoteUntracked ops spec ts rd vars
                     return $ Just rd''
 
+refineLFP ops@Ops{..} spec ts rs si labelPreds hasOutgoingsCont cpreUnder tgt mustWin rd = do
+    (cr, rd') <- refineConsistency2 ops ts rd rs si labelPreds hasOutgoingsCont tgt
+    case cr of 
+        True -> do
+            return $ Just rd'
+        False -> do
+            res <- lift $ do
+                su      <- cpreUnder tgt
+                toCheck <- $r2 band su (bnot mustWin)
+                res     <- lift $ refineStrategy ops si toCheck
+                $d deref toCheck
+                return res
+            case res of 
+                Nothing -> return Nothing
+                Just vars -> do
+                    rd'' <- promoteUntracked ops spec ts rd vars
+                    return $ Just rd''
+
 refineFair :: (MonadResource (DDNode s u) (ST s) t) => 
               CPreFunc t s u -> 
               CPreFunc t s u -> 
+              RefineFunc t s u sp lp -> 
               RefineFunc t s u sp lp -> 
               Ops s u -> 
               RefineStatic s u -> 
               DDNode s u -> 
               RefineDynamic s u -> 
               StateT (DB s u sp lp) (t (ST s)) (Maybe (RefineDynamic s u))
-refineFair cpreOver cpreUnder refineFunc ops@Ops{..} rs@RefineStatic{..} buchiWinning rd = 
-    mSumMaybe $ flip map goal $ \goal -> do
-        tgt' <- lift $ $r2 band goal buchiWinning
-        reachUnder <- lift $ solveReach cpreUnder ops rs buchiWinning tgt'
-        tgt''   <- lift $ $r2 bor tgt' reachUnder
-        lift $ $d deref tgt'
-        lift $ $d deref reachUnder
-        res <- mSumMaybe $ flip map fair $ \fair -> do
-            (tgt, res) <- lift $ do
-                res     <- solveFair cpreOver ops rs buchiWinning tgt'' fair
-                tgt'''  <- $r2 band res fair
-                tgt     <- $r2 bor tgt'' tgt'''
-                $d deref tgt'''
-                return (tgt, res)
+refineFair cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStatic{..} buchiWinning rd = do
+    let buchiRefine = do
+        res <- refineFuncGFP buchiWinning buchiWinning rd
+        case res of 
+            Nothing -> return ()
+            Just _  -> lift $ lift $ traceST "Refined at buchi level"
 
-            res' <- refineFunc tgt res rd
-            lift $ $d deref tgt
-            lift $ $d deref res
+        return res 
+    let fairRefine  = mSumMaybe $ flip map goal $ \goal -> do
+            tgt'       <- lift $ $r2 band goal buchiWinning
+            reachUnder <- lift $ solveReach cpreUnder ops rs buchiWinning tgt'
+            tgt''      <- lift $ $r2 bor tgt' reachUnder
+            lift $ $d deref tgt'
 
-            return res'
-        lift $ $d deref tgt''
-        return res
+            let refineReach = do
+                res <- refineFuncLFP reachUnder tgt'' rd
+                case res of 
+                    Nothing -> return ()
+                    Just _  -> lift $ lift $ traceST "Refined at reachability level"
+
+                return res 
+
+            let fairRefine = mSumMaybe $ flip map fair $ \fair -> do
+                    (tgt, res) <- lift $ do
+                        res     <- solveFair cpreOver ops rs buchiWinning tgt'' fair
+                        tgt'''  <- $r2 band res fair
+                        tgt     <- $r2 bor tgt'' tgt'''
+                        $d deref tgt'''
+                        return (tgt, res)
+
+                    res' <- refineFuncGFP tgt res rd
+                    lift $ $d deref tgt
+                    lift $ $d deref res
+
+                    case res' of 
+                        Nothing -> return ()
+                        Just _  -> lift $ lift $ traceST "Refined at fair level"
+
+                    return res'
+            res <- mSumMaybe [refineReach, fairRefine]
+            lift $ $d deref reachUnder
+            lift $ $d deref tgt''
+            return res
+    mSumMaybe [buchiRefine, fairRefine]
 
 solveReach :: (MonadResource (DDNode s u) (ST s) t) => (DDNode s u -> t (ST s) (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
 solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt goall = do
@@ -965,12 +1006,14 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                             return (False, (si, rs, rd, lp, winRegion))
                         True -> do
                             --lift $ lift $ traceST "Possibly winning, Confirming with further refinement"
-                            let cpu  = cPreUnder ops si rs rd hasOutgoings lp
-                                cpo  = cPreOver  ops si rs rd hasOutgoings lp
-                                cpo' = cpreOver' ops si rs rd hasOutgoings lp
-                                rf   = refineGFP ops spec ts rs si lp hasOutgoings cpo'
+                            let cpu  = cPreUnder  ops si rs rd hasOutgoings lp
+                                cpo  = cPreOver   ops si rs rd hasOutgoings lp
+                                cpo' = cpreOver'  ops si rs rd hasOutgoings lp
+                                cpu' = cpreUnder' ops si rs rd hasOutgoings lp
+                                rfG  = refineGFP  ops spec ts rs si lp hasOutgoings cpo'
+                                rfL  = refineLFP  ops spec ts rs si lp hasOutgoings cpu'
 
-                            res <- refineFair cpo cpu rf ops rs winRegion rd
+                            res <- refineFair cpo cpu rfG rfL ops rs winRegion rd
                             lift $ $d deref hasOutgoings   
                             case res of 
                                 Nothing -> do 
