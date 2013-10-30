@@ -903,30 +903,28 @@ data RefineInfo s u sp lp = RefineInfo {
     op :: Ops s u
 }
 
-refineInit :: (Ord sp, Show sp, MonadResource (DDNode s u) (ST s) t) => Ops s u -> TheorySolver s u sp lp lv -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> StateT (DB s u sp lp) (t (ST s)) (RefineDynamic s u, Bool)
-refineInit ops@Ops{..} ts@TheorySolver{..} rs@RefineStatic{..} rd@RefineDynamic{..} winRegion = do
-    syi@SymbolInfo{..} <- gets _symbolTable 
-    si@SectionInfo{..} <- gets _sections
-    winning <- lift $ lift $ leqUnless (bnot winRegion) (bnot init) inconsistentInit
+refineInit :: (Ord sp, Show sp, MonadResource (DDNode s u) (ST s) t) => Ops s u -> TheorySolver s u sp lp lv -> RefineStatic s u -> RefineDynamic s u -> SymbolInfo s u sp lp -> DDNode s u -> t (ST s) (RefineDynamic s u, Bool)
+refineInit ops@Ops{..} ts@TheorySolver{..} rs@RefineStatic{..} rd@RefineDynamic{..} syi@SymbolInfo{..} winRegion = do
+    winning <- lift $ leqUnless (bnot winRegion) (bnot init) inconsistentInit
     case winning of 
         False -> do
-            witness' <- lift $ $r2 band init (bnot winRegion)
-            witness  <- lift $ $r2 band witness' (bnot inconsistentInit)
-            lift $ $d deref witness'
-            c <- lift $ lift $ presentInLargePrime ops witness
-            lift $ $d deref witness
+            witness' <- $r2 band init (bnot winRegion)
+            witness  <- $r2 band witness' (bnot inconsistentInit)
+            $d deref witness'
+            c <- lift $ presentInLargePrime ops witness
+            $d deref witness
             let groupedState = groupForUnsatCore (sel2 . fromJustNote "refineInit1" . flip Map.lookup (_stateVars `Map.union` _initVars)) $ indicesToStatePreds syi c
             case unsatCoreState groupedState of
                 Nothing -> do
-                    lift $ lift $ traceST $ "* Found consistent losing state: " ++ show groupedState
+                    lift $ traceST $ "* Found consistent losing state: " ++ show groupedState
                     return (rd, False)
                 Just uc -> do
-                    lift $ lift $ traceST "* Found inconsistent initial state. Refining..."
-                    unsat <- lift $ makeCubeInt ops $ map (first (sel1 . fromJustNote "refineInit2" . flip Map.lookup (_stateVars `Map.union` _initVars))) uc
-                    inconsistentInit' <- lift $ $r2 bor inconsistentInit unsat
-                    lift $ $d deref inconsistentInit 
-                    lift $ $d deref unsat
-                    refineInit ops ts rs (rd {inconsistentInit = inconsistentInit'}) winRegion
+                    lift $ traceST "* Found inconsistent initial state. Refining..."
+                    unsat <- makeCubeInt ops $ map (first (sel1 . fromJustNote "refineInit2" . flip Map.lookup (_stateVars `Map.union` _initVars))) uc
+                    inconsistentInit' <- $r2 bor inconsistentInit unsat
+                    $d deref inconsistentInit 
+                    $d deref unsat
+                    refineInit ops ts rs (rd {inconsistentInit = inconsistentInit'}) syi winRegion
         True  -> return (rd, True)
 
 showResources :: Ops s u -> InUse (DDNode s u) -> ST s String
@@ -959,6 +957,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
             callCC $ \exit -> 
             callCC $ \exit2 -> do
                 si@SectionInfo{..} <- gets _sections
+                syi                <- gets _symbolTable
                 lift3 $ setVarMap _trackedNodes _nextNodes
                 labelPreds <- gets $ _labelVars . _symbolTable
                 let lp = map (sel1 &&& sel3) $ Map.elems labelPreds
@@ -968,7 +967,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                 rd <- flip (if' (act == RepeatAll || act == RepeatLFP)) (return rd) $ do
                     winRegionUnder <- lift2 $ solveBuchi (cPreUnder ops si rs rd hasOutgoings lp) ops rs lastWin
                     lift3 $ traceST ""
-                    (rd, winning) <- lift $ refineInit ops ts rs rd winRegionUnder
+                    (rd, winning) <- lift2 $ refineInit ops ts rs rd syi winRegionUnder
                     case winning of
                         True -> do
                             lift3 $ traceST "Winning: Early termination"
@@ -980,7 +979,7 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                 (rd, winRegion) <- flip (if' (act == RepeatAll || act == RepeatGFP)) (return (rd, lastWin)) $ do
                     winRegion <- lift2 $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin
                     lift3 $ traceST ""
-                    (rd, winning) <- lift $ refineInit ops ts rs rd winRegion
+                    (rd, winning) <- lift2 $ refineInit ops ts rs rd syi winRegion
                     case winning of
                         False -> do
                             lift3 $ traceST "Losing"
