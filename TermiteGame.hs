@@ -434,22 +434,6 @@ solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt goall = do
         $d deref t1
         return res
 
-refineReach :: (MonadResource (DDNode s u) (ST s) t) => (DDNode s u -> t (ST s) (DDNode s u)) -> (DDNode s u -> t (ST s) (DDNode s u)) -> Ops s u -> SectionInfo s u -> RefineStatic s u -> DDNode s u -> t (ST s) (Maybe [Int])
-refineReach cpreOver cpreUnder ops@Ops{..} si rs@RefineStatic{..} buchiWinning = do
-    mSumMaybe $ flip map goal $ \goal -> do
-        tgt' <- $r2 band goal buchiWinning
-        reachUnder <- solveReach cpreUnder ops rs buchiWinning tgt'
-
-        tgt     <- $r2 bor tgt' reachUnder
-        $d deref tgt'
-        su      <- cpreUnder tgt
-        $d deref tgt
-        toCheck <- $r2 band su (bnot reachUnder)
-        $d deref reachUnder
-        res     <- lift $ refineStrategy ops si toCheck
-        $d deref toCheck
-        return res
-
 solveBuchi :: (MonadResource (DDNode s u) (ST s) t) => (DDNode s u -> t (ST s) (DDNode s u)) -> Ops s u -> RefineStatic s u -> DDNode s u -> t (ST s) (DDNode s u)
 solveBuchi cpreFunc ops@Ops{..} rs@RefineStatic{..} startingPoint = do
     $rp ref startingPoint
@@ -470,14 +454,6 @@ solveBuchi cpreFunc ops@Ops{..} rs@RefineStatic{..} startingPoint = do
             $d deref accum
             return res
         return res
-
-refineBuchi :: (MonadResource (DDNode s u) (ST s) t) => (DDNode s u -> t (ST s) (DDNode s u)) -> Ops s u -> SectionInfo s u ->  RefineStatic s u -> DDNode s u -> t (ST s) (Maybe [Int])
-refineBuchi cpreOver ops@Ops{..} si rs@RefineStatic{..} buchiWinning = do
-    su     <- cpreOver buchiWinning
-    toDrop <- $r2 band (bnot su) buchiWinning
-    res    <- lift $ refineStrategy ops si toDrop
-    $d deref toDrop
-    return res
 
 check msg ops = return ()
 --check msg ops = unsafeIOToST (putStrLn ("checking bdd consistency" ++ msg ++ "\n")) >> debugCheck ops >> checkKeys ops
