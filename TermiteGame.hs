@@ -275,22 +275,40 @@ solveFair cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt winning fairr = do
         $d deref t2
         return res
 
+forCont  CPlus  = RepeatGFP
+forCont  CMinus = RepeatLFP
+
+forUCont CPlus  = RepeatLFP
+forUCont CMinus = RepeatGFP
+
+data RefineType = 
+      CPlus
+    | CMinus
+
+data RefineAction = 
+      RepeatAll
+    | RepeatLFP
+    | RepeatGFP
+    deriving (Show)
+
 refineConsistency2 ops ts rd@RefineDynamic{..} rs@RefineStatic{..} si labelPreds hasOutgoings tgt = do
-    winNoConstraint   <- lift $ cpreCont' ops si rd labelPreds cont hasOutgoings tgt
-    (res, (consistentPlusCULCont', consistentMinusCULCont'))  <- doConsistency ops ts consistentPlusCULCont consistentMinusCULCont winNoConstraint
-    let rd' = rd {consistentPlusCULCont = consistentPlusCULCont', consistentMinusCULCont = consistentMinusCULCont'}
-
+    winNoConstraint <- lift $ cpreCont' ops si rd labelPreds cont hasOutgoings tgt
+    res             <- doConsistency ops ts consistentPlusCULCont consistentMinusCULCont winNoConstraint
     case res of
-        True -> return (True, rd')
-        False -> do
-
-            winNoConstraint   <- lift $ cpreUCont' ops si rd labelPreds cont tgt
-            (res, (consistentPlusCULUCont', consistentMinusCULUCont'))  <- doConsistency ops ts consistentPlusCULUCont consistentMinusCULUCont winNoConstraint
-            let rd'' = rd' {consistentPlusCULUCont = consistentPlusCULUCont', consistentMinusCULUCont = consistentMinusCULUCont'}
-            return (res, rd'')
+        Just (act, (consistentPlusCULCont', consistentMinusCULCont')) -> do
+            let rd' = rd {consistentPlusCULCont = consistentPlusCULCont', consistentMinusCULCont = consistentMinusCULCont'}
+            return $ Just (forCont act, rd')
+        Nothing -> do
+            winNoConstraint <- lift $ cpreUCont' ops si rd labelPreds cont tgt
+            res             <- doConsistency ops ts consistentPlusCULUCont consistentMinusCULUCont winNoConstraint
+            case res of
+                Just (act, (consistentPlusCULUCont', consistentMinusCULUCont')) -> do
+                    let rd' = rd {consistentPlusCULUCont = consistentPlusCULUCont', consistentMinusCULUCont = consistentMinusCULUCont'}
+                    return $ Just (forUCont act, rd')
+                Nothing -> return Nothing
 
 type CPreFunc   t s u        = DDNode s u -> t (ST s) (DDNode s u)
-type RefineFunc t s u sp lp  = DDNode s u -> DDNode s u -> RefineDynamic s u -> StateT (DB s u sp lp) (t (ST s)) (Maybe (RefineDynamic s u))
+type RefineFunc t s u sp lp  = DDNode s u -> DDNode s u -> RefineDynamic s u -> StateT (DB s u sp lp) (t (ST s)) (Maybe (RefineAction, RefineDynamic s u))
 
 refineGFP, refineLFP :: (Show lp, Show sp, Ord lv, Ord lp, Ord sp, MonadResource (DDNode s u) (ST s) t) => 
              Ops s u -> 
@@ -304,13 +322,13 @@ refineGFP, refineLFP :: (Show lp, Show sp, Ord lv, Ord lp, Ord sp, MonadResource
              DDNode s u -> 
              DDNode s u -> 
              RefineDynamic s u -> 
-             StateT (DB s u sp lp) (t (ST s)) (Maybe (RefineDynamic s u ))
+             StateT (DB s u sp lp) (t (ST s)) (Maybe (RefineAction, RefineDynamic s u))
 refineGFP ops@Ops{..} spec ts rs si labelPreds hasOutgoingsCont cpreOver tgt mayWin rd = do
-    (cr, rd') <- refineConsistency2 ops ts rd rs si labelPreds hasOutgoingsCont tgt
-    case cr of 
-        True -> do
+    res <- refineConsistency2 ops ts rd rs si labelPreds hasOutgoingsCont tgt
+    case res of 
+        Just rd' -> do
             return $ Just rd'
-        False -> do
+        Nothing -> do
             res <- lift $ do
                 su      <- cpreOver tgt
                 toDrop  <- $r2 band (bnot su) mayWin
@@ -321,14 +339,14 @@ refineGFP ops@Ops{..} spec ts rs si labelPreds hasOutgoingsCont cpreOver tgt may
                 Nothing -> return Nothing
                 Just vars -> do
                     rd'' <- promoteUntracked ops spec ts rd vars
-                    return $ Just rd''
+                    return $ Just (RepeatAll, rd'')
 
 refineLFP ops@Ops{..} spec ts rs si labelPreds hasOutgoingsCont cpreUnder tgt mustWin rd = do
-    (cr, rd') <- refineConsistency2 ops ts rd rs si labelPreds hasOutgoingsCont tgt
-    case cr of 
-        True -> do
+    res <- refineConsistency2 ops ts rd rs si labelPreds hasOutgoingsCont tgt
+    case res of 
+        Just rd' -> do
             return $ Just rd'
-        False -> do
+        Nothing -> do
             res <- lift $ do
                 su      <- cpreUnder tgt
                 toCheck <- $r2 band su (bnot mustWin)
@@ -339,7 +357,7 @@ refineLFP ops@Ops{..} spec ts rs si labelPreds hasOutgoingsCont cpreUnder tgt mu
                 Nothing -> return Nothing
                 Just vars -> do
                     rd'' <- promoteUntracked ops spec ts rd vars
-                    return $ Just rd''
+                    return $ Just (RepeatAll, rd'')
 
 refine :: (MonadResource (DDNode s u) (ST s) t) => 
               CPreFunc t s u -> 
@@ -350,7 +368,7 @@ refine :: (MonadResource (DDNode s u) (ST s) t) =>
               RefineStatic s u -> 
               DDNode s u -> 
               RefineDynamic s u -> 
-              StateT (DB s u sp lp) (t (ST s)) (Maybe (RefineDynamic s u))
+              StateT (DB s u sp lp) (t (ST s)) (Maybe (RefineAction, RefineDynamic s u))
 refine cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStatic{..} buchiWinning rd = do
     let buchiRefine = do
         res <- refineFuncGFP buchiWinning buchiWinning rd
@@ -600,7 +618,7 @@ sccs SymbolInfo{..} TheorySolver{..} labelCube = fmap (flatten . fmap (sel1 . fu
     (theGraph, func) = graphFromEdges' list 
     vMap             = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys _labelVars
 
-doConsistency :: (Ord sp, Ord lp, Ord lv, Show sp, Show lp, MonadResource (DDNode s u) (ST s) t) => Ops s u -> TheorySolver s u sp lp lv -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (t (ST s)) (Bool, (DDNode s u, DDNode s u))
+doConsistency :: (Ord sp, Ord lp, Ord lv, Show sp, Show lp, MonadResource (DDNode s u) (ST s) t) => Ops s u -> TheorySolver s u sp lp lv -> DDNode s u -> DDNode s u -> DDNode s u -> StateT (DB s u sp lp) (t (ST s)) (Maybe (RefineType, (DDNode s u, DDNode s u)))
 doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
     syi@SymbolInfo{..} <- gets _symbolTable 
     si@SectionInfo{..} <- gets _sections
@@ -614,7 +632,7 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
             --no refinement of consistency relations will shrink the winning region
             --lift $ lift $ debugDo 2 $ traceST "no consistency refinement possible"
             lift $ mapM ($d deref) [toCheckConsistency, winNoConstraint]
-            return (False, (cPlus, cMinus))
+            return Nothing
         False -> do
             --There may be a refinement
             --extract a <s, u, l> pair that will make progress if one exists
@@ -637,7 +655,7 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
                     lift $ $d deref cPlus
                     lift $ $d deref inconsistent
                     lift $ $d deref winNoConstraint
-                    return $ (True, (consistentPlusCUL', cMinus))
+                    return $ Just (CPlus, (consistentPlusCUL', cMinus))
                     --doConsistency ops ts consistentPlusCUL' cMinus winNoConstraint
                 Nothing -> do
                     --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
@@ -679,7 +697,7 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
                         lift $ $d deref cons
                         return cons5
 
-                    return $ (True, (cPlus, cMinus'))
+                    return $ Just (CMinus, (cPlus, cMinus'))
 
 mSumMaybe :: Monad m => [m (Maybe a)] -> m (Maybe a)
 mSumMaybe (x:xs) = do
@@ -970,7 +988,9 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
                                 Nothing -> do 
                                     lift $ lift $ traceST "Winning: no refinements to make"
                                     return (True, (si, rs, rd, lp, winRegion))
-                                Just rd -> refineLoop' rd winRegion
+                                Just (act, rd) -> do
+                                    lift $ lift $ traceST $ show act
+                                    refineLoop' rd winRegion
 
 cex :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp -> t (ST s) [[DDNode s u]]
 cex RefineInfo{..} = counterExample op si rs rd lp wn
