@@ -24,6 +24,7 @@ import Data.Tuple
 import Debug.Trace as T
 import Control.Monad.State
 import System.IO
+import Control.Monad.Trans.Cont
 
 import Safe
 import qualified Data.Text.Lazy as T
@@ -289,7 +290,7 @@ data RefineAction =
       RepeatAll
     | RepeatLFP
     | RepeatGFP
-    deriving (Show)
+    deriving (Show, Eq)
 
 refineConsistency2 ops ts rd@RefineDynamic{..} rs@RefineStatic{..} si labelPreds hasOutgoings tgt = do
     winNoConstraint <- lift $ cpreCont' ops si rd labelPreds cont hasOutgoings tgt
@@ -359,6 +360,7 @@ refineLFP ops@Ops{..} spec ts rs si labelPreds hasOutgoingsCont cpreUnder tgt mu
                     rd'' <- promoteUntracked ops spec ts rd vars
                     return $ Just (RepeatAll, rd'')
 
+--TODO: makes more sense to do all consistency refinements then all variable promotions
 refine :: (MonadResource (DDNode s u) (ST s) t) => 
               CPreFunc t s u -> 
               CPreFunc t s u -> 
@@ -932,6 +934,9 @@ showResources Ops{..} mp = liftM (intercalate "\n") $ mapM (uncurry func) (Map.t
         sz <- dagSize res
         return $ show sz ++ " refs: " ++ show numRefs ++ " " ++ show locs 
 
+lift3 = lift . lift . lift
+lift2 = lift . lift
+
 --The abstraction-refinement loop
 absRefineLoop :: forall s u o sp lp lv t. (Ord sp, Ord lp, Show sp, Show lp, Show lv, Ord lv, MonadResource (DDNode s u) (ST s) t) => STDdManager s u -> Abstractor s u sp lp -> TheorySolver s u sp lp lv -> o -> t (ST s) (Bool, RefineInfo s u sp lp)
 absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
@@ -939,58 +944,68 @@ absRefineLoop m spec ts abstractorState = let ops@Ops{..} = constructOps m in do
     ((winning, (si, rs, rd, lp, wn)), db) <- flip runStateT idb $ do
         (rd, rs) <- initialAbstraction ops spec ts
         lift $ $rp ref btrue
-        refineLoop ops rs rd btrue
+        flip runContT return $ refineLoop ops rs rd btrue
     lift $ traceST $ "Preds: \n" ++ intercalate "\n" (map show $ extractStatePreds $ _symbolTable db)
     dc <- lift $ debugCheck
     ck <- lift $ checkKeys
     lift $ when (dc /= 0 || ck /= 0) (traceST "########################################################## Cudd inconsistent")
     return $ (winning, RefineInfo{op=ops, ..})
     where
-    refineLoop ops@Ops{..} rs@RefineStatic{..} = refineLoop'
+    refineLoop ops@Ops{..} rs@RefineStatic{..} = refineLoop' RepeatAll
         where 
-        refineLoop' rd@RefineDynamic{..} lastWin = do
-            si@SectionInfo{..} <- gets _sections
-            lift $ lift $ setVarMap _trackedNodes _nextNodes
-            labelPreds <- gets $ _labelVars . _symbolTable
-            let lp = map (sel1 &&& sel3) $ Map.elems labelPreds
-            hasOutgoings <- lift $ doHasOutgoings ops trans
+        refineLoop' act rd@RefineDynamic{..} lastWin = 
+            callCC $ \exit -> 
+            callCC $ \exit2 -> do
+                si@SectionInfo{..} <- gets _sections
+                lift3 $ setVarMap _trackedNodes _nextNodes
+                labelPreds <- gets $ _labelVars . _symbolTable
+                let lp = map (sel1 &&& sel3) $ Map.elems labelPreds
+                hasOutgoings <- lift2 $ doHasOutgoings ops trans
 
-            winRegionUnder <- lift $ solveBuchi (cPreUnder ops si rs rd hasOutgoings lp) ops rs lastWin
-            (rd, winning) <- refineInit ops ts rs rd winRegionUnder
-            case winning of
-                True -> do
-                    lift $ lift $ traceST "Winning: Early termination"
-                    return (True, (si, rs, rd, lp, winRegionUnder))
-                False -> do
-                    lift $ $d deref winRegionUnder
-                    winRegion <- lift $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin
-                    lift $ lift $ traceST ""
-                    lift $ $d deref lastWin
-                    (rd, winning) <- refineInit ops ts rs rd winRegion
-                    --Alive: winRegion, rd, rs, hasOutgoings
+                --Terminate early if must winning
+                rd <- flip (if' (act == RepeatAll || act == RepeatLFP)) (return rd) $ do
+                    winRegionUnder <- lift2 $ solveBuchi (cPreUnder ops si rs rd hasOutgoings lp) ops rs lastWin
+                    lift3 $ traceST ""
+                    (rd, winning) <- lift $ refineInit ops ts rs rd winRegionUnder
                     case winning of
-                        False -> lift $ do
-                            lift $ traceST "Losing"
-                            mapM ($d deref) [hasOutgoings]
-                            return (False, (si, rs, rd, lp, winRegion))
                         True -> do
-                            --lift $ lift $ traceST "Possibly winning, Confirming with further refinement"
-                            let cpu  = cPreUnder  ops si rs rd hasOutgoings lp
-                                cpo  = cPreOver   ops si rs rd hasOutgoings lp
-                                cpo' = cpreOver'  ops si rs rd hasOutgoings lp
-                                cpu' = cpreUnder' ops si rs rd hasOutgoings lp
-                                rfG  = refineGFP  ops spec ts rs si lp hasOutgoings cpo'
-                                rfL  = refineLFP  ops spec ts rs si lp hasOutgoings cpu'
+                            lift3 $ traceST "Winning: Early termination"
+                            exit (True, (si, rs, rd, lp, winRegionUnder))
+                        False -> do
+                            lift2 $ $d deref winRegionUnder
+                            return rd
+                
+                (rd, winRegion) <- flip (if' (act == RepeatAll || act == RepeatGFP)) (return (rd, lastWin)) $ do
+                    winRegion <- lift2 $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin
+                    lift3 $ traceST ""
+                    (rd, winning) <- lift $ refineInit ops ts rs rd winRegion
+                    case winning of
+                        False -> do
+                            lift3 $ traceST "Losing"
+                            lift2 $ mapM ($d deref) [hasOutgoings]
+                            exit2 (False, (si, rs, rd, lp, winRegion))
+                        True -> do
+                            lift2 $ $d deref lastWin
+                            return (rd, winRegion)
 
-                            res <- refine cpo cpu rfG rfL ops rs winRegion rd
-                            lift $ $d deref hasOutgoings   
-                            case res of 
-                                Nothing -> do 
-                                    lift $ lift $ traceST "Winning: no refinements to make"
-                                    return (True, (si, rs, rd, lp, winRegion))
-                                Just (act, rd) -> do
-                                    lift $ lift $ traceST $ show act
-                                    refineLoop' rd winRegion
+                --Alive: winRegion, rd, rs, hasOutgoings
+                --lift $ lift $ traceST "Possibly winning, Confirming with further refinement"
+                let cpu  = cPreUnder  ops si rs rd hasOutgoings lp
+                    cpo  = cPreOver   ops si rs rd hasOutgoings lp
+                    cpo' = cpreOver'  ops si rs rd hasOutgoings lp
+                    cpu' = cpreUnder' ops si rs rd hasOutgoings lp
+                    rfG  = refineGFP  ops spec ts rs si lp hasOutgoings cpo'
+                    rfL  = refineLFP  ops spec ts rs si lp hasOutgoings cpu'
+
+                res <- lift $ refine cpo cpu rfG rfL ops rs winRegion rd
+                lift2 $ $d deref hasOutgoings   
+                case res of 
+                    Nothing -> do 
+                        lift3 $ traceST "Winning: no refinements to make"
+                        return (True, (si, rs, rd, lp, winRegion))
+                    Just (act, rd) -> do
+                        lift3 $ traceST $ show act
+                        refineLoop' act rd winRegion
 
 cex :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp -> t (ST s) [[DDNode s u]]
 cex RefineInfo{..} = counterExample op si rs rd lp wn
