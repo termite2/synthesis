@@ -337,10 +337,10 @@ goalOps ops = VarOps {withTmp = withTmpGoal' ops, allVars = liftToGoalState allV
         findWithDefaultM sel1 var _stateVars $ findWithDefaultProcessM sel1 var _initVars (allocStateVar ops var size group) (uncurryN $ addVarToState ops var)
     getVar  _ _ = error "Requested non-state variable when compiling goal section"
 
-doGoal :: Ord sp => Ops s u -> (VarOps (GoalState s u sp lp) (BAVar sp lp) s u -> StateT (GoalState s u sp lp) (ST s) a) -> StateT (DB s u sp lp) (ST s) (a, NewVars s u sp)
-doGoal ops complFunc = StateT $ \st -> do
-    (res, GoalState{..}) <- runStateT (complFunc $ goalOps ops) (GoalState (NewVars []) st)
-    return ((res, _nv), _db)
+doGoal :: Ord sp => Ops s u -> (VarOps (GoalState s u sp lp) (BAVar sp lp) s u -> StateT st (StateT (GoalState s u sp lp) (ST s)) a) -> StateT st (StateT (DB s u sp lp) (ST s)) (a, NewVars s u sp)
+doGoal ops complFunc = StateT $ \st1 -> StateT $ \st -> do
+    ((res, st1'), GoalState{..}) <- runStateT (runStateT (complFunc $ goalOps ops) st1) (GoalState (NewVars []) st)
+    return (((res, _nv), st1'), _db)
 
 stateLabelOps :: (Ord sp, Ord lp) => Ops s u -> VarOps (GoalState s u sp lp) (BAVar sp lp) s u
 stateLabelOps ops = VarOps {withTmp = withTmpGoal' ops, allVars = liftToGoalState allVars', ..}
@@ -353,10 +353,10 @@ stateLabelOps ops = VarOps {withTmp = withTmpGoal' ops, allVars = liftToGoalStat
         liftToGoalState $ findWithDefaultM sel1 var _labelVars $ allocLabelVar ops var size group
     getVar  _ _ = error "Requested non-state variable when compiling goal section"
 
-doStateLabel :: (Ord sp, Ord lp) => Ops s u -> (VarOps (GoalState s u sp lp) (BAVar sp lp) s u -> StateT (GoalState s u sp lp) (ST s) a) -> StateT (DB s u sp lp) (ST s) (a, NewVars s u sp)
-doStateLabel ops complFunc = StateT $ \st -> do
-    (res, GoalState{..}) <- runStateT (complFunc $ stateLabelOps ops) (GoalState (NewVars []) st)
-    return ((res, _nv), _db)
+doStateLabel :: (Ord sp, Ord lp) => Ops s u -> (VarOps (GoalState s u sp lp) (BAVar sp lp) s u -> StateT st (StateT (GoalState s u sp lp) (ST s)) a) -> StateT st (StateT (DB s u sp lp) (ST s)) (a, NewVars s u sp)
+doStateLabel ops complFunc = StateT $ \st1 -> StateT $ \st -> do
+    ((res, st1'), GoalState{..}) <- runStateT (runStateT (complFunc $ stateLabelOps ops) st1) (GoalState (NewVars []) st)
+    return (((res, _nv), st1'), _db)
 
 stateLabelOutcomeOps :: (Ord sp, Ord lp) => Ops s u -> VarOps (GoalState s u sp lp) (BAVar sp lp) s u
 stateLabelOutcomeOps ops = VarOps {withTmp = withTmpGoal' ops, allVars = liftToGoalState allVars', ..}
@@ -385,7 +385,7 @@ initOps ops = VarOps {withTmp = withTmp' ops, allVars = allVars', ..}
         findWithDefaultM sel1 var _initVars (allocInitVar ops var size group)
     getVar _ _ = error "Requested non-state variable when compiling init section"
 
-doInit :: Ord sp => Ops s u -> (VarOps (DB s u sp lp) (BAVar sp lp) s u -> StateT (DB s u sp lp) (ST s) (DDNode s u)) -> StateT (DB s u sp lp) (ST s) (DDNode s u)
+doInit :: Ord sp => Ops s u -> (VarOps (DB s u sp lp) (BAVar sp lp) s u -> a) -> a
 doInit ops complFunc = complFunc (initOps ops)
 
 updateOps :: (Ord sp, Ord lp) => Ops s u -> VarOps (DB s u sp lp) (BAVar sp lp) s u
@@ -401,6 +401,6 @@ updateOps ops = VarOps {withTmp = withTmp' ops, allVars = allVars', ..}
         SymbolInfo{..} <- use symbolTable
         findWithDefaultM sel1 var _outcomeVars $ allocOutcomeVar ops var size group
 
-doUpdate :: (Ord sp, Ord lp) => Ops s u -> (VarOps (DB s u sp lp) (BAVar sp lp) s u -> StateT (DB s u sp lp) (ST s) a) -> StateT (DB s u sp lp) (ST s) a
+doUpdate :: (Ord sp, Ord lp) => Ops s u -> (VarOps (DB s u sp lp) (BAVar sp lp) s u -> a) -> a
 doUpdate ops complFunc = complFunc (updateOps ops)
 
