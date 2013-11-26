@@ -994,6 +994,92 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
         winCont      <- liftM bnot $ $r2 bimp en winCont'
         $d deref winCont'
         $d deref en
+        --TODO shouldnt this be cMinus???
+        stratUCont   <- $r2 band consistentPlusCULUCont stratUCont'
+        winUCont     <- $r1 (bexists _labelCube) stratUCont
+        mapM ($d deref) [stratCont, stratUCont']
+        win          <- $r2 bor winCont winUCont
+        mapM ($d deref) [winCont, winUCont]
+        return (win, stratUCont)
+
+counterExampleLiberalEnv :: forall t s u. (MonadResource (DDNode s u) (ST s) t) => 
+                  Ops s u -> 
+                  SectionInfo s u -> 
+                  RefineStatic s u -> 
+                  RefineDynamic s u -> 
+                  Lab s u -> 
+                  DDNode s u -> 
+                  t (ST s) [[DDNode s u]]
+counterExampleLiberalEnv ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds winGame = do
+    lift $ traceST "* Computing counterexample"
+    hasOutgoings <- doHasOutgoings ops trans 
+    lift $ sequence $ replicate (length goal * length fair) (ref bfalse)
+    sequence $ replicate (length goal * length fair + 1) ($r $ return bfalse)
+    lift $ ref bfalse
+    (win', strat) <- fixedPoint2R ops bfalse (zip goal $ repeat $ zip fair $ repeat bfalse) $ \x strat -> do
+        $rp ref bfalse
+        res <- forAccumLM bfalse strat $ \tot (goal, strats) -> do
+            tgt               <- $r2 bor (bnot goal) x
+            --TODO optimise: dont use btrue below
+            winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs btrue (bnot tgt)
+            (winStrat, strat) <- stratReach si rs rd hasOutgoings strats x winBuchi tgt
+            when (winStrat /= winBuchi) (lift $ traceST "Warning: counterexample winning regions are not equal")
+            $d deref winStrat
+            $d deref tgt
+            tot' <- $r2 bor tot winBuchi
+            mapM ($d deref) [tot, winBuchi]
+            return (tot', (goal, strat))
+        return res
+    when (winGame /= bnot win') (error "the counterexample winning region is not the complement of the game winning region")
+    lift $ traceST $ bddSynopsis ops winGame
+    $d deref hasOutgoings
+    return $ map (map snd . snd) strat
+
+    where
+
+    target fair nGoalOrX y z = do
+        a   <- $r2 bor z (bnot fair)
+        b   <- $r2 band a y
+        $d deref a
+        c   <- $r2 band b nGoalOrX
+        $d deref b
+        return c
+
+    --Below effectively skipps the middle fixed point
+    stratReach si rs rd hasOutgoings stratSoFar x y nGoalOrX = do
+        $rp ref x
+        fixedPoint2R ops x stratSoFar $ \z strat -> do
+            $rp ref btrue
+            res <- forAccumLM btrue strat $ \winAccum (fair, strat) -> do
+                tgt            <- target fair nGoalOrX y z
+                (win', strat') <- strategy si rs rd hasOutgoings tgt
+                $d deref tgt
+                strat''        <- $r2 band strat' (bnot z)
+                $d deref strat'
+                --TODO use ite for strat
+                strat'''       <- $r2 bor strat'' strat
+                $d deref strat''
+                $d deref strat
+                win            <- $r1 (bexists _untrackedCube) win'
+                $d deref win'
+                winAccum'      <- $r2 band winAccum win
+                mapM ($d deref) [win, winAccum]
+                return (winAccum', (fair, strat'''))
+            return res
+
+    strategy si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoings target = do
+        stratCont <- cpreCont' ops si rd labelPreds cont hasOutgoings (bnot target)
+        stratUCont' <- cpreUCont' ops si rd labelPreds cont (bnot target)
+        winCont'     <- $r2 (andAbstract _labelCube) consistentMinusCULCont stratCont
+        hasOutgoingsC <- $r2 band hasOutgoings cont
+        en'          <- $r2 band hasOutgoingsC consistentMinusCULCont
+        en           <- $r1 (bexists _labelCube) en'
+        $d deref en'
+        $d deref hasOutgoingsC
+        winCont      <- liftM bnot $ $r2 bimp en winCont'
+        $d deref winCont'
+        $d deref en
+        --TODO is below cPlus correct?
         stratUCont   <- $r2 band consistentPlusCULUCont stratUCont'
         winUCont     <- $r1 (bexists _labelCube) stratUCont
         mapM ($d deref) [stratCont, stratUCont']
@@ -1085,6 +1171,8 @@ absRefineLoop m spec ts = let ops@Ops{..} = constructOps m in do
                 hasOutgoings <- lift3 $ doHasOutgoings ops trans
 
                 --Terminate early if must winning
+                --TODO: we can reuse the winning regions below
+                --TODO: reuse this winRegionUnder here on the next iteration and for least fixedpoint of may
                 rd <- flip (if' (act == RepeatAll || act == RepeatLFP)) (return rd) $ do
                     winRegionUnder <- lift3 $ solveBuchi (cPreUnder ops si rs rd hasOutgoings lp) ops rs lastWin
                     lift4 $ traceST ""
@@ -1131,6 +1219,9 @@ absRefineLoop m spec ts = let ops@Ops{..} = constructOps m in do
 
 cex :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp st -> t (ST s) [[DDNode s u]]
 cex RefineInfo{..} = counterExample op si rs rd lp wn
+
+cexLiberalEnv :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp st -> t (ST s) [[DDNode s u]]
+cexLiberalEnv RefineInfo{..} = counterExampleLiberalEnv op si rs rd lp wn
 
 strat :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp st -> t (ST s) [[DDNode s u]]
 strat RefineInfo{..} = strategy op si rs rd lp wn
