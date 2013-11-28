@@ -6,6 +6,7 @@ module TermiteGame (
     RefineDynamic(..),
     RefineInfo(..),
     cex,
+    cexLiberalEnv,
     strat
     ) where
 
@@ -43,6 +44,10 @@ import RefineCommon hiding (doEnVars)
 import MTR
 
 import Resource
+
+maxIterations :: Maybe Int
+-- maxIterations = Just 10
+maxIterations = Nothing
 
 traceMsg :: String -> ST s ()
 traceMsg m = unsafeIOToST $ do
@@ -101,7 +106,7 @@ data RefineDynamic s u = RefineDynamic {
     consistentMinusCULUCont :: DDNode s u,
     consistentPlusCULUCont  :: DDNode s u,
     inconsistentInit        :: DDNode s u,
-    inconsistentNext        :: DDNode s u
+    consistentNoRefine      :: DDNode s u
 }
 
 derefDynamic :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> RefineDynamic s u -> t (ST s) ()
@@ -207,9 +212,9 @@ cpreCont' :: (MonadResource (DDNode s u) (ST s) t) =>
              DDNode s u -> 
              t (ST s) (DDNode s u)
 cpreCont' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} labelPreds cont hasOutgoings target = do
-    tgt      <- $r2 bor target inconsistentNext
-    nextWin' <- $r1 mapVars tgt
-    $d deref tgt
+    target'  <- $r1 mapVars target
+    nextWin' <- $r2 bor target' (bnot consistentNoRefine)
+    $d deref target'
     nextWin  <- $r2 bor nextWin' (bnot cont)
     $d deref nextWin'
     strat'   <- partitionedThing ops trans nextWin
@@ -231,9 +236,9 @@ cpreUCont' :: (MonadResource (DDNode s u) (ST s) t) =>
               DDNode s u -> 
               t (ST s) (DDNode s u)
 cpreUCont' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} labelPreds cont target = do
-    tgt      <- $r2 bor target inconsistentNext
-    nextWin' <- $r1 mapVars tgt
-    $d deref tgt
+    target'  <- $r1 mapVars target
+    nextWin' <- $r2 bor target' (bnot consistentNoRefine)
+    $d deref target'
     nextWin  <- $r2 bor nextWin' cont
     $d deref nextWin'
     strat    <- partitionedThing ops trans nextWin
@@ -580,7 +585,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     --get the abstract update functions for the goal predicates and variables
     let toUpdate = nub $ _allocatedStateVars newVarsGoals ++ _allocatedStateVars newVarsFairs ++ _allocatedStateVars newVarsCont
     liftST  $ traceST $ "Initial transition relation state vars: \n" ++ (intercalate "\n" $ map (('\t' :) . show . fst) $ toUpdate)
-    (updateExprs', inconsistent, inconsNext) <- hoistAbs $ doUpdate ops (updateAbs toUpdate)
+    (updateExprs', inconsistent, cons) <- hoistAbs $ doUpdate ops (updateAbs toUpdate)
     liftBDD $ mapM ($r . return) updateExprs'
     outcomeCube <- lift $ gets $ _outcomeCube . _sections
     updateExprs <- liftBDD $ mapM ($r . bexists outcomeCube) updateExprs'
@@ -597,8 +602,8 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     liftBDD $ $rp ref consistentPlusCULUCont
     let inconsistentInit = bfalse
     liftBDD $ $rp ref inconsistentInit
-    let inconsistentNext = inconsNext
-    liftBDD $ $rp ref inconsistentNext
+    let consistentNoRefine = cons
+    liftBDD $ $rp ref consistentNoRefine
 
     --compute the initial consistentMinus being as liberal as possible
     labelPreds <- liftIST $ gets $ _labelVars . _symbolTable
@@ -668,9 +673,9 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
     labelPredsPreUpdate  <- liftIST $ gets $ _labelVars . _symbolTable
 
     --compute the update functions
-    (updateExprs', inconsistent, inconsNext)   <- hoistAbs $ doUpdate ops (updateAbs _allocatedStateVars)
+    (updateExprs', inconsistent, cons)   <- hoistAbs $ doUpdate ops (updateAbs _allocatedStateVars)
     liftBDD $ $rp ref inconsistent
-    liftBDD $ $rp ref inconsNext
+    liftBDD $ $rp ref cons
     liftBDD $ mapM ($r . return) updateExprs'
     outcomeCube <- liftIST $ gets $ _outcomeCube . _sections
     updateExprs  <- liftBDD $ mapM ($r . bexists outcomeCube) updateExprs'
@@ -696,9 +701,9 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
     consistentPlusCULUCont' <- liftBDD $ $r2 band consistentPlusCULUCont (bnot inconsistent)
     liftBDD $ $d deref inconsistent
 
-    inconsistentNext' <- liftBDD $ $r2 band inconsistentNext inconsNext
-    liftBDD $ $d deref inconsNext
-    liftBDD $ $d deref inconsistentNext'
+    consistentNoRefine' <- liftBDD $ $r2 band consistentNoRefine cons
+    liftBDD $ $d deref cons
+    liftBDD $ $d deref consistentNoRefine
 
     return rd {
         --TODO does this order matter?
@@ -707,7 +712,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
         consistentMinusCULUCont = consistentMinusCULUCont',
         consistentPlusCULCont = consistentPlusCULCont',
         consistentPlusCULUCont = consistentPlusCULUCont',
-        inconsistentNext = inconsistentNext'
+        consistentNoRefine = consistentNoRefine'
     }
 
 sccs :: (Ord lv, Ord lp, Show lp) => SymbolInfo s u sp lp -> TheorySolver s u sp lp lv -> [(lp, a)] -> [[(lp, a)]]
@@ -1160,7 +1165,7 @@ absRefineLoop :: forall s u o sp lp lv st t. (Ord sp, Ord lp, Show sp, Show lp, 
                  STDdManager s u -> 
                  Abstractor s u sp lp st -> 
                  TheorySolver s u sp lp lv -> 
-                 t (ST s) (Bool, RefineInfo s u sp lp st)
+                 t (ST s) (Maybe Bool, RefineInfo s u sp lp st)
 absRefineLoop m spec ts = let ops@Ops{..} = constructOps m in do
     idb <- lift $ initialDB ops
     (((winning, (si, rs, rd, lp, wn)), st), db) <- flip runStateT idb $ flip runStateT (initialState spec) $ do
@@ -1173,9 +1178,9 @@ absRefineLoop m spec ts = let ops@Ops{..} = constructOps m in do
     lift $ when (dc /= 0 || ck /= 0) (traceST "########################################################## Cudd inconsistent")
     return $ (winning, RefineInfo{op=ops, ..})
     where
-    refineLoop ops@Ops{..} rs@RefineStatic{..} = refineLoop' RepeatAll
+    refineLoop ops@Ops{..} rs@RefineStatic{..} = refineLoop' 0 RepeatAll
         where 
-        refineLoop' act rd@RefineDynamic{..} lastWin = 
+        refineLoop' itr act rd@RefineDynamic{..} lastWin = 
             callCC $ \exit -> 
             callCC $ \exit2 -> do
                 si@SectionInfo{..} <- lift2 $ gets _sections
@@ -1195,10 +1200,13 @@ absRefineLoop m spec ts = let ops@Ops{..} = constructOps m in do
                     case winning of
                         True -> do
                             lift4 $ traceST "Winning: Early termination"
-                            exit (True, (si, rs, rd, lp, winRegionUnder))
+                            exit (Just True, (si, rs, rd, lp, winRegionUnder))
                         False -> do
-                            lift3 $ $d deref winRegionUnder
-                            return rd
+                            if isJust maxIterations && itr >= fromJust maxIterations 
+                               then do lift4 $ traceST "Max number of iterations exceeded."
+                                       exit (Nothing, (si, rs, rd, lp, winRegionUnder))
+                               else do lift3 $ $d deref winRegionUnder
+                                       return rd
                 
                 (rd, winRegion) <- flip (if' (act == RepeatAll || act == RepeatGFP)) (return (rd, lastWin)) $ do
                     winRegion <- lift3 $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin
@@ -1208,7 +1216,7 @@ absRefineLoop m spec ts = let ops@Ops{..} = constructOps m in do
                         False -> do
                             lift4 $ traceST "Losing"
                             lift3 $ mapM ($d deref) [hasOutgoings]
-                            exit2 (False, (si, rs, rd, lp, winRegion))
+                            exit2 (Just False, (si, rs, rd, lp, winRegion))
                         True -> do
                             lift3 $ $d deref lastWin
                             return (rd, winRegion)
@@ -1227,10 +1235,10 @@ absRefineLoop m spec ts = let ops@Ops{..} = constructOps m in do
                 case res of 
                     Nothing -> do 
                         lift4 $ traceST "Winning: no refinements to make"
-                        return (True, (si, rs, rd, lp, winRegion))
+                        return (Just True, (si, rs, rd, lp, winRegion))
                     Just (act, rd) -> do
                         lift4 $ traceST $ show act
-                        refineLoop' act rd winRegion
+                        refineLoop' (itr+1) act rd winRegion
 
 cex :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp st -> t (ST s) [[DDNode s u]]
 cex RefineInfo{..} = counterExample op si rs rd lp wn
