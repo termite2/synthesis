@@ -395,9 +395,10 @@ refine :: (MonadResource (DDNode s u) (ST s) t) =>
               Ops s u -> 
               RefineStatic s u -> 
               DDNode s u -> 
+              DDNode s u -> 
               RefineDynamic s u -> 
               StateT st (StateT (DB s u sp lp) (t (ST s))) (Maybe (RefineAction, RefineDynamic s u))
-refine cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStatic{..} buchiWinning rd = do
+refine cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStatic{..} buchiWinning lastLFP rd = do
     let buchiRefine = do
         res <- refineFuncGFP buchiWinning buchiWinning rd
         case res of 
@@ -407,7 +408,7 @@ refine cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStati
         return res 
     let fairRefine  = mSumMaybe $ flip map goal $ \goal -> do
             tgt'       <- liftBDD $ $r2 band goal buchiWinning
-            reachUnder <- liftBDD $ solveReach cpreUnder ops rs buchiWinning tgt'
+            reachUnder <- liftBDD $ solveReach cpreUnder ops rs buchiWinning tgt' lastLFP
             tgt''      <- liftBDD $ $r2 bor tgt' reachUnder
             liftBDD $ $d deref tgt'
 
@@ -468,10 +469,11 @@ solveReach :: (MonadResource (DDNode s u) (ST s) t) =>
               RefineStatic s u -> 
               DDNode s u -> 
               DDNode s u -> 
+              DDNode s u -> 
               t (ST s) (DDNode s u)
-solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt goall = do
-    $rp ref bfalse
-    fixedPointR ops func bfalse
+solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt goall startingLFP = do
+    $rp ref startingLFP
+    fixedPointR ops func startingLFP
     where
     func target = do
         sz <- lift $ dagSize target
@@ -493,8 +495,9 @@ solveBuchi :: (MonadResource (DDNode s u) (ST s) t) =>
               Ops s u -> 
               RefineStatic s u -> 
               DDNode s u -> 
+              DDNode s u -> 
               t (ST s) (DDNode s u)
-solveBuchi cpreFunc ops@Ops{..} rs@RefineStatic{..} startingPoint = do
+solveBuchi cpreFunc ops@Ops{..} rs@RefineStatic{..} startingPoint startingLFP = do
     $rp ref startingPoint
     fixedPointR ops func startingPoint
     where
@@ -505,7 +508,7 @@ solveBuchi cpreFunc ops@Ops{..} rs@RefineStatic{..} startingPoint = do
             lift $ traceMsg "g"
             t1 <- $r2 band reachN val
             --TODO terminate when t1s are equal
-            res' <- solveReach cpreFunc ops rs reachN t1
+            res' <- solveReach cpreFunc ops rs reachN t1 startingLFP
             $d deref t1
             res <- $r2 band res' accum
             $d deref res'
@@ -954,7 +957,7 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
         res <- forAccumLM bfalse strat $ \tot (goal, strats) -> do
             tgt               <- $r2 bor (bnot goal) x
             --TODO optimise: dont use btrue below
-            winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs btrue (bnot tgt)
+            winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs btrue (bnot tgt) bfalse
             (winStrat, strat) <- stratReach si rs rd hasOutgoings strats x winBuchi tgt
             when (winStrat /= winBuchi) (lift $ traceST "Warning: counterexample winning regions are not equal")
             $d deref winStrat
@@ -1039,7 +1042,7 @@ counterExampleLiberalEnv ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@R
         res <- forAccumLM bfalse strat $ \tot (goal, strats) -> do
             tgt               <- $r2 bor (bnot goal) x
             --TODO optimise: dont use btrue below
-            winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs btrue (bnot tgt)
+            winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs btrue (bnot tgt) bfalse
             (winStrat, strat) <- stratReach si rs rd hasOutgoings strats x winBuchi tgt
             when (winStrat /= winBuchi) (lift $ traceST "Warning: counterexample winning regions are not equal")
             $d deref winStrat
@@ -1184,35 +1187,21 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
             callCC $ \exit  -> 
             callCC $ \exit2 -> 
             callCC $ \exit3 -> do
+
                 si@SectionInfo{..} <- lift2 $ gets _sections
                 syi                <- lift2 $ gets _symbolTable
-                lift4 $ setVarMap _trackedNodes _nextNodes
                 labelPreds <- lift2 $ gets $ _labelVars . _symbolTable
                 let lp = map (sel1 &&& sel3) $ Map.elems labelPreds
-                hasOutgoings <- lift3 $ doHasOutgoings ops trans
 
-                --Terminate early if must winning
-                --TODO: we can reuse the winning regions below
-                --TODO: reuse this winRegionUnder here on the next iteration and for least fixedpoint of may
-                (rd, winRegionUnder) <- flip (if' (act == RepeatAll || act == RepeatLFP)) (return (rd, lastUnder)) $ do
-                    winRegionUnder <- lift3 $ solveBuchi (cPreUnder ops si rs rd hasOutgoings lp) ops rs lastWin
-                    lift4 $ traceST ""
-                    (rd, winning) <- lift3 $ refineInit ops ts rs rd syi winRegionUnder
-                    case winning of
-                        True -> do
-                            lift4 $ traceST "Winning: Early termination"
-                            --TODO shouldnt I deref stuff here?
-                            exit (Just True, (si, rs, rd, lp, winRegionUnder))
-                        False -> do
-                            lift3 $ $d deref lastUnder
-                            return (rd, winRegionUnder)
-                
                 flip (maybe (return ())) maxIterations $ \val -> when (itr >= val) $ do
                     lift4 $ traceST "Max number of iterations exceeded."
-                    exit3 (Nothing, (si, rs, rd, lp, winRegionUnder))
+                    exit3 (Nothing, (si, rs, rd, lp, lastUnder))
+
+                lift4 $ setVarMap _trackedNodes _nextNodes
+                hasOutgoings <- lift3 $ doHasOutgoings ops trans
 
                 (rd, winRegion) <- flip (if' (act == RepeatAll || act == RepeatGFP)) (return (rd, lastWin)) $ do
-                    winRegion <- lift3 $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin
+                    winRegion <- lift3 $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin lastUnder
                     lift4 $ traceST ""
                     (rd, winning) <- lift3 $ refineInit ops ts rs rd syi winRegion
                     case winning of
@@ -1224,6 +1213,22 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                             lift3 $ $d deref lastWin
                             return (rd, winRegion)
 
+                --Terminate early if must winning
+                --TODO: we can reuse the winning regions below
+                --TODO: reuse this winRegionUnder here on the next iteration and for least fixedpoint of may
+                (rd, winRegionUnder) <- flip (if' (act == RepeatAll || act == RepeatLFP)) (return (rd, lastUnder)) $ do
+                    winRegionUnder <- lift3 $ solveBuchi (cPreUnder ops si rs rd hasOutgoings lp) ops rs winRegion lastUnder
+                    lift4 $ traceST ""
+                    (rd, winning) <- lift3 $ refineInit ops ts rs rd syi winRegionUnder
+                    case winning of
+                        True -> do
+                            lift4 $ traceST "Winning: Early termination"
+                            --TODO shouldnt I deref stuff here?
+                            exit (Just True, (si, rs, rd, lp, winRegionUnder))
+                        False -> do
+                            lift3 $ $d deref lastUnder
+                            return (rd, winRegionUnder)
+                
                 --Alive: winRegion, rd, rs, hasOutgoings
                 --lift $ lift $ traceST "Possibly winning, Confirming with further refinement"
                 let cpu  = cPreUnder  ops si rs rd hasOutgoings lp
@@ -1233,7 +1238,7 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                     rfG  = refineGFP  ops spec ts rs si lp hasOutgoings cpo'
                     rfL  = refineLFP  ops spec ts rs si lp hasOutgoings cpu'
 
-                res <- lift $ refine cpo cpu rfG rfL ops rs winRegion rd
+                res <- lift $ refine cpo cpu rfG rfL ops rs winRegion winRegionUnder rd
                 lift3 $ $d deref hasOutgoings   
                 case res of 
                     Nothing -> do 
