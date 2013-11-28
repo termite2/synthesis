@@ -399,13 +399,15 @@ refine :: (MonadResource (DDNode s u) (ST s) t) =>
               RefineDynamic s u -> 
               StateT st (StateT (DB s u sp lp) (t (ST s))) (Maybe (RefineAction, RefineDynamic s u))
 refine cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStatic{..} buchiWinning lastLFP rd = do
+    --TODO try mixing this with synthesis. ie. only refine buchi after
+    --solving a safety game at the top level.
     let buchiRefine = do
         res <- refineFuncGFP buchiWinning buchiWinning rd
         case res of 
             Nothing -> return ()
             Just _  -> liftST $ traceST "Refined at buchi level"
-
         return res 
+
     let fairRefine  = mSumMaybe $ flip map goal $ \goal -> do
             tgt'       <- liftBDD $ $r2 band goal buchiWinning
             reachUnder <- liftBDD $ solveReach cpreUnder ops rs buchiWinning tgt' lastLFP
@@ -417,7 +419,6 @@ refine cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStati
                 case res of 
                     Nothing -> return ()
                     Just _  -> liftST $ traceST "Refined at reachability level"
-
                 return res 
 
             let fairRefine = mSumMaybe $ flip map fair $ \fair -> do
@@ -435,8 +436,8 @@ refine cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStati
                     case res' of 
                         Nothing -> return ()
                         Just _  -> liftST $ traceST "Refined at fair level"
-
                     return res'
+
             res <- mSumMaybe [refineReach, fairRefine]
             liftBDD $ $d deref reachUnder
             liftBDD $ $d deref tgt''
@@ -1214,8 +1215,6 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                             return (rd, winRegion)
 
                 --Terminate early if must winning
-                --TODO: we can reuse the winning regions below
-                --TODO: reuse this winRegionUnder here on the next iteration and for least fixedpoint of may
                 (rd, winRegionUnder) <- flip (if' (act == RepeatAll || act == RepeatLFP)) (return (rd, lastUnder)) $ do
                     winRegionUnder <- lift3 $ solveBuchi (cPreUnder ops si rs rd hasOutgoings lp) ops rs winRegion lastUnder
                     lift4 $ traceST ""
@@ -1230,7 +1229,6 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                             return (rd, winRegionUnder)
                 
                 --Alive: winRegion, rd, rs, hasOutgoings
-                --lift $ lift $ traceST "Possibly winning, Confirming with further refinement"
                 let cpu  = cPreUnder  ops si rs rd hasOutgoings lp
                     cpo  = cPreOver   ops si rs rd hasOutgoings lp
                     cpo' = cpreOver'  ops si rs rd hasOutgoings lp
