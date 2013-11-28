@@ -684,6 +684,7 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
     labelPreds              <- liftIST $ gets $ _labelVars . _symbolTable
     let newLabelPreds       = labelPreds Map.\\ labelPredsPreUpdate
     let theMap              = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys labelPreds
+    --TODO does old consistency relation need to be derefed
     consistentMinusCULCont'' <- liftBDD $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList newLabelPreds) consistentMinusCULCont
     consistentMinusCULCont' <- liftBDD $ $r2 band consistentMinusCULCont'' (bnot inconsistent)
     liftBDD $ $d deref consistentMinusCULCont''
@@ -692,10 +693,11 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
     consistentMinusCULUCont' <- liftBDD $ $r2 band consistentMinusCULUCont'' (bnot inconsistent)
     liftBDD $ $d deref consistentMinusCULUCont''
     
-    --TODO deref old consistency relations
     consistentPlusCULCont'  <- liftBDD $ $r2 band consistentPlusCULCont  (bnot inconsistent)
+    liftBDD $ $d deref consistentPlusCULCont
     consistentPlusCULUCont' <- liftBDD $ $r2 band consistentPlusCULUCont (bnot inconsistent)
     liftBDD $ $d deref inconsistent
+    liftBDD $ $d deref consistentPlusCULUCont
 
     consistentNoRefine' <- liftBDD $ $r2 band consistentNoRefine cons
     liftBDD $ $d deref cons
