@@ -444,6 +444,7 @@ refine cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStati
             return res
     mSumMaybe [buchiRefine, fairRefine]
 
+--TODO try using a cache 
 solveFair :: (MonadResource (DDNode s u) (ST s) t) => 
              (DDNode s u -> t (ST s) (DDNode s u)) -> 
              Ops s u -> 
