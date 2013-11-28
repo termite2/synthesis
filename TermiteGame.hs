@@ -45,10 +45,6 @@ import MTR
 
 import Resource
 
-maxIterations :: Maybe Int
--- maxIterations = Just 10
-maxIterations = Nothing
-
 traceMsg :: String -> ST s ()
 traceMsg m = unsafeIOToST $ do
     putStr m
@@ -1165,13 +1161,15 @@ absRefineLoop :: forall s u o sp lp lv st t. (Ord sp, Ord lp, Show sp, Show lp, 
                  STDdManager s u -> 
                  Abstractor s u sp lp st -> 
                  TheorySolver s u sp lp lv -> 
+                 Maybe Int -> 
                  t (ST s) (Maybe Bool, RefineInfo s u sp lp st)
-absRefineLoop m spec ts = let ops@Ops{..} = constructOps m in do
+absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
     idb <- lift $ initialDB ops
     (((winning, (si, rs, rd, lp, wn)), st), db) <- flip runStateT idb $ flip runStateT (initialState spec) $ do
         (rd, rs) <- initialAbstraction ops spec ts
         lift2 $ $rp ref btrue
-        flip runContT return $ refineLoop ops rs rd btrue
+        lift2 $ $rp ref bfalse
+        flip runContT return $ refineLoop ops rs rd btrue bfalse
     lift $ traceST $ "Preds: \n" ++ intercalate "\n" (map show $ extractStatePreds $ _symbolTable db)
     dc <- lift $ debugCheck
     ck <- lift $ checkKeys
@@ -1180,9 +1178,10 @@ absRefineLoop m spec ts = let ops@Ops{..} = constructOps m in do
     where
     refineLoop ops@Ops{..} rs@RefineStatic{..} = refineLoop' 0 RepeatAll
         where 
-        refineLoop' itr act rd@RefineDynamic{..} lastWin = 
-            callCC $ \exit -> 
-            callCC $ \exit2 -> do
+        refineLoop' itr act rd@RefineDynamic{..} lastWin lastUnder = 
+            callCC $ \exit  -> 
+            callCC $ \exit2 -> 
+            callCC $ \exit3 -> do
                 si@SectionInfo{..} <- lift2 $ gets _sections
                 syi                <- lift2 $ gets _symbolTable
                 lift4 $ setVarMap _trackedNodes _nextNodes
@@ -1193,21 +1192,23 @@ absRefineLoop m spec ts = let ops@Ops{..} = constructOps m in do
                 --Terminate early if must winning
                 --TODO: we can reuse the winning regions below
                 --TODO: reuse this winRegionUnder here on the next iteration and for least fixedpoint of may
-                rd <- flip (if' (act == RepeatAll || act == RepeatLFP)) (return rd) $ do
+                (rd, winRegionUnder) <- flip (if' (act == RepeatAll || act == RepeatLFP)) (return (rd, lastUnder)) $ do
                     winRegionUnder <- lift3 $ solveBuchi (cPreUnder ops si rs rd hasOutgoings lp) ops rs lastWin
                     lift4 $ traceST ""
                     (rd, winning) <- lift3 $ refineInit ops ts rs rd syi winRegionUnder
                     case winning of
                         True -> do
                             lift4 $ traceST "Winning: Early termination"
+                            --TODO shouldnt I deref stuff here?
                             exit (Just True, (si, rs, rd, lp, winRegionUnder))
                         False -> do
-                            if isJust maxIterations && itr >= fromJust maxIterations 
-                               then do lift4 $ traceST "Max number of iterations exceeded."
-                                       exit (Nothing, (si, rs, rd, lp, winRegionUnder))
-                               else do lift3 $ $d deref winRegionUnder
-                                       return rd
+                            lift3 $ $d deref lastUnder
+                            return (rd, winRegionUnder)
                 
+                flip (maybe (return ())) maxIterations $ \val -> when (itr >= val) $ do
+                    lift4 $ traceST "Max number of iterations exceeded."
+                    exit3 (Nothing, (si, rs, rd, lp, winRegionUnder))
+
                 (rd, winRegion) <- flip (if' (act == RepeatAll || act == RepeatGFP)) (return (rd, lastWin)) $ do
                     winRegion <- lift3 $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin
                     lift4 $ traceST ""
@@ -1234,11 +1235,11 @@ absRefineLoop m spec ts = let ops@Ops{..} = constructOps m in do
                 lift3 $ $d deref hasOutgoings   
                 case res of 
                     Nothing -> do 
-                        lift4 $ traceST "Winning: no refinements to make"
+                        lift4 $ traceST "No refinements to make. Warning: this should never happen. It is a bug. Please tell Adam"
                         return (Just True, (si, rs, rd, lp, winRegion))
                     Just (act, rd) -> do
                         lift4 $ traceST $ show act
-                        refineLoop' (itr+1) act rd winRegion
+                        refineLoop' (itr+1) act rd winRegion winRegionUnder
 
 cex :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp st -> t (ST s) [[DDNode s u]]
 cex RefineInfo{..} = counterExample op si rs rd lp wn
