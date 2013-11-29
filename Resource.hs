@@ -18,6 +18,7 @@ class (MonadTrans t, Monad m, Monad (t m)) => MonadResource r m t | t -> r where
     checkResource :: String -> r -> t m ()
     refResource   :: String -> r -> t m ()
     derefResource :: String -> r -> t m ()
+    getInUse      :: t m (InUse r)
 
 --Helper functions for use in this monad
 rf1 :: (MonadResource a m t, Ord a) => (a -> a) -> String -> (a -> m a) -> a -> t m a
@@ -143,11 +144,11 @@ instance (Ord r, Monad m) => MonadResource r m (ResourceT r) where
 
     derefResource loc x = ResourceT $ modify $ decRef loc x
 
-getInUse :: (Monad m, Ord a) => ResourceT a m (InUse a)
-getInUse = ResourceT $ get
+    getInUse = ResourceT $ get
 
 instance (Monad m) => MonadResource r m IdentityT where
     checkResource x y = return ()
     refResource   x y = return ()
     derefResource x y = return ()
+    getInUse          = return $ Map.empty
 

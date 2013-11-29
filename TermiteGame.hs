@@ -26,6 +26,7 @@ import Debug.Trace as T
 import Control.Monad.State
 import System.IO
 import Control.Monad.Trans.Cont
+import Data.Function
 
 import Safe
 import qualified Data.Text.Lazy as T
@@ -113,6 +114,8 @@ derefDynamic Ops{..} RefineDynamic{..} = do
     $d deref consistentPlusCULCont
     $d deref consistentMinusCULUCont
     $d deref consistentPlusCULUCont
+    $d deref inconsistentInit
+    $d deref consistentNoRefine
 
 type Lab s u = [([DDNode s u], DDNode s u)]
 
@@ -1153,11 +1156,14 @@ refineInit ops@Ops{..} ts@TheorySolver{..} rs@RefineStatic{..} rd@RefineDynamic{
         True  -> return (rd, True)
 
 showResources :: Ops s u -> InUse (DDNode s u) -> ST s String
-showResources Ops{..} mp = liftM (intercalate "\n") $ mapM (uncurry func) (Map.toList mp)
+showResources Ops{..} mp = do 
+    res <- liftM (intercalate "\n") (mapM (uncurry func) (sortBy sf $ Map.toList mp))
+    return $ "\n\nBDDs still referenced: \n" ++ res ++ "\n\n"
     where
+    sf = compare `on` (snd . snd)
     func res (locs, numRefs) = do
         sz <- dagSize res
-        return $ show sz ++ " refs: " ++ show numRefs ++ " " ++ show locs 
+        return $ " refs: " ++ show numRefs ++ "size: " ++ show sz ++ " locations: " ++ show (Set.toList locs)
 
 lift4 = lift . lift . lift . lift
 lift3 = lift . lift . lift
@@ -1181,6 +1187,15 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
     dc <- lift $ debugCheck
     ck <- lift $ checkKeys
     lift $ when (dc /= 0 || ck /= 0) (traceST "########################################################## Cudd inconsistent")
+
+{-
+    derefStatic ops rs
+    derefDynamic ops rd
+    -}
+
+    str <- getInUse >>= lift . showResources ops
+    lift $ traceST str
+
     return $ (winning, RefineInfo{op=ops, ..})
     where
     refineLoop ops@Ops{..} rs@RefineStatic{..} = refineLoop' 0 RepeatAll
