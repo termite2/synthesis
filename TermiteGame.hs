@@ -362,6 +362,7 @@ refineGFP ops@Ops{..} spec ts rs si labelPreds hasOutgoingsCont cpreOver tgt may
             res <- liftBDD $ do
                 su      <- cpreOver tgt
                 toDrop  <- $r2 band (bnot su) mayWin
+                $d deref su
                 res     <- lift $ refineStrategy ops si toDrop
                 $d deref toDrop
                 return res
@@ -380,6 +381,7 @@ refineLFP ops@Ops{..} spec ts rs si labelPreds hasOutgoingsCont cpreUnder tgt mu
             res <- liftBDD $ do
                 su      <- cpreUnder tgt
                 toCheck <- $r2 band su (bnot mustWin)
+                $d deref su
                 res     <- lift $ refineStrategy ops si toCheck
                 $d deref toCheck
                 return res
