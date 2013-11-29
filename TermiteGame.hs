@@ -412,39 +412,39 @@ refine cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStati
         return res 
 
     let fairRefine  = mSumMaybe $ flip map goal $ \goal -> do
-            tgt'       <- liftBDD $ $r2 band goal buchiWinning
-            reachUnder <- liftBDD $ solveReach cpreUnder ops rs buchiWinning tgt' lastLFP
-            tgt''      <- liftBDD $ $r2 bor tgt' reachUnder
-            liftBDD $ $d deref tgt'
+        tgt'       <- liftBDD $ $r2 band goal buchiWinning
+        reachUnder <- liftBDD $ solveReach cpreUnder ops rs buchiWinning tgt' lastLFP
+        tgt''      <- liftBDD $ $r2 bor tgt' reachUnder
+        liftBDD $ $d deref tgt'
 
-            let refineReach = do
-                res <- refineFuncLFP reachUnder tgt'' rd
-                case res of 
+        let refineReach = do
+            res <- refineFuncLFP reachUnder tgt'' rd
+            case res of 
+                Nothing -> return ()
+                Just _  -> liftST $ traceST "Refined at reachability level"
+            return res 
+
+        let fairRefine = mSumMaybe $ flip map fair $ \fair -> do
+                (tgt, res) <- liftBDD $ do
+                    res     <- solveFair cpreOver ops rs buchiWinning tgt'' fair
+                    tgt'''  <- $r2 band res fair
+                    tgt     <- $r2 bor tgt'' tgt'''
+                    $d deref tgt'''
+                    return (tgt, res)
+
+                res' <- refineFuncGFP tgt res rd
+                liftBDD $ $d deref tgt
+                liftBDD $ $d deref res
+
+                case res' of 
                     Nothing -> return ()
-                    Just _  -> liftST $ traceST "Refined at reachability level"
-                return res 
+                    Just _  -> liftST $ traceST "Refined at fair level"
+                return res'
 
-            let fairRefine = mSumMaybe $ flip map fair $ \fair -> do
-                    (tgt, res) <- liftBDD $ do
-                        res     <- solveFair cpreOver ops rs buchiWinning tgt'' fair
-                        tgt'''  <- $r2 band res fair
-                        tgt     <- $r2 bor tgt'' tgt'''
-                        $d deref tgt'''
-                        return (tgt, res)
-
-                    res' <- refineFuncGFP tgt res rd
-                    liftBDD $ $d deref tgt
-                    liftBDD $ $d deref res
-
-                    case res' of 
-                        Nothing -> return ()
-                        Just _  -> liftST $ traceST "Refined at fair level"
-                    return res'
-
-            res <- mSumMaybe [refineReach, fairRefine]
-            liftBDD $ $d deref reachUnder
-            liftBDD $ $d deref tgt''
-            return res
+        res <- mSumMaybe [refineReach, fairRefine]
+        liftBDD $ $d deref reachUnder
+        liftBDD $ $d deref tgt''
+        return res
     mSumMaybe [buchiRefine, fairRefine]
 
 --TODO try using a cache 
@@ -1188,7 +1188,7 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
     ck <- lift $ checkKeys
     lift $ when (dc /= 0 || ck /= 0) (traceST "########################################################## Cudd inconsistent")
 
-{-
+    {-
     derefStatic ops rs
     derefDynamic ops rd
     -}
@@ -1219,29 +1219,29 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
 
                 (rd, winRegion) <- flip (if' (act == RepeatAll || act == RepeatGFP)) (return (rd, lastWin)) $ do
                     winRegion <- lift3 $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin lastUnder
+                    lift3 $ $d deref lastWin
                     lift4 $ traceST ""
                     (rd, winning) <- lift3 $ refineInit ops ts rs rd syi winRegion
                     case winning of
                         False -> do
                             lift4 $ traceST "Losing"
-                            lift3 $ mapM ($d deref) [hasOutgoings]
+                            lift3 $ mapM ($d deref) [hasOutgoings, lastUnder]
                             exit2 (Just False, (si, rs, rd, lp, winRegion))
                         True -> do
-                            lift3 $ $d deref lastWin
                             return (rd, winRegion)
 
                 --Terminate early if must winning
                 (rd, winRegionUnder) <- flip (if' (act == RepeatAll || act == RepeatLFP)) (return (rd, lastUnder)) $ do
                     winRegionUnder <- lift3 $ solveBuchi (cPreUnder ops si rs rd hasOutgoings lp) ops rs winRegion lastUnder
+                    lift3 $ $d deref lastUnder
                     lift4 $ traceST ""
                     (rd, winning) <- lift3 $ refineInit ops ts rs rd syi winRegionUnder
                     case winning of
                         True -> do
                             lift4 $ traceST "Winning: Early termination"
-                            --TODO shouldnt I deref stuff here?
+                            lift3 $ mapM ($d deref) [hasOutgoings]
                             exit (Just True, (si, rs, rd, lp, winRegionUnder))
                         False -> do
-                            lift3 $ $d deref lastUnder
                             return (rd, winRegionUnder)
                 
                 --Alive: winRegion, rd, rs, hasOutgoings
