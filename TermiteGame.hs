@@ -666,29 +666,6 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
 
 refineStrategy = refineFirstPrime
 
-pickUntrackedToPromote :: MonadResource (DDNode s u) (ST s) t => 
-                          Ops s u -> 
-                          SectionInfo s u -> 
-                          RefineDynamic s u -> 
-                          RefineStatic s u -> 
-                          Lab s u -> 
-                          DDNode s u -> 
-                          DDNode s u -> 
-                          DDNode s u -> 
-                          DDNode s u -> 
-                          t (ST s) (Maybe [Int])
-pickUntrackedToPromote ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} rs@RefineStatic{..} labelPreds hasOutgoings win lastLFP fairr = do
-    win''  <- $r2 band win fairr
-    win'   <- $r2 bor win'' lastLFP
-    $d deref win''
-    su     <- cpreOver' ops si rs rd hasOutgoings labelPreds win'
-    $d deref win'
-    toDrop <- $r2 band (bnot su) win
-    $d deref su
-    res    <- lift $ refineStrategy ops si toDrop
-    $d deref toDrop
-    return res
-
 --Promote untracked state variables to full state variables so that we can make progress towards the goal. Does not refine the consistency relations.
 promoteUntracked :: (Ord lp, Ord sp, Ord lv, Show sp, Show lp, MonadResource (DDNode s u) (ST s) t) => 
                     Ops s u -> 
