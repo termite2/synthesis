@@ -104,7 +104,9 @@ data RefineDynamic s u = RefineDynamic {
     consistentMinusCULUCont :: DDNode s u,
     consistentPlusCULUCont  :: DDNode s u,
     inconsistentInit        :: DDNode s u,
-    consistentNoRefine      :: DDNode s u
+    consistentNoRefine      :: DDNode s u,
+    numConsRef              :: Int,
+    numStateRef             :: Int
 }
 
 derefDynamic :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> RefineDynamic s u -> t (ST s) ()
@@ -330,14 +332,14 @@ refineConsistency2 ops ts rd@RefineDynamic{..} rs@RefineStatic{..} si labelPreds
     res             <- doConsistency ops ts consistentPlusCULCont consistentMinusCULCont winNoConstraint
     case res of
         Just (act, (consistentPlusCULCont', consistentMinusCULCont')) -> do
-            let rd' = rd {consistentPlusCULCont = consistentPlusCULCont', consistentMinusCULCont = consistentMinusCULCont'}
+            let rd' = rd {consistentPlusCULCont = consistentPlusCULCont', consistentMinusCULCont = consistentMinusCULCont', numConsRef = numConsRef + 1}
             return $ Just (forCont act, rd')
         Nothing -> do
             winNoConstraint <- lift $ cpreUCont' ops si rd labelPreds cont tgt
             res             <- doConsistency ops ts consistentPlusCULUCont consistentMinusCULUCont winNoConstraint
             case res of
                 Just (act, (consistentPlusCULUCont', consistentMinusCULUCont')) -> do
-                    let rd' = rd {consistentPlusCULUCont = consistentPlusCULUCont', consistentMinusCULUCont = consistentMinusCULUCont'}
+                    let rd' = rd {consistentPlusCULUCont = consistentPlusCULUCont', consistentMinusCULUCont = consistentMinusCULUCont', numConsRef = numConsRef + 1}
                     return $ Just (forUCont act, rd')
                 Nothing -> return Nothing
 
@@ -656,7 +658,9 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
 
     --construct the RefineDynamic and RefineStatic
     let rd = RefineDynamic {
-            trans  = groups,
+            trans       = groups,
+            numConsRef  = 0,
+            numStateRef = 0,
             ..
         }
         rs = RefineStatic {
@@ -729,7 +733,8 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
         consistentMinusCULUCont = consistentMinusCULUCont',
         consistentPlusCULCont = consistentPlusCULCont',
         consistentPlusCULUCont = consistentPlusCULUCont',
-        consistentNoRefine = consistentNoRefine'
+        consistentNoRefine = consistentNoRefine',
+        numStateRef = numStateRef + 1
     }
 
 sccs :: (Ord lv, Ord lp, Show lp) => SymbolInfo s u sp lp -> TheorySolver s u sp lp lv -> [(lp, a)] -> [[(lp, a)]]
@@ -1219,6 +1224,9 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
         
         pnc <- readPeakNodeCount
         traceST $ "# nodes at peak: " ++ show pnc
+
+        traceST $ "# consistency refinements: " ++ show (numConsRef rd)
+        traceST $ "# state refinements: "       ++ show (numStateRef rd)
 
     return $ (winning, RefineInfo{op=ops, ..})
     where
