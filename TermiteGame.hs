@@ -72,6 +72,7 @@ data Abstractor s u sp lp st = Abstractor {
     fairAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) [DDNode s u],
     initAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) (DDNode s u),
     contAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) (DDNode s u),
+    initialVars             :: [(sp, Int, Maybe String)],
     --Return type is: (variable updates, initial inconsistency relation, next state inconsistency relation that will not be refined)
     updateAbs               :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) ([DDNode s u], DDNode s u, DDNode s u),
     stateLabelConstraintAbs :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) (DDNode s u)
@@ -616,8 +617,11 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     stateLabelExpr <- hoistAbs $ doUpdate ops stateLabelConstraintAbs
     liftBDD $ $r $ return stateLabelExpr
     liftST  $ check "After compiling stateLabelConstraint" ops
+
+    ivs <- liftAS $ sequence $ map (uncurryN $ getStaticVar ops) initialVars
+
     --get the abstract update functions for the goal predicates and variables
-    let toUpdate = nub $ _allocatedStateVars newVarsGoals ++ _allocatedStateVars newVarsFairs ++ _allocatedStateVars newVarsCont
+    let toUpdate = nub $ _allocatedStateVars newVarsGoals ++ _allocatedStateVars newVarsFairs ++ _allocatedStateVars newVarsCont ++ zip (map sel1 initialVars) ivs
     liftST  $ traceST $ "Initial transition relation state vars: \n" ++ (intercalate "\n" $ map (('\t' :) . show . fst) $ toUpdate)
     (updateExprs', inconsistent, cons) <- hoistAbs $ doUpdate ops (updateAbs toUpdate)
     liftBDD $ mapM ($r . return) updateExprs'

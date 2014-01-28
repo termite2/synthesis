@@ -404,3 +404,10 @@ updateOps ops = VarOps {withTmp = withTmp' ops, allVars = allVars', ..}
 doUpdate :: (Ord sp, Ord lp) => Ops s u -> (VarOps (DB s u sp lp) (BAVar sp lp) s u -> a) -> a
 doUpdate ops complFunc = complFunc (updateOps ops)
 
+getStaticVar :: Ord sp => Ops s u -> sp -> Int -> Maybe String -> StateT (DB s u sp lp) (ST s) [DDNode s u]
+getStaticVar ops var size group = StateT $ \st -> do
+    (res, st') <- flip runStateT (GoalState (NewVars []) st) $ do
+        SymbolInfo{..} <- use $ db . symbolTable
+        findWithDefaultM sel3 var _stateVars $ findWithDefaultProcessM sel3 var _initVars (allocStateVar ops var size group) (uncurryN $ addVarToState ops var)
+    return (res, _db st')
+
