@@ -57,7 +57,7 @@ data Ops s u = Ops {
     regular                                   :: DDNode s u -> DDNode s u,
     reduceHeap                                :: C.CuddReorderingType -> Int -> ST s Int,
     andLimit                                  :: DDNode s u -> DDNode s u -> Int -> ST s (Maybe (DDNode s u)),
-    readTree                                  :: ST s (C.MtrNode)
+    readTree                                  :: ST s (C.MtrNode s)
 }
 
 constructOps :: STDdManager s u -> Ops s u

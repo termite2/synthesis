@@ -157,8 +157,8 @@ allocN Ops{..} size group = do
                     lift $ makeTreeNode startIdx (sizeGrp + size) 4
                     tr <- lift readTree
                     lvl <- lift $ readPerm startIdx
-                    oldGroup <- lift $ unsafeIOToST $ mtrFindGroup tr lvl sizeGrp
-                    lift $ unsafeIOToST $ mtrDissolveGroup oldGroup
+                    oldGroup <- lift $ mtrFindGroup tr lvl sizeGrp
+                    lift $ mtrDissolveGroup oldGroup
                     groups %= Map.insert grName (startIdx, sizeGrp + size, last indices)
                     return (res, indices)
 
