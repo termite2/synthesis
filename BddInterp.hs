@@ -31,14 +31,11 @@ interp Ops{..} theList node = do
     return $ mapMaybe (func st) theList
     where
     func bits (name, idxs) 
-        | all (==2) encoding = Nothing
+        | all (== DontCare) encoding = Nothing
         | otherwise = Just (name, map b2IntLSF expanded)
         where
         encoding = map (bits !!) idxs
-        expanded = allComb $ map func encoding
-        func 0 = [False]
-        func 1 = [True]
-        func 2 = [False, True]
+        expanded = allComb $ map expand encoding
 
 formatPrimeImplicants :: [[[(String, [Int])]]] -> String
 formatPrimeImplicants = intercalate "\n" . map func 
@@ -57,10 +54,7 @@ stateInterp Ops{..} theList node = do
     func bits (name, idxs) = (name, map b2IntLSF expanded)
         where
         encoding = map (bits !!) idxs
-        expanded = allComb $ map func encoding
-        func 0 = [False]
-        func 1 = [True]
-        func 2 = [False, True]
+        expanded = allComb $ map expand encoding
 
 formatStateInterp :: [(String, [Int])] -> String
 formatStateInterp = intercalate ", " . map (uncurry func)

@@ -6,7 +6,9 @@ module BddRecord (
     DDNode,
     STDdManager,
     ST,
-    C.CuddReorderingType(..)
+    C.CuddReorderingType(..),
+    SatBit(..),
+    C.expand
     ) where
 
 import Control.Monad.ST
@@ -15,7 +17,7 @@ import Control.Monad
 import qualified CuddExplicitDeref as C
 import qualified CuddST as C
 import qualified CuddReorder as C
-import CuddExplicitDeref (DDNode, STDdManager)
+import CuddExplicitDeref (DDNode, STDdManager, SatBit)
 import qualified MTR as C
 
 data Ops s u = Ops {
@@ -39,7 +41,7 @@ data Ops s u = Ops {
     indicesToCube                             :: [Int] -> ST s (DDNode s u),
     computeCube                               :: [DDNode s u] -> [Bool] -> ST s (DDNode s u),
     nodesToCube                               :: [DDNode s u] -> ST s (DDNode s u),
-    satCube                                   :: DDNode s u -> ST s [Int],
+    satCube                                   :: DDNode s u -> ST s [SatBit],
     setVarMap                                 :: [DDNode s u] -> [DDNode s u] -> ST s (),
     mapVars                                   :: DDNode s u -> ST s (DDNode s u),
     debugCheck                                :: ST s Int,

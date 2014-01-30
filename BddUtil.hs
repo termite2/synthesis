@@ -89,7 +89,7 @@ primeCover Ops{..} node = do
 presentVars :: Ops s u -> DDNode s u -> ST s [(Int, Bool)]
 presentVars Ops{..} x = do
     res <- satCube x
-    return $ map (second (/=0)) $ filter ((/=2) . snd) $ zip [0..] res
+    return $ map (second (/= Zero)) $ filter ((/= DontCare) . snd) $ zip [0..] res
 
 makeCube :: Ops s u -> [(DDNode s u, Bool)] -> ST s (DDNode s u)
 makeCube Ops{..} = uncurry computeCube . unzip
