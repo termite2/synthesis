@@ -1207,6 +1207,19 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
     str <- getInUse >>= lift . showResources ops
     lift $ traceST str
 
+    lift $ do
+        let isState x = or $ map (`elem` _trackedInds (_sections db)) (sel2 x)
+        traceST "Begin benchmarking stats"
+        traceST $ "# state preds: "     ++ show (Map.size $ Map.filter isState $ _stateVars $ _symbolTable db)
+        traceST $ "# untracked preds: " ++ show (Map.size $ Map.filter (not . isState) $ _stateVars $ _symbolTable db)
+        traceST $ "# label preds: "     ++ show (Map.size $ _labelVars $ _symbolTable db)
+        
+        ds <- dagSize wn
+        traceST $ "# nodes in winning bdd: " ++ show ds
+        
+        pnc <- readPeakNodeCount
+        traceST $ "# nodes at peak: " ++ show pnc
+
     return $ (winning, RefineInfo{op=ops, ..})
     where
     refineLoop ops@Ops{..} rs@RefineStatic{..} = refineLoop' 0 RepeatAll
