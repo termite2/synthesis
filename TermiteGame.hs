@@ -1209,8 +1209,10 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
     derefDynamic ops rd
     -}
 
+    {-
     str <- getInUse >>= lift . showResources ops
     lift $ traceST str
+    -}
 
     lift $ do
         let isState x = or $ map (`elem` _trackedInds (_sections db)) (sel2 x)
