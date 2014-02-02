@@ -33,10 +33,11 @@ import Safe
 import Interface
 import BddRecord
 import BddUtil
-import CuddST
-import CuddReorder
 import Resource
 import RefineUtil
+
+import CuddReorder
+import CuddExplicitDeref
 
 --Theory solving
 data TheorySolver s u sp lp lv = TheorySolver {
@@ -210,7 +211,7 @@ groupForUnsatCore func svs = map (uncurry reconstruct) $ aggregate svs
 
 setupManager :: ST s (STDdManager s u)
 setupManager = do
-    m <- cuddInitSTDefaults
+    m <- cuddInitDefaults
     cuddAutodynEnable m CuddReorderGroupSift
     regStdPreReordHook m
     regStdPostReordHook m

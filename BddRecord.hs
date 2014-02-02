@@ -15,7 +15,6 @@ import Control.Monad.ST
 import Control.Monad
 
 import qualified CuddExplicitDeref as C
-import qualified CuddST as C
 import qualified CuddReorder as C
 import CuddExplicitDeref (DDNode, STDdManager, SatBit)
 import qualified MTR as C
@@ -106,7 +105,7 @@ constructOps m = Ops {..}
     readSize               = C.readSize         m
     readInvPerm            = C.readInvPerm      m
     readPerm               = C.readPerm         m
-    shuffleHeap            = C.cuddShuffleHeapST m
+    shuffleHeap            = C.shuffleHeap m
     makeTreeNode x y z     = void $ C.cuddMakeTreeNode m x y z
     dagSize                = C.dagSize
     readNodeCount          = C.readNodeCount m
