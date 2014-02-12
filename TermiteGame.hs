@@ -1265,6 +1265,8 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                             return (rd, winRegion)
 
                 --Terminate early if must winning
+                --TODO: would it be faster to use winRegion, lastUnder, or
+                --their conjunction?
                 (rd, winRegionUnder) <- flip (if' (act == RepeatAll || act == RepeatLFP)) (return (rd, lastUnder)) $ do
                     winRegionUnder <- lift3 $ solveBuchi (cPreUnder ops si rs rd hasOutgoings lp) ops rs winRegion lastUnder
                     lift3 $ $d deref lastUnder
@@ -1279,6 +1281,8 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                             return (rd, winRegionUnder)
                 
                 --Alive: winRegion, rd, rs, hasOutgoings
+                --TODO: is it correct to use the same type of consistency
+                --refinement for GFP and LFP?
                 let cpu  = cPreUnder  ops si rs rd hasOutgoings lp
                     cpo  = cPreOver   ops si rs rd hasOutgoings lp
                     cpo' = cpreOver'  ops si rs rd hasOutgoings lp
