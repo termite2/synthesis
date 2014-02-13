@@ -740,6 +740,11 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
         numStateRef = numStateRef + 1
     }
 
+--Calculates strongly connected components of label predicate graph
+--Label predicates have an edge between them if they share a label variable
+--Graph nodes: (label pred, encoding) pair
+--Graph node keys: label pred
+--Graph edges: label predicate (a) -> label predicates that share a label variable with label predicate (a) and are in the labelCube argument
 sccs :: (Ord lv, Ord lp, Show lp) => SymbolInfo s u sp lp -> TheorySolver s u sp lp lv -> [(lp, a)] -> [[(lp, a)]]
 sccs SymbolInfo{..} TheorySolver{..} labelCube = fmap (flatten . fmap (sel1 . func)) $ components theGraph
     where
@@ -747,6 +752,7 @@ sccs SymbolInfo{..} TheorySolver{..} labelCube = fmap (flatten . fmap (sel1 . fu
         where
         func pred    = (pred, fst pred, filter (flip elem (map fst labelCube)) $ concatMap (fromJust . flip Map.lookup vMap) $ getVarsLabel (fst pred))
     (theGraph, func) = graphFromEdges' list 
+    --Map from label var -> [predicate that has this var in it]
     vMap             = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys _labelVars
 
 --TODO is it correct to use this for gfp and lfp refinements?
@@ -800,14 +806,20 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
                     lift $ $d deref winNoConstraint
                     lift $ lift $ traceST "SAT"
 
+                    --groupedLabel :: [label predicate, [encoding]]
+                    --return  a list of sub label cubes such that disjoint cubes dont share a label variable
                     let scs = sccs syi ts groupedLabel
                     let labelPreds = _labelVars 
+                    --construct a list: [(label predicate, label variables in this predicate)]
+                    --construct a Map from label variable -> a lift of predicates the variable occurs in
                     let theMap = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys labelPreds
                     cMinus' <- forAccumM cMinus scs $ \cons scc_val -> do
                         let scc = map fst scc_val
                         lift $ lift $ traceST $ "CC: " ++ show scc
+                        --All predicates are the predicates in the game that share a label variable with one of the predicates in the scc
                         let allPreds = concatMap (fromJustNote "doConsistency" . flip Map.lookup theMap) $ nub $ concatMap getVarsLabel scc
                         lift $ lift $ traceST $ "All preds: " ++ show allPreds
+                        --Fringe predicates are the ones that share a label variable with a predicate in the scc but are not in the scc
                         let fringePreds = allPreds \\ scc
                         lift $ lift $ traceST $ "Fringe Preds: " ++ show fringePreds
                         lift $ lift $ traceST ""
