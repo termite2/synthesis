@@ -1135,7 +1135,8 @@ data RefineInfo s u sp lp st = RefineInfo {
     rd :: RefineDynamic s u,
     db :: DB s u sp lp,
     lp :: Lab s u,
-    wn :: DDNode s u,
+    wu :: DDNode s u,
+    wo :: DDNode s u,
     op :: Ops s u,
     st :: st
 }
@@ -1194,7 +1195,7 @@ absRefineLoop :: forall s u o sp lp lv st t. (Ord sp, Ord lp, Show sp, Show lp, 
                  t (ST s) (Maybe Bool, RefineInfo s u sp lp st)
 absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
     idb <- lift $ initialDB ops
-    (((winning, (si, rs, rd, lp, wn)), st), db) <- flip runStateT idb $ flip runStateT (initialState spec) $ do
+    (((winning, (si, rs, rd, lp, wo, wu)), st), db) <- flip runStateT idb $ flip runStateT (initialState spec) $ do
         (rd, rs) <- initialAbstraction ops spec ts
         lift2 $ $rp ref btrue
         lift2 $ $rp ref bfalse
@@ -1221,8 +1222,11 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
         traceST $ "# untracked preds: " ++ show (Map.size $ Map.filter (not . isState) $ _stateVars $ _symbolTable db)
         traceST $ "# label preds: "     ++ show (Map.size $ _labelVars $ _symbolTable db)
         
-        ds <- dagSize wn
-        traceST $ "# nodes in winning bdd: " ++ show ds
+        ds <- dagSize wu
+        traceST $ "# nodes in winning bdd under: " ++ show ds
+
+        ds <- dagSize wo
+        traceST $ "# nodes in winning bdd over: " ++ show ds
         
         pnc <- readPeakNodeCount
         traceST $ "# nodes at peak: " ++ show pnc
@@ -1246,7 +1250,7 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
 
                 flip (maybe (return ())) maxIterations $ \val -> when (itr >= val) $ do
                     lift4 $ traceST "Max number of iterations exceeded."
-                    exit3 (Nothing, (si, rs, rd, lp, lastUnder))
+                    exit3 (Nothing, (si, rs, rd, lp, lastWin, lastUnder))
 
                 lift4 $ setVarMap _trackedNodes _nextNodes
                 hasOutgoings <- lift3 $ doHasOutgoings ops trans
@@ -1259,8 +1263,8 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                     case winning of
                         False -> do
                             lift4 $ traceST "Losing"
-                            lift3 $ mapM ($d deref) [hasOutgoings, lastUnder]
-                            exit2 (Just False, (si, rs, rd, lp, winRegion))
+                            lift3 $ mapM ($d deref) [hasOutgoings]
+                            exit2 (Just False, (si, rs, rd, lp, winRegion, lastUnder))
                         True -> do
                             return (rd, winRegion)
 
@@ -1276,11 +1280,11 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                         True -> do
                             lift4 $ traceST "Winning: Early termination"
                             lift3 $ mapM ($d deref) [hasOutgoings]
-                            exit (Just True, (si, rs, rd, lp, winRegionUnder))
+                            exit (Just True, (si, rs, rd, lp, winRegion, winRegionUnder))
                         False -> do
                             return (rd, winRegionUnder)
                 
-                --Alive: winRegion, rd, rs, hasOutgoings
+                --Alive: winRegion, rd, rs, hasOutgoings, winRegionUnder
                 --TODO: is it correct to use the same type of consistency
                 --refinement for GFP and LFP?
                 let cpu  = cPreUnder  ops si rs rd hasOutgoings lp
@@ -1295,17 +1299,17 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                 case res of 
                     Nothing -> do 
                         lift4 $ traceST "No refinements to make. Warning: this should never happen. It is a bug. Please tell Adam"
-                        return (Just True, (si, rs, rd, lp, winRegion))
+                        return (Just True, (si, rs, rd, lp, winRegion, winRegionUnder))
                     Just (act, rd) -> do
                         lift4 $ traceST $ show act
                         refineLoop' (itr+1) act rd winRegion winRegionUnder
 
 cex :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp st -> t (ST s) [[DDNode s u]]
-cex RefineInfo{..} = counterExample op si rs rd lp wn
+cex RefineInfo{..} = counterExample op si rs rd lp wo
 
 cexLiberalEnv :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp st -> t (ST s) [[DDNode s u]]
-cexLiberalEnv RefineInfo{..} = counterExampleLiberalEnv op si rs rd lp wn
+cexLiberalEnv RefineInfo{..} = counterExampleLiberalEnv op si rs rd lp wo
 
 strat :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp st -> t (ST s) [[DDNode s u]]
-strat RefineInfo{..} = strategy op si rs rd lp wn
+strat RefineInfo{..} = strategy op si rs rd lp wu
 
