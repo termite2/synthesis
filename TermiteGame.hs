@@ -214,9 +214,7 @@ cpreCont' :: (MonadResource (DDNode s u) (ST s) t) =>
              DDNode s u -> 
              t (ST s) (DDNode s u)
 cpreCont' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} labelPreds cont hasOutgoings target = do
-    target'  <- $r1 mapVars target
-    nextWin' <- $r2 bor target' (bnot consistentNoRefine)
-    $d deref target'
+    nextWin' <- $r1 mapVars target
     nextWin  <- $r2 bor nextWin' (bnot cont)
     $d deref nextWin'
     strat'   <- partitionedThing ops trans nextWin
@@ -238,9 +236,7 @@ cpreUCont' :: (MonadResource (DDNode s u) (ST s) t) =>
               DDNode s u -> 
               t (ST s) (DDNode s u)
 cpreUCont' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} labelPreds cont target = do
-    target'  <- $r1 mapVars target
-    nextWin' <- $r2 bor target' (bnot consistentNoRefine)
-    $d deref target'
+    nextWin' <- $r1 mapVars target
     nextWin  <- $r2 bor nextWin' cont
     $d deref nextWin'
     strat    <- partitionedThing ops trans nextWin
