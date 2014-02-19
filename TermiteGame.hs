@@ -303,7 +303,13 @@ eqf  Ops{..} cube constraint x = do
 
 cPreHelper cpreFunc quantFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
     su  <- cpreFunc ops si rs rd hasOutgoingsCont labelPreds target
-    res <- quantFunc ops _untrackedCube (bnot inconsistentInit) su
+
+    eqc <- $r1 (bexists _labelCube) consistentPlusCULCont
+    equ <- $r1 (bexists _labelCube) consistentPlusCULUCont
+    c   <- $r2 bor (bnot eqc) (bnot equ)
+    mapM ($d deref) [eqc, equ]
+
+    res <- quantFunc ops _untrackedCube (bnot c) su
     return res
 
 cPreOver :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> t (ST s) (DDNode s u)
