@@ -286,17 +286,31 @@ cpreOver' ops si rs rd@RefineDynamic{..} hasOutgoingsCont labelPreds = cpre'' op
 cpreUnder' :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> t (ST s) (DDNode s u)
 cpreUnder' ops si rs rd@RefineDynamic{..} hasOutgoingsCont labelPreds = cpre'' ops si rs rd hasOutgoingsCont labelPreds consistentMinusCULCont consistentPlusCULUCont
 
+faqf, eqf :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
+faqf Ops{..} cube constraint x = do
+    x' <- $r2 bor (bnot constraint) x
+    $d deref x
+    res <- $r1 (bforall cube) x'
+    $d deref x'
+    return res
+    
+eqf  Ops{..} cube constraint x = do
+    x' <- $r2 band constraint x
+    $d deref x
+    res <- $r1 (bexists cube) x'
+    $d deref x'
+    return res
+
 cPreHelper cpreFunc quantFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
     su  <- cpreFunc ops si rs rd hasOutgoingsCont labelPreds target
-    res <- $r1 (quantFunc _untrackedCube) su
-    $d deref su
+    res <- quantFunc ops _untrackedCube (bnot inconsistentInit) su
     return res
 
 cPreOver :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> t (ST s) (DDNode s u)
-cPreOver ops@Ops{..} = cPreHelper cpreOver' bexists ops  
+cPreOver ops@Ops{..} = cPreHelper cpreOver' eqf ops  
 
 cPreUnder :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> t (ST s) (DDNode s u)
-cPreUnder ops@Ops{..} = cPreHelper cpreUnder' bforall ops
+cPreUnder ops@Ops{..} = cPreHelper cpreUnder' faqf ops
 
 fixedPointR :: (MonadResource (DDNode s u) (ST s) t) => 
                Ops s u -> 
