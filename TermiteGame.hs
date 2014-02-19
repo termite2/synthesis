@@ -961,7 +961,13 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         mapM ($d deref) [stratUCont]
         win'         <- $r2 band winCont winUCont
         mapM ($d deref) [winCont, winUCont]
-        win          <- $r1 (bforall _untrackedCube) win'
+
+        eqc <- $r1 (bexists _labelCube) consistentPlusCULCont
+        equ <- $r1 (bexists _labelCube) consistentPlusCULUCont
+        c   <- $r2 bor (bnot eqc) (bnot equ)
+        mapM ($d deref) [eqc, equ]
+
+        win          <- faqf ops _untrackedCube (bnot c) win'
         return (win, stratCont)
 
 fixedPoint2R :: (MonadResource (DDNode s u) (ST s) t) => 
