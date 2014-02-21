@@ -1018,6 +1018,7 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
             winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs btrue (bnot tgt) bfalse
             (winStrat, strat) <- stratReach si rs rd hasOutgoings strats x winBuchi tgt
             when (winStrat /= winBuchi) (lift $ traceST "Warning: counterexample winning regions are not equal")
+            lift $ traceST "CHECK"
             $d deref winStrat
             $d deref tgt
             tot' <- $r2 bor tot winBuchi
@@ -1054,30 +1055,37 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
                 strat'''       <- $r2 bor strat'' strat
                 $d deref strat''
                 $d deref strat
-                win            <- $r1 (bforall _untrackedCube) win'
-                $d deref win'
+
+                eqc <- $r1 (bexists _labelCube) consistentPlusCULCont
+                equ <- $r1 (bexists _labelCube) consistentPlusCULUCont
+                c   <- $r2 band eqc equ
+                mapM ($d deref) [eqc, equ]
+
+                win            <- faqf ops _untrackedCube c win'
+                -- $d deref win'
                 winAccum'      <- $r2 band winAccum win
                 mapM ($d deref) [win, winAccum]
                 return (winAccum', (fair, strat'''))
             return res
 
     strategy si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoings target = do
-        stratCont <- cpreCont' ops si rd labelPreds cont hasOutgoings (bnot target)
-        stratUCont' <- cpreUCont' ops si rd labelPreds cont (bnot target)
-        winCont'     <- $r2 (andAbstract _labelCube) consistentPlusCULCont stratCont
+        stratCont     <- cpreCont' ops si rd labelPreds cont hasOutgoings (bnot target)
+        winCont'      <- $r2 (andAbstract _labelCube) consistentPlusCULCont stratCont
+        $d deref stratCont
         hasOutgoingsC <- $r2 band hasOutgoings cont
-        en'          <- $r2 band hasOutgoingsC consistentPlusCULCont
-        en           <- $r1 (bexists _labelCube) en'
-        $d deref en'
+        en'           <- $r2 band hasOutgoingsC consistentPlusCULCont
         $d deref hasOutgoingsC
-        winCont      <- liftM bnot $ $r2 bimp en winCont'
+        en            <- $r1 (bexists _labelCube) en'
+        $d deref en'
+        winCont       <- liftM bnot $ $r2 bimp en winCont'
         $d deref winCont'
         $d deref en
-        --TODO shouldnt this be cMinus???
-        stratUCont   <- $r2 band consistentPlusCULUCont stratUCont'
-        winUCont     <- $r1 (bexists _labelCube) stratUCont
-        mapM ($d deref) [stratCont, stratUCont']
-        win          <- $r2 bor winCont winUCont
+        
+        stratUCont'   <- cpreUCont' ops si rd labelPreds cont (bnot target)
+        stratUCont    <- $r2 band consistentMinusCULUCont stratUCont'
+        winUCont      <- $r1 (bexists _labelCube) stratUCont
+        mapM ($d deref) [stratUCont']
+        win           <- $r2 bor winCont winUCont
         mapM ($d deref) [winCont, winUCont]
         return (win, stratUCont)
 
