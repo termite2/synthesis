@@ -1293,6 +1293,13 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                 labelPreds <- lift2 $ gets $ _labelVars . _symbolTable
                 let lp = map (sel1 &&& sel3) $ Map.elems labelPreds
 
+                c <- lift3 $ do
+                    eqc <- $r1 (bexists _labelCube) consistentPlusCULCont
+                    equ <- $r1 (bexists _labelCube) consistentPlusCULUCont
+                    c   <- $r2 band eqc equ
+                    mapM ($d deref) [eqc, equ]
+                    return c
+
                 flip (maybe (return ())) maxIterations $ \val -> when (itr >= val) $ do
                     lift4 $ traceST "Max number of iterations exceeded."
                     exit3 (Nothing, (si, rs, rd, lp, lastWin, lastUnder))
@@ -1302,6 +1309,10 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
 
                 (rd, winRegion) <- flip (if' (act == RepeatAll || act == RepeatGFP)) (return (rd, lastWin)) $ do
                     winRegion <- lift3 $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin lastUnder
+
+                    l <- lift4 $ leqUnless winRegion lastWin (bnot c)
+                    when (not l) (error "Sanity check 1")
+
                     lift3 $ $d deref lastWin
                     lift4 $ traceST ""
                     (rd, winning) <- lift3 $ refineInit ops ts rs rd syi winRegion
@@ -1318,6 +1329,10 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                 --their conjunction?
                 (rd, winRegionUnder) <- flip (if' (act == RepeatAll || act == RepeatLFP)) (return (rd, lastUnder)) $ do
                     winRegionUnder <- lift3 $ solveBuchi (cPreUnder ops si rs rd hasOutgoings lp) ops rs winRegion lastUnder
+
+                    l <- lift4 $ leqUnless lastUnder winRegionUnder (bnot c)
+                    when (not l) (error "Sanity check 2")
+
                     lift3 $ $d deref lastUnder
                     lift4 $ traceST ""
                     (rd, winning) <- lift3 $ refineInit ops ts rs rd syi winRegionUnder
@@ -1328,6 +1343,10 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                             exit (Just True, (si, rs, rd, lp, winRegion, winRegionUnder))
                         False -> do
                             return (rd, winRegionUnder)
+
+                l <- lift4 $ leqUnless winRegionUnder winRegion (bnot c)
+                when (not l) (error "Sanity check 3")
+                lift3 $ $d deref c
                 
                 --Alive: winRegion, rd, rs, hasOutgoings, winRegionUnder
                 --TODO: is it correct to use the same type of consistency
