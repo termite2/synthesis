@@ -259,16 +259,8 @@ cpre'' :: (MonadResource (DDNode s u) (ST s) t) =>
           t (ST s) (DDNode s u)
 cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds cc cu target = do
     stratCont    <- cpreCont' ops si rd labelPreds cont hasOutgoingsCont target
-    winCont'     <- $r2 (andAbstract _labelCube) cc stratCont
+    winCont      <- $r2 (andAbstract _labelCube) cc stratCont
     $d deref stratCont
-    hasOutgoingsC <- $r2 band hasOutgoingsCont cont
-    en'          <- $r2 band hasOutgoingsC cc
-    $d deref hasOutgoingsC
-    en           <- $r1 (bexists _labelCube) en'
-    $d deref en'
-    winCont      <- $r2 bimp en winCont'
-    $d deref winCont'
-    $d deref en
 
     stratUCont   <- cpreUCont' ops si rd labelPreds cont target
     winUCont     <- liftM bnot $ $r2 (andAbstract _labelCube) cu stratUCont
@@ -1077,7 +1069,7 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
         $d deref hasOutgoingsC
         en            <- $r1 (bexists _labelCube) en'
         $d deref en'
-        winCont       <- liftM bnot $ $r2 bimp en winCont'
+        winCont       <- liftM bnot $ $r2 bimp btrue winCont'
         $d deref winCont'
         $d deref en
         
