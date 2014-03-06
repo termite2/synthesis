@@ -1368,9 +1368,11 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                         lift4 $ traceST $ show act
                         refineLoop' (itr+1) act rd winRegion winRegionUnder
 
+--An initial state that wasnt may winning was discovered. We therefore must provide a spoiling strategy from any not may winning (== must losing) state.
 cex :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp st -> t (ST s) [[DDNode s u]]
 cex RefineInfo{..} = counterExample op si rs rd lp wo
 
+--This is pretty meaningless
 cexLiberalEnv :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp st -> t (ST s) [[DDNode s u]]
 cexLiberalEnv RefineInfo{..} = counterExampleLiberalEnv op si rs rd lp wo
 
