@@ -74,7 +74,7 @@ data Abstractor s u sp lp st = Abstractor {
     contAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) (DDNode s u),
     initialVars             :: [(sp, Int, Maybe String)],
     --Return type is: (variable updates, initial inconsistency relation, next state inconsistency relation that will not be refined)
-    updateAbs               :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) ([DDNode s u], DDNode s u, DDNode s u),
+    updateAbs               :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) ([DDNode s u], DDNode s u),
     stateLabelConstraintAbs :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) (DDNode s u)
 }
 
@@ -636,7 +636,7 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     --get the abstract update functions for the goal predicates and variables
     let toUpdate = nub $ _allocatedStateVars newVarsGoals ++ _allocatedStateVars newVarsFairs ++ _allocatedStateVars newVarsCont ++ zip (map sel1 initialVars) ivs
     liftST  $ traceST $ "Initial transition relation state vars: \n" ++ (intercalate "\n" $ map (('\t' :) . show . fst) $ toUpdate)
-    (updateExprs', inconsistent, cons) <- hoistAbs $ doUpdate ops (updateAbs toUpdate)
+    (updateExprs', inconsistent) <- hoistAbs $ doUpdate ops (updateAbs toUpdate)
     liftBDD $ mapM ($r . return) updateExprs'
     outcomeCube <- lift $ gets $ _outcomeCube . _sections
     updateExprs <- liftBDD $ mapM ($r . bexists outcomeCube) updateExprs'
@@ -647,14 +647,13 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     liftST $ traceST $ "Number of transition partitions: " ++ show (length groups)
 
     --create the consistency constraints
+    --TODO: should I also conjunct bnot inconsistent with consistentMinus?
     let consistentPlusCULCont  = bnot inconsistent
         consistentPlusCULUCont = bnot inconsistent
     liftBDD $ $rp ref consistentPlusCULCont
     liftBDD $ $rp ref consistentPlusCULUCont
     let inconsistentInit = bfalse
     liftBDD $ $rp ref inconsistentInit
-    let consistentNoRefine = cons
-    liftBDD $ $rp ref consistentNoRefine
 
     --compute the initial consistentMinus being as liberal as possible
     labelPreds <- liftIST $ gets $ _labelVars . _symbolTable
@@ -703,9 +702,8 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
     labelPredsPreUpdate  <- liftIST $ gets $ _labelVars . _symbolTable
 
     --compute the update functions
-    (updateExprs', inconsistent, cons)   <- hoistAbs $ doUpdate ops (updateAbs _allocatedStateVars)
+    (updateExprs', inconsistent)   <- hoistAbs $ doUpdate ops (updateAbs _allocatedStateVars)
     liftBDD $ $rp ref inconsistent
-    liftBDD $ $rp ref cons
     liftBDD $ mapM ($r . return) updateExprs'
     outcomeCube <- liftIST $ gets $ _outcomeCube . _sections
     updateExprs  <- liftBDD $ mapM ($r . bexists outcomeCube) updateExprs'
@@ -733,10 +731,6 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
     liftBDD $ $d deref inconsistent
     liftBDD $ $d deref consistentPlusCULUCont
 
-    consistentNoRefine' <- liftBDD $ $r2 band consistentNoRefine cons
-    liftBDD $ $d deref cons
-    liftBDD $ $d deref consistentNoRefine
-
     return rd {
         --TODO does this order matter?
         trans  = Data.List.init trans ++ groups,
@@ -744,7 +738,6 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
         consistentMinusCULUCont = consistentMinusCULUCont',
         consistentPlusCULCont = consistentPlusCULCont',
         consistentPlusCULUCont = consistentPlusCULUCont',
-        consistentNoRefine = consistentNoRefine',
         numStateRef = numStateRef + 1
     }
 
