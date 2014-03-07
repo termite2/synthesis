@@ -74,13 +74,11 @@ data Abstractor s u sp lp st = Abstractor {
     contAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) (DDNode s u),
     initialVars             :: [(sp, Int, Maybe String)],
     --Return type is: (variable updates, initial inconsistency relation, next state inconsistency relation that will not be refined)
-    updateAbs               :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) ([DDNode s u], DDNode s u),
-    stateLabelConstraintAbs :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) (DDNode s u)
+    updateAbs               :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) ([DDNode s u], DDNode s u)
 }
 
 -- ===Data structures for keeping track of abstraction state===
 data RefineStatic s u = RefineStatic {
-    slRel :: DDNode s u,
     cont  :: DDNode s u,
     goal  :: [DDNode s u],
     fair  :: [DDNode s u],
@@ -89,7 +87,6 @@ data RefineStatic s u = RefineStatic {
 
 derefStatic :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> RefineStatic s u -> t (ST s) ()
 derefStatic Ops{..} RefineStatic{..} = do
-    $d deref slRel
     $d deref cont
     mapM ($d deref) goal
     mapM ($d deref) fair
@@ -626,10 +623,6 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     (contExpr, newVarsCont) <- hoistAbs $ doStateLabel ops contAbs
     liftBDD $ $r $ return contExpr
     liftST  $ check "After compiling controllable" ops
-    --abstract the stateLabelConstraint 
-    stateLabelExpr <- hoistAbs $ doUpdate ops stateLabelConstraintAbs
-    liftBDD $ $r $ return stateLabelExpr
-    liftST  $ check "After compiling stateLabelConstraint" ops
 
     ivs <- liftAS $ sequence $ map (uncurryN $ getStaticVar ops) initialVars
 
@@ -674,7 +667,6 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
             ..
         }
         rs = RefineStatic {
-            slRel = stateLabelExpr,
             goal  = goalExprs,
             fair  = fairExprs,
             init  = initExpr,
