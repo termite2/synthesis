@@ -14,22 +14,52 @@ import Control.Monad.ST
 
 import BddRecord
 import Interface
+import BddUtil
+
+faXnor :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+faXnor Ops{..} cube x y = liftM bnot $ xorExistAbstract cube x y
+
+genPair :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u, DDNode s u))
+genPair ops@Ops{..} x y rel = case rel == bfalse of
+    True  -> return Nothing
+    False -> do
+        xOnly <- bexists y rel
+        concX <- largePrime ops xOnly
+        img   <- andAbstract x rel concX
+        genX  <- faXnor ops y rel img
+        return $ Just (genX, img)
+
+data IteratorM m a = 
+      Empty
+    | Item  a (m (IteratorM m a))
+
+instance Functor m => Functor (IteratorM m) where
+    fmap _ Empty      = Empty
+    fmap f (Item x r) = Item (f x) $ fmap (fmap f) r
+
+enumerate :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (IteratorM (ST s) (DDNode s u, DDNode s u))
+enumerate ops@Ops{..} x y rel = do
+    pair <- genPair ops x y rel 
+    case pair of
+        Nothing               -> return Empty
+        Just (pair@(genX, _)) -> do
+            restricted <- band rel (bnot genX)
+            return $ Item pair (enumerate ops x y restricted)
 
 data SynthData s u = SynthData {
     sections                  :: SectionInfo s u,
     transitions               :: [(DDNode s u, DDNode s u)],
+    combinedTrel              :: DDNode s u,
     uncontrollableTransitions :: [(DDNode s u, DDNode s u)]
 }
 
-data IteratorM m a = IteratorM {
-    item :: a,
-    next :: m (IteratorM m a)
-}
-
 --Given a state and a strategy, create an iterator that lists all available winning lables
-availableLabels :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (IteratorM (ST s) (DDNode s u))
-availableLabels Ops{..} SynthData{..} strategy stateSet = do
-    undefined
+availableLabels :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (IteratorM (ST s) (DDNode s u, DDNode s u))
+availableLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy stateSet = do
+    yVars            <- conj ops [_trackedCube, _untrackedCube, _nextCube]
+    avlWinningLabels <- andAbstract _trackedCube strategy stateSet
+    rel              <- conj ops [combinedTrel, stateSet, avlWinningLabels]
+    enumerate ops _labelCube yVars rel
 
 --Pick any winning label 
 pickLabel :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u))
