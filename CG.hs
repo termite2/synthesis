@@ -5,7 +5,8 @@ module CG (
     availableLabels,
     pickLabel,
     ifCondition,
-    applyLabel
+    applyLabel,
+    applyUncontrollableTC
     ) where
 
 import Control.Monad
@@ -75,6 +76,9 @@ applyTrel Ops{..} SynthData{..} trel stateSet = do
     deref combined
 
     return res
+
+applyUncontrollableTC :: Ops s u -> SynthData s u -> DDNode s u -> ST s (DDNode s u)
+applyUncontrollableTC ops sd@SynthData{..} stateSet = fixedPoint ops (applyTrel ops sd uncontrollableTransitions) stateSet
 
 --Given a label and a state, apply the label and then the transitive closure of uncontrollable transitions to compute the set of possible next states
 applyLabel :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
