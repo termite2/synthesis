@@ -50,7 +50,7 @@ data SynthData s u = SynthData {
     sections                  :: SectionInfo s u,
     transitions               :: [(DDNode s u, DDNode s u)],
     combinedTrel              :: DDNode s u,
-    uncontrollableTransitions :: [(DDNode s u, DDNode s u)]
+    cont                      :: DDNode s u
 }
 
 --Given a state and a strategy, create an iterator that lists all available winning lables
@@ -73,8 +73,12 @@ pickLabel Ops{..} SynthData{..} strategy stateSet = do
 
 --Generate a bdd X over state variables such that (state & X) has some label available from all of it
 ifCondition :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u))
-ifCondition Ops{..} SynthData{..} strategy stateSet = do
-    undefined
+ifCondition Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy stateSet = undefined
+    where
+    labelCondition label = do
+        avlStates <- andAbstract _labelCube strategy label 
+        cond      <- liCompact avlStates stateSet
+        return cond
 
 fixedPoint :: Ops s u -> (DDNode s u -> ST s (DDNode s u)) -> DDNode s u -> ST s (DDNode s u)
 fixedPoint ops@Ops{..} func start = do
@@ -86,13 +90,15 @@ fixedPoint ops@Ops{..} func start = do
 
 forLoop start list func  = foldM func start list
 
-applyTrel :: Ops s u -> SynthData s u -> [(DDNode s u, DDNode s u)] -> DDNode s u -> ST s (DDNode s u)
-applyTrel Ops{..} SynthData{..} trel stateSet = do
+applyTrel :: Ops s u -> SynthData s u -> [(DDNode s u, DDNode s u)] -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+applyTrel Ops{..} SynthData{..} trel constraint stateSet = do
     let SectionInfo{..} = sections
 
     combined <- forLoop bfalse trel $ \accum (cube, trel) -> do
-        constrained <- band trel stateSet
-        accum'      <- band constrained accum
+        constrainedTrel <- band trel constraint
+        constrained     <- band constrainedTrel stateSet
+        deref constrainedTrel
+        accum'          <- band constrained accum
         deref constrained
         deref accum
         return accum'
@@ -108,12 +114,12 @@ applyTrel Ops{..} SynthData{..} trel stateSet = do
     return res
 
 applyUncontrollableTC :: Ops s u -> SynthData s u -> DDNode s u -> ST s (DDNode s u)
-applyUncontrollableTC ops sd@SynthData{..} stateSet = fixedPoint ops (applyTrel ops sd uncontrollableTransitions) stateSet
+applyUncontrollableTC ops@Ops{..} sd@SynthData{..} stateSet = fixedPoint ops (applyTrel ops sd transitions (bnot cont)) stateSet
 
 --Given a label and a state, apply the label and then the transitive closure of uncontrollable transitions to compute the set of possible next states
 applyLabel :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 applyLabel ops@Ops{..} sd@SynthData{..} stateSet label = do
-    afterControllableAction    <- applyTrel ops sd transitions stateSet
-    afterUncontrollableActions <- fixedPoint ops (applyTrel ops sd uncontrollableTransitions ) afterControllableAction
+    afterControllableAction    <- applyTrel ops sd transitions btrue stateSet
+    afterUncontrollableActions <- fixedPoint ops (applyTrel ops sd transitions (bnot cont)) afterControllableAction
     return afterControllableAction
 
