@@ -209,12 +209,10 @@ groupForUnsatCore func svs = map (uncurry reconstruct) $ aggregate svs
         where
         funcy idx = maybe False snd $ find ((==idx) . fst) list 
 
-setupManager :: ST s (STDdManager s u)
-setupManager = do
-    m <- cuddInitDefaults
+setupManager :: STDdManager s u -> ST s ()
+setupManager m = void $ do
     cuddAutodynEnable m CuddReorderGroupSift
     regStdPreReordHook m
     regStdPostReordHook m
     cuddEnableReorderingReporting m
-    return m
 
