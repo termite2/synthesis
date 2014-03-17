@@ -44,6 +44,13 @@ iMapM func (Item x r) = do
     rest <- r
     return $ Item this $ iMapM func rest
 
+iFoldM :: Monad m => (accum -> item -> m accum) -> accum -> IteratorM m item -> m accum
+iFoldM func accum Empty      = return accum
+iFoldM func accum (Item x r) = do
+    accum' <- func accum x
+    r <- r
+    iFoldM func accum' r
+
 enumerate :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (IteratorM (ST s) (DDNode s u, DDNode s u))
 enumerate ops@Ops{..} x y rel = do
     pair <- genPair ops x y rel 
@@ -86,12 +93,21 @@ pickLabel Ops{..} SynthData{..} strategy stateSet = do
 
 --Generate a bdd X over state variables such that (state & X) has some label available from all of it
 ifCondition :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u))
-ifCondition Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy stateSet = undefined
+ifCondition ops@Ops{..} sd@SynthData{sections = SectionInfo{..}, ..} strategy stateSet = do
+    labelIterator <- availableLabels ops sd strategy stateSet
+    case labelIterator of
+        Empty                -> return Nothing
+        Item (label, cond) r -> do
+            s <- dagSize cond
+            r <- r
+            res <- iFoldM func (cond, s) r
+            return $ Just $ fst res
     where
-    labelCondition label = do
-        avlStates <- andAbstract _labelCube strategy label 
-        cond      <- liCompact avlStates stateSet
-        return cond
+    func accum@(bestCond, bestSize) (label, cond) = do
+        res <- dagSize cond
+        case res < bestSize of 
+            True  -> return (cond, res)
+            False -> return accum
 
 fixedPoint :: Ops s u -> (DDNode s u -> ST s (DDNode s u)) -> DDNode s u -> ST s (DDNode s u)
 fixedPoint ops@Ops{..} func start = do
