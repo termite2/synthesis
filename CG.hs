@@ -37,6 +37,13 @@ instance Functor m => Functor (IteratorM m) where
     fmap _ Empty      = Empty
     fmap f (Item x r) = Item (f x) $ fmap (fmap f) r
 
+iMapM :: Monad m => (a -> m b) -> IteratorM m a -> m (IteratorM m b)
+iMapM func Empty      = return Empty
+iMapM func (Item x r) = do
+    this <- func x
+    rest <- r
+    return $ Item this $ iMapM func rest
+
 enumerate :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (IteratorM (ST s) (DDNode s u, DDNode s u))
 enumerate ops@Ops{..} x y rel = do
     pair <- genPair ops x y rel 
@@ -53,13 +60,19 @@ data SynthData s u = SynthData {
     cont                      :: DDNode s u
 }
 
---Given a state and a strategy, create an iterator that lists all available winning lables
+--Given a state and a strategy, create an iterator that lists pairs of (label, condition over state variables for this label to be available)
 availableLabels :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (IteratorM (ST s) (DDNode s u, DDNode s u))
 availableLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy stateSet = do
     yVars            <- conj ops [_trackedCube, _untrackedCube, _nextCube]
     avlWinningLabels <- andAbstract _trackedCube strategy stateSet
     rel              <- conj ops [combinedTrel, stateSet, avlWinningLabels]
-    enumerate ops _labelCube yVars rel
+    res              <- enumerate ops _labelCube yVars rel
+    iMapM func res
+    where func (label, nextState) = do
+            deref nextState
+            avlStates <- andAbstract _labelCube strategy label 
+            cond      <- liCompact avlStates stateSet
+            return (label, cond)
 
 --Pick any winning label 
 pickLabel :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u))
