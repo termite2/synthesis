@@ -71,15 +71,15 @@ concPart ops@Ops{..} concVars concCube restCube node = do
         return (mt, rest)
 
 primeCover :: Ops s u -> DDNode s u -> ST s [DDNode s u]
-primeCover Ops{..} node = do
-    ref node
-    primeCover' node
+primeCover Ops{..} nodeStart = do
+    ref nodeStart
+    primeCover' nodeStart
     where
     primeCover' node
         | node == bfalse = return []
         | otherwise = do
             (lc, _) <- largestCube node
-            pm <- makePrime lc node
+            pm <- makePrime lc nodeStart
             deref lc
             next <- node .& bnot pm
             deref node
