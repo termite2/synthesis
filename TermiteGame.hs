@@ -868,7 +868,7 @@ strategy :: forall s u t. (MonadResource (DDNode s u) (ST s) t) =>
             RefineDynamic s u -> 
             Lab s u -> 
             DDNode s u -> 
-            t (ST s) [[DDNode s u]]
+            t (ST s) ([[DDNode s u]], [[DDNode s u]])
 strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
     lift $ traceST "* Computing strategy"
     hasOutgoings <- doHasOutgoings ops trans
@@ -878,7 +878,7 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         $rp ref bfalse
         sequence $ replicate (length fair) ($r $ return bfalse)
         --Reachabiliy least fixedpoint
-        res <- fixedPoint2R ops bfalse (repeat bfalse) $ \soFar strats -> do 
+        res <- fixedPoint2R ops bfalse (repeat bfalse, []) $ \soFar (strats, regions) -> do 
             soFarOrWinAndGoal <- $r2 bor soFar winAndGoal
             $rp ref bfalse
             --For each fair
@@ -899,16 +899,17 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
                 return (win, strats)
             $d deref soFarOrWinAndGoal
             strats <- zipWithM (combineStrats soFar) strats strats'
-            return (res, strats)
+            return (res, (strats, res : regions))
         $d deref winAndGoal
         return res
     $d deref hasOutgoings
-    let (wins, strats) = unzip res
+    let (wins, strats') = unzip res
+        (strats, regions) = unzip strats'
     win' <- $r $ conj ops wins
     mapM ($d deref) wins
     $d deref win'
     when (win' /= win) (lift $ traceST "Winning regions are not equal in strategy generation")
-    return strats
+    return (strats, regions)
     where
     combineStrats :: (MonadResource (DDNode s u) (ST s) t) => DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
     combineStrats prevWin oldC newC = do
@@ -1353,6 +1354,6 @@ cex RefineInfo{..} = counterExample op si rs rd lp wo
 cexLiberalEnv :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp st -> t (ST s) [[DDNode s u]]
 cexLiberalEnv RefineInfo{..} = counterExampleLiberalEnv op si rs rd lp wo
 
-strat :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp st -> t (ST s) [[DDNode s u]]
+strat :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp st -> t (ST s) ([[DDNode s u]], [[DDNode s u]])
 strat RefineInfo{..} = strategy op si rs rd lp wu
 
