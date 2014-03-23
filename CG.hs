@@ -11,10 +11,15 @@ module CG (
 
 import Control.Monad
 import Control.Monad.ST
+import Control.Arrow
+import Data.Tuple.All
+import qualified Data.Map as Map
+import Control.Monad.Trans.Identity
 
 import BddRecord
 import Interface
 import BddUtil
+import TermiteGame
 
 faXnor :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 faXnor Ops{..} cube x y = liftM bnot $ xorExistAbstract cube x y
@@ -64,7 +69,9 @@ data SynthData s u = SynthData {
     sections                  :: SectionInfo s u,
     transitions               :: [(DDNode s u, DDNode s u)],
     combinedTrel              :: DDNode s u,
-    cont                      :: DDNode s u
+    cont                      :: DDNode s u,
+    rd                        :: RefineDynamic s u,
+    lp                        :: Lab s u
 }
 
 --Given a state and a strategy, create an iterator that lists pairs of (label, condition over state variables for this label to be available)
@@ -90,6 +97,47 @@ pickLabel Ops{..} SynthData{..} strategy stateSet = do
     case act == bfalse of
         True  -> return Nothing
         False -> return $ Just act
+
+foldMF init list func = foldM func init list
+
+--The list of DDNodes is the set of winning regions at each distance from the goal. They are inclusive.
+--The head of the list is the furthest from the goal. The sets monotonically shrink.
+--assumes stateSet is not entirely contained within the goal
+pickLabel2 :: Ops s u -> SynthData s u -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u))
+pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
+
+    let findSets (x:y:rest) = do
+            res <- stateSet `leq` y
+            case res of
+                True  -> return (y, x)
+                False -> findSets (y : rest)
+        findSets []         = error "findSets - pickLabel2"
+
+    (furthestSet, nextFurthestSet) <- findSets (goal : reverse regions)
+    
+    --This includes all states at smaller distances as well. Compute the labels that take us into that set.
+    --Assumes hasOutgoing is btrue
+    labelsNotBackwards <- runIdentityT $ cpreCont' ops sections rd lp cont btrue furthestSet
+    deref furthestSet
+    
+    --Compute the set of strategy labels available in at least one state in stateSet at the maximum distance
+    atMaxDist       <- band stateSet (bnot nextFurthestSet)
+    stratAndState   <- band atMaxDist strategy
+    labelsSomewhere' <- bexists (_trackedCube sections) stratAndState
+    --TODO: this is prob not correct 
+    labelsSomewhere <- bexists (_untrackedCube sections) labelsSomewhere'
+    deref atMaxDist
+    deref stratAndState
+    deref nextFurthestSet
+    
+    --Conjunct these
+    result <- band labelsSomewhere labelsNotBackwards
+    deref labelsSomewhere
+    deref labelsNotBackwards
+
+    case result == bfalse of
+        True  -> return Nothing
+        False -> return $ Just result
 
 --Generate a bdd X over state variables such that (state & X) has some label available from all of it
 ifCondition :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u))

@@ -7,7 +7,9 @@ module TermiteGame (
     RefineInfo(..),
     cex,
     cexLiberalEnv,
-    strat
+    strat,
+    cpreCont',
+    Lab
     ) where
 
 import Control.Monad.ST
