@@ -92,8 +92,9 @@ availableLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy s
 pickLabel :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u))
 pickLabel Ops{..} SynthData{..} strategy stateSet = do
     let SectionInfo{..} = sections
+    cube <- band _trackedCube _untrackedCube
     x   <- bor (bnot stateSet) strategy
-    act <- bforall _trackedCube x
+    act <- bforall cube x
     case act == bfalse of
         True  -> return Nothing
         False -> return $ Just act
