@@ -66,12 +66,13 @@ enumerate ops@Ops{..} x y rel = do
             return $ Item pair (enumerate ops x y restricted)
 
 data SynthData s u = SynthData {
-    sections                  :: SectionInfo s u,
-    transitions               :: [(DDNode s u, DDNode s u)],
-    combinedTrel              :: DDNode s u,
-    cont                      :: DDNode s u,
-    rd                        :: RefineDynamic s u,
-    lp                        :: Lab s u
+    sections     :: SectionInfo s u,
+    transitions  :: [(DDNode s u, DDNode s u)],
+    combinedTrel :: DDNode s u,
+    cont         :: DDNode s u,
+    rd           :: RefineDynamic s u,
+    lp           :: Lab s u,
+    cPlus        :: DDNode s u
 }
 
 --Given a state and a strategy, create an iterator that lists pairs of (label, condition over state variables for this label to be available)
@@ -89,12 +90,14 @@ availableLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy s
             return (label, cond)
 
 --Pick any winning label 
+--The returned label is part of the strategy for every state and consistent substate in the stateSet argument
 pickLabel :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u))
 pickLabel Ops{..} SynthData{..} strategy stateSet = do
     let SectionInfo{..} = sections
     cube <- band _trackedCube _untrackedCube
-    x   <- bor (bnot stateSet) strategy
-    act <- bforall cube x
+    x    <- bor (bnot stateSet) strategy
+    cons <- bexists _labelCube cPlus
+    act  <- liftM bnot $ andAbstract cube cons (bnot x)
     case act == bfalse of
         True  -> return Nothing
         False -> return $ Just act
