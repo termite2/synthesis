@@ -1,5 +1,4 @@
 module RefineUtil (
-    traceST,
     singleton,
     findM,
     pairToList,
@@ -10,10 +9,6 @@ module RefineUtil (
 import Control.Monad.ST
 import qualified Data.Map as Map
 import Data.Map (Map)
-
-{-# NOINLINE traceST #-}
-traceST :: String -> ST s ()
-traceST = unsafeIOToST . putStrLn
 
 singleton x = [x]
 
