@@ -4,6 +4,7 @@ module CG (
     SynthData(..),
     availableLabels,
     pickLabel,
+    pickLabel2,
     ifCondition,
     applyLabel,
     applyUncontrollableTC
@@ -68,7 +69,6 @@ enumerate ops@Ops{..} x y rel = do
 data SynthData s u = SynthData {
     sections     :: SectionInfo s u,
     transitions  :: [(DDNode s u, DDNode s u)],
-    combinedTrel :: DDNode s u,
     cont         :: DDNode s u,
     rd           :: RefineDynamic s u,
     lp           :: Lab s u
@@ -79,7 +79,7 @@ availableLabels :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s 
 availableLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy stateSet = do
     yVars            <- conj ops [_trackedCube, _untrackedCube, _nextCube]
     avlWinningLabels <- andAbstract _trackedCube strategy stateSet
-    rel              <- conj ops [combinedTrel, stateSet, avlWinningLabels]
+    rel              <- conj ops (map snd transitions ++ [stateSet, avlWinningLabels])
     res              <- enumerate ops _labelCube yVars rel
     iMapM func res
     where func (label, nextState) = do
@@ -201,5 +201,5 @@ applyLabel :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (DDNo
 applyLabel ops@Ops{..} sd@SynthData{..} stateSet label = do
     afterControllableAction    <- applyTrel ops sd transitions btrue stateSet
     afterUncontrollableActions <- fixedPoint ops (applyTrel ops sd transitions (bnot cont)) afterControllableAction
-    return afterControllableAction
+    return afterUncontrollableActions
 
