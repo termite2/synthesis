@@ -71,8 +71,7 @@ data SynthData s u = SynthData {
     combinedTrel :: DDNode s u,
     cont         :: DDNode s u,
     rd           :: RefineDynamic s u,
-    lp           :: Lab s u,
-    cPlus        :: DDNode s u
+    lp           :: Lab s u
 }
 
 --Given a state and a strategy, create an iterator that lists pairs of (label, condition over state variables for this label to be available)
@@ -92,11 +91,11 @@ availableLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy s
 --Pick any winning label 
 --The returned label is part of the strategy for every state and consistent substate in the stateSet argument
 pickLabel :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u))
-pickLabel Ops{..} SynthData{..} strategy stateSet = do
+pickLabel Ops{..} SynthData{rd = RefineDynamic{..}, ..} strategy stateSet = do
     let SectionInfo{..} = sections
     cube <- band _trackedCube _untrackedCube
     x    <- bor (bnot stateSet) strategy
-    cons <- bexists _labelCube cPlus
+    cons <- bexists _labelCube consistentPlusCULCont
     act  <- liftM bnot $ andAbstract cube cons (bnot x)
     case act == bfalse of
         True  -> return Nothing
