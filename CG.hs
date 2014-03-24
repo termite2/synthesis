@@ -165,8 +165,8 @@ fixedPoint ops@Ops{..} func start = do
     res <- func start
     deref start
     case (res == start) of
-        True  -> return start
-        False -> fixedPoint ops func start
+        True  -> return res
+        False -> fixedPoint ops func res
 
 forLoop start list func  = foldM func start list
 
@@ -194,12 +194,15 @@ applyTrel Ops{..} SynthData{..} trel constraint stateSet = do
     return res
 
 applyUncontrollableTC :: Ops s u -> SynthData s u -> DDNode s u -> ST s (DDNode s u)
-applyUncontrollableTC ops@Ops{..} sd@SynthData{..} stateSet = fixedPoint ops (applyTrel ops sd transitions (bnot cont)) stateSet
+applyUncontrollableTC ops@Ops{..} sd@SynthData{..} stateSet = do
+    ref stateSet
+    fixedPoint ops (applyTrel ops sd transitions (bnot cont)) stateSet
 
 --Given a label and a state, apply the label and then the transitive closure of uncontrollable transitions to compute the set of possible next states
 applyLabel :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 applyLabel ops@Ops{..} sd@SynthData{..} stateSet label = do
     afterControllableAction    <- applyTrel ops sd transitions btrue stateSet
+    ref afterControllableAction
     afterUncontrollableActions <- fixedPoint ops (applyTrel ops sd transitions (bnot cont)) afterControllableAction
     return afterUncontrollableActions
 
