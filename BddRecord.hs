@@ -31,6 +31,7 @@ data Ops s u = Ops {
     leqUnless                                 :: DDNode s u -> DDNode s u -> DDNode s u -> ST s Bool,
     makePrime                                 :: DDNode s u -> DDNode s u -> ST s (DDNode s u),
     largestCube                               :: DDNode s u -> ST s (DDNode s u, Int),
+    support                                   :: DDNode s u -> ST s (DDNode s u),
     supportIndices                            :: DDNode s u -> ST s [Int],
     ithVar                                    :: Int -> ST s (DDNode s u),
     varAtLevel                                :: Int -> ST s (DDNode s u),
@@ -83,6 +84,7 @@ constructOps m = Ops {..}
     bexists                = flip $ C.bexists   m
     andAbstract c f g      = C.andAbstract      m f g c
     xorExistAbstract c f g = C.xorExistAbstract m f g c
+    support                = C.support          m
     supportIndices         = C.supportIndices   m
     ithVar                 = C.bvar             m
     varAtLevel             = C.newVarAtLevel    m
