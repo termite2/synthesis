@@ -160,13 +160,13 @@ ifCondition ops@Ops{..} sd@SynthData{sections = SectionInfo{..}, ..} strategy st
             True  -> return (cond, res)
             False -> return accum
 
-fixedPoint :: Ops s u -> (DDNode s u -> ST s (DDNode s u)) -> DDNode s u -> ST s (DDNode s u)
-fixedPoint ops@Ops{..} func start = do
+fixedPoint :: Ops s u -> DDNode s u -> (DDNode s u -> ST s (DDNode s u)) -> ST s (DDNode s u)
+fixedPoint ops@Ops{..} start func = do
     res <- func start
     deref start
     case (res == start) of
         True  -> return res
-        False -> fixedPoint ops func res
+        False -> fixedPoint ops res func
 
 forLoop start list func  = foldM func start list
 
@@ -174,7 +174,7 @@ applyTrel :: Ops s u -> SynthData s u -> [(DDNode s u, DDNode s u)] -> DDNode s 
 applyTrel Ops{..} SynthData{..} trel constraint stateSet = do
     let SectionInfo{..} = sections
 
-    combined <- forLoop bfalse trel $ \accum (cube, trel) -> do
+    combined <- forLoop btrue trel $ \accum (cube, trel) -> do
         constrainedTrel <- band trel constraint
         constrained     <- band constrainedTrel stateSet
         deref constrainedTrel
@@ -191,18 +191,23 @@ applyTrel Ops{..} SynthData{..} trel constraint stateSet = do
     deref sul
     deref combined
 
+    res <- mapVars res
+
     return res
 
 applyUncontrollableTC :: Ops s u -> SynthData s u -> DDNode s u -> ST s (DDNode s u)
 applyUncontrollableTC ops@Ops{..} sd@SynthData{..} stateSet = do
     ref stateSet
-    fixedPoint ops (applyTrel ops sd transitions (bnot cont)) stateSet
+    fixedPoint ops stateSet $ \set -> do
+        res      <- applyTrel ops sd transitions (bnot cont) set
+        combined <- bor res stateSet
+        return combined
 
 --Given a label and a state, apply the label and then the transitive closure of uncontrollable transitions to compute the set of possible next states
 applyLabel :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 applyLabel ops@Ops{..} sd@SynthData{..} stateSet label = do
     afterControllableAction    <- applyTrel ops sd transitions btrue stateSet
     ref afterControllableAction
-    afterUncontrollableActions <- fixedPoint ops (applyTrel ops sd transitions (bnot cont)) afterControllableAction
+    afterUncontrollableActions <- applyUncontrollableTC ops sd afterControllableAction
     return afterUncontrollableActions
 
