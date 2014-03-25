@@ -79,8 +79,7 @@ data SynthData s u = SynthData {
 availableLabels :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (IteratorM (ST s) (DDNode s u, DDNode s u))
 availableLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy stateSet = do
     yVars            <- conj ops [_trackedCube, _untrackedCube, _nextCube]
-    --TODO abstract all untracked as well
-    avlWinningLabels <- andAbstract _trackedCube strategy stateSet
+    avlWinningLabels <- andAbstract yVars strategy stateSet
     rel              <- conj ops (map snd transitions ++ [stateSet, avlWinningLabels])
     res              <- enumerate ops _labelCube yVars rel
     iMapM func res
