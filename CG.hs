@@ -25,16 +25,6 @@ import TermiteGame
 faXnor :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 faXnor Ops{..} cube x y = liftM bnot $ xorExistAbstract cube x y
 
-genPair :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u, DDNode s u))
-genPair ops@Ops{..} x y rel = case rel == bfalse of
-    True  -> return Nothing
-    False -> do
-        xOnly <- bexists y rel
-        concX <- largePrime ops xOnly
-        img   <- andAbstract x rel concX
-        genX  <- faXnor ops y rel img
-        return $ Just (genX, img)
-
 data IteratorM m a = 
       Empty
     | Item  a (m (IteratorM m a))
@@ -57,6 +47,17 @@ iFoldM func accum (Item x r) = do
     r <- r
     iFoldM func accum' r
 
+genPair :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u, DDNode s u))
+genPair ops@Ops{..} x y rel = case rel == bfalse of
+    True  -> return Nothing
+    False -> do
+        xOnly <- bexists y rel
+        --TODO: must assign all vars
+        concX <- largePrime ops xOnly
+        img   <- andAbstract x rel concX
+        genX  <- faXnor ops y rel img
+        return $ Just (genX, img)
+
 enumerate :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (IteratorM (ST s) (DDNode s u, DDNode s u))
 enumerate ops@Ops{..} x y rel = do
     pair <- genPair ops x y rel 
@@ -78,6 +79,7 @@ data SynthData s u = SynthData {
 availableLabels :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (IteratorM (ST s) (DDNode s u, DDNode s u))
 availableLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy stateSet = do
     yVars            <- conj ops [_trackedCube, _untrackedCube, _nextCube]
+    --TODO abstract all untracked as well
     avlWinningLabels <- andAbstract _trackedCube strategy stateSet
     rel              <- conj ops (map snd transitions ++ [stateSet, avlWinningLabels])
     res              <- enumerate ops _labelCube yVars rel
