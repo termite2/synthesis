@@ -51,11 +51,15 @@ genPair :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (Maybe (DDN
 genPair ops@Ops{..} x y rel = case rel == bfalse of
     True  -> return Nothing
     False -> do
-        xOnly <- bexists y rel
-        --TODO: must assign all vars
-        concX <- largePrime ops xOnly
-        img   <- andAbstract x rel concX
-        genX  <- faXnor ops y rel img
+        xOnly         <- bexists y rel
+        xMinterm      <- largePrime ops xOnly
+
+        concXSupport  <- support xMinterm
+        remainingVars <- bexists concXSupport x
+        concX         <- band remainingVars xMinterm
+
+        img           <- andAbstract x rel concX
+        genX          <- faXnor ops y rel img
         return $ Just (genX, img)
 
 enumerate :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (IteratorM (ST s) (DDNode s u, DDNode s u))
