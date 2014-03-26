@@ -132,6 +132,7 @@ pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
     
     --This includes all states at smaller distances as well. Compute the labels that take us into that set.
     --Assumes hasOutgoings is btrue
+    ref btrue
     stateLabelsNotBackwards <- runIdentityT $ cpreCont' ops sections rd lp cont btrue furthestSet
     deref furthestSet
     labelsNotBackwards      <- faImp ops stateUntrackedCube consistentStateUntracked stateLabelsNotBackwards
@@ -188,6 +189,7 @@ applyTrel :: Ops s u -> SynthData s u -> [(DDNode s u, DDNode s u)] -> DDNode s 
 applyTrel Ops{..} SynthData{..} trel constraint stateSet = do
     let SectionInfo{..} = sections
 
+    ref btrue
     combined <- forLoop btrue trel $ \accum (cube, trel) -> do
         constrainedTrel <- band trel constraint
         constrained     <- band constrainedTrel stateSet
@@ -220,6 +222,7 @@ applyUncontrollableTC ops@Ops{..} sd@SynthData{..} stateSet = do
 --Given a label and a state, apply the label and then the transitive closure of uncontrollable transitions to compute the set of possible next states
 applyLabel :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 applyLabel ops@Ops{..} sd@SynthData{..} stateSet label = do
+    ref btrue
     afterControllableAction    <- applyTrel ops sd transitions btrue stateSet
     ref afterControllableAction
     afterUncontrollableActions <- applyUncontrollableTC ops sd afterControllableAction
