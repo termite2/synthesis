@@ -25,6 +25,9 @@ import TermiteGame
 faXnor :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
 faXnor Ops{..} cube x y = liftM bnot $ xorExistAbstract cube x y
 
+faImp :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+faImp Ops{..} cube x y = liftM bnot $ andAbstract cube x (bnot y)
+
 data IteratorM m a = 
       Empty
     | Item  a (m (IteratorM m a))
@@ -122,18 +125,24 @@ pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
         findSets []         = error "findSets - pickLabel2"
 
     (furthestSet, nextFurthestSet) <- findSets (goal : reverse regions)
+
+    stateUntrackedCube       <- band (_trackedCube sections) (_untrackedCube sections)
+    consCU                   <- bexists (_labelCube sections) (consistentPlusCULCont rd)
+    consistentStateUntracked <- band stateSet consCU
     
     --This includes all states at smaller distances as well. Compute the labels that take us into that set.
-    --Assumes hasOutgoing is btrue
-    labelsNotBackwards <- runIdentityT $ cpreCont' ops sections rd lp cont btrue furthestSet
+    --Assumes hasOutgoings is btrue
+    stateLabelsNotBackwards <- runIdentityT $ cpreCont' ops sections rd lp cont btrue furthestSet
     deref furthestSet
+    labelsNotBackwards      <- faImp ops stateUntrackedCube consistentStateUntracked stateLabelsNotBackwards
     
-    --Compute the set of strategy labels available in at least one state in stateSet at the maximum distance
-    atMaxDist       <- band stateSet (bnot nextFurthestSet)
-    stratAndState   <- band atMaxDist strategy
-    labelsSomewhere' <- bexists (_trackedCube sections) stratAndState
-    --TODO: this is prob not correct 
-    labelsSomewhere <- bexists (_untrackedCube sections) labelsSomewhere'
+    --Compute the set of strategy labels available in at least one entire superstate in stateSet at the maximum distance
+    --TODO: Maybe this could be made more liberal by considering labels from some untracked partition (not all)
+    atMaxDist        <- band stateSet (bnot nextFurthestSet)
+    stratAndState    <- band atMaxDist strategy
+    labelsSomewhere' <- faImp ops (_untrackedCube sections) consCU stratAndState
+    --TODO should check that the tracked cube has a consistent substate
+    labelsSomewhere  <- bexists (_trackedCube sections) labelsSomewhere'
     deref atMaxDist
     deref stratAndState
     deref nextFurthestSet
