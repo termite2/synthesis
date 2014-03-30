@@ -901,6 +901,7 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
                 return (win, strats)
             $d deref soFarOrWinAndGoal
             strats <- zipWithM (combineStrats soFar) strats strats'
+            $rp ref soFar
             return (res, (strats, res : regions))
         $d deref winAndGoal
         return res
