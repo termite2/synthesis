@@ -124,7 +124,7 @@ foldMF init list func = foldM func init list
 --The list of DDNodes is the set of winning regions at each distance from the goal. They are inclusive.
 --The head of the list is the furthest from the goal. The sets monotonically shrink.
 --assumes stateSet is not entirely contained within the goal
-pickLabel2 :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (Maybe (DDNode s u))
+pickLabel2 :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (Maybe (DDNode s u, DDNode s u))
 pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
     let findSets (x:y:rest) = do
             res <- lift $ stateSet `leq` y
@@ -163,9 +163,10 @@ pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
     $d deref labelsSomewhere
     $d deref labelsNotBackwards
     $d deref consC
+    outerRegion <- $r2 band furthestSet (bnot nextFurthestSet)
     case result == bfalse of
         True  -> return Nothing
-        False -> return $ Just result
+        False -> return $ Just (result, outerRegion)
 
 --Generate a bdd X over state variables such that (state & X) has some label available from all of it
 ifCondition :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (Maybe (DDNode s u))
