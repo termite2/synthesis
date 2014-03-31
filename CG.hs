@@ -27,7 +27,7 @@ import BddUtil
 import TermiteGame
 
 faXnor :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
-faXnor Ops{..} cube x y = liftM bnot $ $r3 xorExistAbstract cube x y
+faXnor Ops{..} cube x y = liftM bnot $ $r2 (xorExistAbstract cube) x y
 
 faImp :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
 faImp Ops{..} cube x y = liftM bnot $ $r2 (andAbstract cube) x (bnot y)
@@ -55,14 +55,14 @@ genPair :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDN
 genPair ops@Ops{..} x y rel = case rel == bfalse of
     True  -> return Nothing
     False -> do
-        xOnly         <- $r2 bexists y rel
+        xOnly         <- $r1 (bexists y) rel
         xMinterm      <- $r1 (largePrime ops) xOnly
 
         concXSupport  <- $r1 support xMinterm
-        remainingVars <- $r2 bexists concXSupport x
+        remainingVars <- $r $ bexists concXSupport x
         concX         <- $r2 band remainingVars xMinterm
 
-        img           <- $r3 andAbstract x rel concX
+        img           <- $r2 (andAbstract x) rel concX
         genX          <- faXnor ops y rel img
         return $ Just (genX, img)
 
@@ -99,8 +99,7 @@ availableLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy s
     yVars            <- $r $ conj ops [_trackedCube, _untrackedCube, _nextCube]
     avlWinningLabels <- $r3 andAbstract yVars strategy stateSet
     rel              <- $r $ conj ops (map snd transitions ++ [stateSet, avlWinningLabels])
-    labelCube        <- $r $ return _labelCube
-    res              <- enumerate ops labelCube yVars rel
+    res              <- enumerate ops _labelCube yVars rel
     iMapM func res
     where func (label, nextState) = do
             $d deref nextState
