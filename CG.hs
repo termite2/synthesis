@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards, TemplateHaskell, FlexibleContexts #-}
+{-# LANGUAGE RecordWildCards, TemplateHaskell, FlexibleContexts, DeriveFunctor #-}
 
 module CG (
     SynthData(..),
@@ -33,10 +33,7 @@ faImp Ops{..} cube x y = liftM bnot $ $r2 (andAbstract cube) x (bnot y)
 data IteratorM m a = 
       Empty
     | Item  a (m (IteratorM m a))
-
-instance Functor m => Functor (IteratorM m) where
-    fmap _ Empty      = Empty
-    fmap f (Item x r) = Item (f x) $ fmap (fmap f) r
+    deriving (Functor)
 
 iMapM :: Monad m => (a -> m b) -> IteratorM m a -> m (IteratorM m b)
 iMapM func Empty      = return Empty
