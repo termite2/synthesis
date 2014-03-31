@@ -113,8 +113,8 @@ d = withLocatedError $ appToReg [| de |]
 type InUse k = Map k (Set String, Int)
 newtype ResourceT t m a = ResourceT {unResourceT :: StateT (InUse t) m a} deriving (Monad)
 
-runResourceT = flip runStateT (Map.empty) . unResourceT
-evalResourceT = flip evalStateT (Map.empty) . unResourceT
+runResourceT  inUse = flip runStateT  inUse . unResourceT
+evalResourceT inUse = flip evalStateT inUse . unResourceT
 
 instance MonadTrans (ResourceT t) where
     lift = ResourceT . lift
