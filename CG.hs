@@ -134,7 +134,7 @@ pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
             case res of
                 True  -> return (y, x)
                 False -> findSets (y : rest)
-        findSets []         = error "findSets - pickLabel2"
+        findSets _          = error "findSets - pickLabel2"
 
     (furthestSet, nextFurthestSet) <- findSets (goal : reverse regions)
 
