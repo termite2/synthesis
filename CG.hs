@@ -1,10 +1,12 @@
 {-# LANGUAGE RecordWildCards, TemplateHaskell, FlexibleContexts, DeriveFunctor #-}
 
 module CG (
+    IteratorM(..),
     SynthData(..),
     availableLabels,
     pickLabel,
     pickLabel2,
+    enumerateEquivalentLabels,
     ifCondition,
     applyLabel,
     applyUncontrollableTC
