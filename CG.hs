@@ -144,7 +144,6 @@ pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
     --Assumes hasOutgoings is btrue
     ref btrue
     stateLabelsNotBackwards <- runIdentityT $ cpreCont' ops sections rd lp cont btrue furthestSet
-    --deref furthestSet
     labelsNotBackwards      <- faImp ops stateUntrackedCube consistentStateUntracked stateLabelsNotBackwards
     
     --Compute the set of strategy labels available in at least one entire superstate in stateSet at the maximum distance
@@ -156,7 +155,6 @@ pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
     labelsSomewhere  <- bexists (_trackedCube sections) labelsSomewhere'
     deref atMaxDist
     deref stratAndState
-    --deref nextFurthestSet
     
     --Conjunct these
     result <- band labelsSomewhere labelsNotBackwards
