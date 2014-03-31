@@ -140,6 +140,7 @@ pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
 
     stateUntrackedCube       <- $r $ band (_trackedCube sections) (_untrackedCube sections)
     consCU                   <- $r1 (bexists $ _labelCube sections) (consistentPlusCULCont rd)
+    consC                    <- $r1 (bexists $ _untrackedCube sections) consCU
     consistentStateUntracked <- $r2 band stateSet consCU
     --This includes all states at smaller distances as well. Compute the labels that take us into that set.
     --Assumes hasOutgoings is btrue
@@ -152,9 +153,11 @@ pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
     atMaxDist         <- $r2 band stateSet (bnot nextFurthestSet)
     stratAndState     <- $r2 band atMaxDist strategy
     labelsSomewhere'  <- faImp ops (_untrackedCube sections) consCU stratAndState
-    --TODO should check that the tracked cube has a consistent substate
-    labelsSomewhere   <- $r1 (bexists $ _trackedCube sections) labelsSomewhere'
+    labelsSomewhere'' <- $r2 band labelsSomewhere' consC
     $d deref labelsSomewhere'
+    --TODO should check that the tracked cube has a consistent substate
+    labelsSomewhere   <- $r1 (bexists $ _trackedCube sections) labelsSomewhere''
+    $d deref labelsSomewhere''
     $d deref atMaxDist
     $d deref stratAndState
     
@@ -162,6 +165,7 @@ pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
     result <- $r2 band labelsSomewhere labelsNotBackwards
     $d deref labelsSomewhere
     $d deref labelsNotBackwards
+    $d deref consC
     case result == bfalse of
         True  -> return Nothing
         False -> return $ Just result
