@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards, TemplateHaskell #-}
+{-# LANGUAGE RecordWildCards, TemplateHaskell, FlexibleContexts #-}
 
 module CG (
     SynthData(..),
@@ -10,23 +10,25 @@ module CG (
     applyUncontrollableTC
     ) where
 
+import Control.Monad.Trans
 import Control.Monad
 import Control.Monad.ST
 import Control.Arrow
 import Data.Tuple.All
 import qualified Data.Map as Map
-import Control.Monad.Trans.Identity
 
+import Util
+import Resource
 import BddRecord
 import Interface
 import BddUtil
 import TermiteGame
 
-faXnor :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
-faXnor Ops{..} cube x y = liftM bnot $ xorExistAbstract cube x y
+faXnor :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
+faXnor Ops{..} cube x y = liftM bnot $ $r3 xorExistAbstract cube x y
 
-faImp :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
-faImp Ops{..} cube x y = liftM bnot $ andAbstract cube x (bnot y)
+faImp :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
+faImp Ops{..} cube x y = liftM bnot $ $r2 (andAbstract cube) x (bnot y)
 
 data IteratorM m a = 
       Empty
@@ -50,28 +52,28 @@ iFoldM func accum (Item x r) = do
     r <- r
     iFoldM func accum' r
 
-genPair :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u, DDNode s u))
+genPair :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (Maybe (DDNode s u, DDNode s u))
 genPair ops@Ops{..} x y rel = case rel == bfalse of
     True  -> return Nothing
     False -> do
-        xOnly         <- bexists y rel
-        xMinterm      <- largePrime ops xOnly
+        xOnly         <- $r2 bexists y rel
+        xMinterm      <- $r1 (largePrime ops) xOnly
 
-        concXSupport  <- support xMinterm
-        remainingVars <- bexists concXSupport x
-        concX         <- band remainingVars xMinterm
+        concXSupport  <- $r1 support xMinterm
+        remainingVars <- $r2 bexists concXSupport x
+        concX         <- $r2 band remainingVars xMinterm
 
-        img           <- andAbstract x rel concX
+        img           <- $r3 andAbstract x rel concX
         genX          <- faXnor ops y rel img
         return $ Just (genX, img)
 
-enumerate :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (IteratorM (ST s) (DDNode s u, DDNode s u))
+enumerate :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (IteratorM (t (ST s)) (DDNode s u, DDNode s u))
 enumerate ops@Ops{..} x y rel = do
     pair <- genPair ops x y rel 
     case pair of
         Nothing               -> return Empty
         Just (pair@(genX, _)) -> do
-            restricted <- band rel (bnot genX)
+            restricted <- $r2 band rel (bnot genX)
             return $ Item pair (enumerate ops x y restricted)
 
 data SynthData s u = SynthData {
@@ -82,39 +84,40 @@ data SynthData s u = SynthData {
     lp           :: Lab s u
 }
 
-enumerateEquivalentLabels :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (IteratorM (ST s) (DDNode s u))
+enumerateEquivalentLabels :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (IteratorM (t (ST s)) (DDNode s u))
 enumerateEquivalentLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} stateSet label = do
-    rel   <- conj ops (map snd transitions ++ [stateSet, label])
-    yVars <- conj ops [_trackedCube, _untrackedCube, _nextCube]
+    rel   <- $r $ conj ops (map snd transitions ++ [stateSet, label])
+    yVars <- $r $ conj ops [_trackedCube, _untrackedCube, _nextCube]
     res   <- enumerate ops _labelCube yVars rel
     iMapM func res
     where func (label, nextState) = do
-            deref nextState
+            $d deref nextState
             return label
 
 --Given a state and a strategy, create an iterator that lists pairs of (label, condition over state variables for this label to be available)
-availableLabels :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (IteratorM (ST s) (DDNode s u, DDNode s u))
+availableLabels :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (IteratorM (t (ST s)) (DDNode s u, DDNode s u))
 availableLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy stateSet = do
-    yVars            <- conj ops [_trackedCube, _untrackedCube, _nextCube]
-    avlWinningLabels <- andAbstract yVars strategy stateSet
-    rel              <- conj ops (map snd transitions ++ [stateSet, avlWinningLabels])
-    res              <- enumerate ops _labelCube yVars rel
+    yVars            <- $r $ conj ops [_trackedCube, _untrackedCube, _nextCube]
+    avlWinningLabels <- $r3 andAbstract yVars strategy stateSet
+    rel              <- $r $ conj ops (map snd transitions ++ [stateSet, avlWinningLabels])
+    labelCube        <- $r $ return _labelCube
+    res              <- enumerate ops labelCube yVars rel
     iMapM func res
     where func (label, nextState) = do
-            deref nextState
-            avlStates <- andAbstract _labelCube strategy label 
-            cond      <- liCompact avlStates stateSet
+            $d deref nextState
+            avlStates <- $r2 (andAbstract _labelCube) strategy label 
+            cond      <- $r2 liCompact avlStates stateSet
             return (label, cond)
 
 --Pick any winning label 
 --The returned label is part of the strategy for every state and consistent substate in the stateSet argument
-pickLabel :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u))
+pickLabel :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (Maybe (DDNode s u))
 pickLabel Ops{..} SynthData{rd = RefineDynamic{..}, ..} strategy stateSet = do
     let SectionInfo{..} = sections
-    cube <- band _trackedCube _untrackedCube
-    x    <- bor (bnot stateSet) strategy
-    cons <- bexists _labelCube consistentPlusCULCont
-    act  <- liftM bnot $ andAbstract cube cons (bnot x)
+    cube <- $r $ band _trackedCube _untrackedCube
+    x    <- $r2 bor (bnot stateSet) strategy
+    cons <- $r1 (bexists _labelCube) consistentPlusCULCont
+    act  <- liftM bnot $ $r3 andAbstract cube cons (bnot x)
     case act == bfalse of
         True  -> return Nothing
         False -> return $ Just act
@@ -124,11 +127,10 @@ foldMF init list func = foldM func init list
 --The list of DDNodes is the set of winning regions at each distance from the goal. They are inclusive.
 --The head of the list is the furthest from the goal. The sets monotonically shrink.
 --assumes stateSet is not entirely contained within the goal
-pickLabel2 :: Ops s u -> SynthData s u -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u))
+pickLabel2 :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (Maybe (DDNode s u))
 pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
-
     let findSets (x:y:rest) = do
-            res <- stateSet `leq` y
+            res <- lift $ stateSet `leq` y
             case res of
                 True  -> return (y, x)
                 False -> findSets (y : rest)
@@ -136,103 +138,102 @@ pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
 
     (furthestSet, nextFurthestSet) <- findSets (goal : reverse regions)
 
-    stateUntrackedCube       <- band (_trackedCube sections) (_untrackedCube sections)
-    consCU                   <- bexists (_labelCube sections) (consistentPlusCULCont rd)
-    consistentStateUntracked <- band stateSet consCU
-    
+    stateUntrackedCube       <- $r $ band (_trackedCube sections) (_untrackedCube sections)
+    consCU                   <- $r1 (bexists $ _labelCube sections) (consistentPlusCULCont rd)
+    consistentStateUntracked <- $r2 band stateSet consCU
     --This includes all states at smaller distances as well. Compute the labels that take us into that set.
     --Assumes hasOutgoings is btrue
-    ref btrue
-    stateLabelsNotBackwards <- runIdentityT $ cpreCont' ops sections rd lp cont btrue furthestSet
-    labelsNotBackwards      <- faImp ops stateUntrackedCube consistentStateUntracked stateLabelsNotBackwards
+    $rp ref btrue
+    stateLabelsNotBackwards <- cpreCont' ops sections rd lp cont btrue furthestSet
     
+    labelsNotBackwards      <- faImp ops stateUntrackedCube consistentStateUntracked stateLabelsNotBackwards
     --Compute the set of strategy labels available in at least one entire superstate in stateSet at the maximum distance
     --TODO: Maybe this could be made more liberal by considering labels from some untracked partition (not all)
-    atMaxDist        <- band stateSet (bnot nextFurthestSet)
-    stratAndState    <- band atMaxDist strategy
-    labelsSomewhere' <- faImp ops (_untrackedCube sections) consCU stratAndState
+    atMaxDist         <- $r2 band stateSet (bnot nextFurthestSet)
+    stratAndState     <- $r2 band atMaxDist strategy
+    labelsSomewhere'  <- faImp ops (_untrackedCube sections) consCU stratAndState
     --TODO should check that the tracked cube has a consistent substate
-    labelsSomewhere  <- bexists (_trackedCube sections) labelsSomewhere'
-    deref atMaxDist
-    deref stratAndState
+    labelsSomewhere   <- $r1 (bexists $ _trackedCube sections) labelsSomewhere'
+    $d deref labelsSomewhere'
+    $d deref atMaxDist
+    $d deref stratAndState
     
     --Conjunct these
-    result <- band labelsSomewhere labelsNotBackwards
-    deref labelsSomewhere
-    deref labelsNotBackwards
-
+    result <- $r2 band labelsSomewhere labelsNotBackwards
+    $d deref labelsSomewhere
+    $d deref labelsNotBackwards
     case result == bfalse of
         True  -> return Nothing
         False -> return $ Just result
 
 --Generate a bdd X over state variables such that (state & X) has some label available from all of it
-ifCondition :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (Maybe (DDNode s u))
+ifCondition :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (Maybe (DDNode s u))
 ifCondition ops@Ops{..} sd@SynthData{sections = SectionInfo{..}, ..} strategy stateSet = do
     labelIterator <- availableLabels ops sd strategy stateSet
     case labelIterator of
         Empty                -> return Nothing
         Item (label, cond) r -> do
-            s <- dagSize cond
+            s <- lift $ dagSize cond
             r <- r
             res <- iFoldM func (cond, s) r
             return $ Just $ fst res
     where
     func accum@(bestCond, bestSize) (label, cond) = do
-        res <- dagSize cond
+        res <- lift $ dagSize cond
         case res < bestSize of 
             True  -> return (cond, res)
             False -> return accum
 
-fixedPoint :: Ops s u -> DDNode s u -> (DDNode s u -> ST s (DDNode s u)) -> ST s (DDNode s u)
+fixedPoint :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> (DDNode s u -> t (ST s) (DDNode s u)) -> t (ST s) (DDNode s u)
 fixedPoint ops@Ops{..} start func = do
     res <- func start
-    deref start
+    $d deref start
     case (res == start) of
         True  -> return res
         False -> fixedPoint ops res func
 
 forLoop start list func  = foldM func start list
 
-applyTrel :: Ops s u -> SynthData s u -> [(DDNode s u, DDNode s u)] -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+applyTrel :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> [(DDNode s u, DDNode s u)] -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
 applyTrel Ops{..} SynthData{..} trel constraint stateSet = do
     let SectionInfo{..} = sections
 
-    ref btrue
+    $rp ref btrue
     combined <- forLoop btrue trel $ \accum (cube, trel) -> do
-        constrainedTrel <- band trel constraint
-        constrained     <- band constrainedTrel stateSet
-        deref constrainedTrel
-        accum'          <- band constrained accum
-        deref constrained
-        deref accum
+        constrainedTrel <- $r2 band trel constraint
+        constrained     <- $r2 band constrainedTrel stateSet
+        $d deref constrainedTrel
+        accum'          <- $r2 band constrained accum
+        $d deref constrained
+        $d deref accum
         return accum'
 
-    sul' <- band _trackedCube _untrackedCube
-    sul  <- band sul' _labelCube
-    deref sul'
+    sul' <- $r $ band _trackedCube _untrackedCube
+    sul  <- $r1 (band _labelCube) sul'
+    $d deref sul'
 
-    res <- bexists sul combined
-    deref sul
-    deref combined
+    res <- $r2 bexists sul combined
+    $d deref sul
+    $d deref combined
 
-    res <- mapVars res
+    res <- $r1 mapVars res
 
     return res
 
-applyUncontrollableTC :: Ops s u -> SynthData s u -> DDNode s u -> ST s (DDNode s u)
+applyUncontrollableTC :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> DDNode s u -> t (ST s) (DDNode s u)
 applyUncontrollableTC ops@Ops{..} sd@SynthData{..} stateSet = do
-    ref stateSet
+    $rp ref stateSet
     fixedPoint ops stateSet $ \set -> do
         res      <- applyTrel ops sd transitions (bnot cont) set
-        combined <- bor res stateSet
+        combined <- $r2 bor res stateSet
         return combined
 
 --Given a label and a state, apply the label and then the transitive closure of uncontrollable transitions to compute the set of possible next states
-applyLabel :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+applyLabel :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
 applyLabel ops@Ops{..} sd@SynthData{..} stateSet label = do
-    ref btrue
+    $rp ref btrue
     afterControllableAction    <- applyTrel ops sd transitions btrue stateSet
-    ref afterControllableAction
+    $rp ref afterControllableAction
     afterUncontrollableActions <- applyUncontrollableTC ops sd afterControllableAction
     return afterUncontrollableActions
 
