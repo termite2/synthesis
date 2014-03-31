@@ -82,6 +82,16 @@ data SynthData s u = SynthData {
     lp           :: Lab s u
 }
 
+enumerateEquivalentLabels :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (IteratorM (ST s) (DDNode s u))
+enumerateEquivalentLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} stateSet label = do
+    rel   <- conj ops (map snd transitions ++ [stateSet, label])
+    yVars <- conj ops [_trackedCube, _untrackedCube, _nextCube]
+    res   <- enumerate ops _labelCube yVars rel
+    iMapM func res
+    where func (label, nextState) = do
+            deref nextState
+            return label
+
 --Given a state and a strategy, create an iterator that lists pairs of (label, condition over state variables for this label to be available)
 availableLabels :: Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> ST s (IteratorM (ST s) (DDNode s u, DDNode s u))
 availableLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy stateSet = do
