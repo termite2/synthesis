@@ -6,10 +6,7 @@ import qualified Data.Map.Strict as Map
 import Data.Map.Strict (Map)
 import qualified Data.Set as Set
 import Data.Set (Set)
-import Control.Arrow
-import Data.List
 import Data.Maybe
-import Control.Monad.ST
 import Control.Monad.Trans.Identity
 import Language.Haskell.TH
 
