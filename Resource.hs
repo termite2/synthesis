@@ -154,3 +154,5 @@ runIdentityTAsResource inuse f = do
     res <- runIdentityT f
     return (res, inuse)
 
+--runResource = runResourceT
+runResource = runIdentityTAsResource
