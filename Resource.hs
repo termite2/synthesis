@@ -149,3 +149,8 @@ instance (Monad m) => MonadResource r m IdentityT where
     derefResource _ _ = return ()
     getInUse          = return $ Map.empty
 
+runIdentityTAsResource :: (Monad m) => b -> IdentityT m a -> m (a, b)
+runIdentityTAsResource inuse f = do 
+    res <- runIdentityT f
+    return (res, inuse)
+
