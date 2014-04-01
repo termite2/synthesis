@@ -144,8 +144,8 @@ instance (Ord r, Monad m) => MonadResource r m (ResourceT r) where
     getInUse = ResourceT $ get
 
 instance (Monad m) => MonadResource r m IdentityT where
-    checkResource x y = return ()
-    refResource   x y = return ()
-    derefResource x y = return ()
+    checkResource _ _ = return ()
+    refResource   _ _ = return ()
+    derefResource _ _ = return ()
     getInUse          = return $ Map.empty
 
