@@ -143,9 +143,12 @@ pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
     --This includes all states at smaller distances as well. Compute the labels that take us into that set.
     --Assumes hasOutgoings is btrue
     $rp ref btrue
-    stateLabelsNotBackwards <- cpreCont' ops sections rd lp cont btrue furthestSet
-    
+    stateLabelsNotBackwards' <- cpreCont' ops sections rd lp cont btrue furthestSet
+    stateLabelsNotBackwards  <- $r2 band (consistentMinusCULCont rd) stateLabelsNotBackwards'
+    $d deref stateLabelsNotBackwards'
     labelsNotBackwards      <- faImp ops stateUntrackedCube consistentStateUntracked stateLabelsNotBackwards
+    $d deref stateLabelsNotBackwards
+
     --Compute the set of strategy labels available in at least one entire superstate in stateSet at the maximum distance
     --TODO: Maybe this could be made more liberal by considering labels from some untracked partition (not all)
     atMaxDist         <- $r2 band stateSet (bnot nextFurthestSet)
