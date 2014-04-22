@@ -36,8 +36,8 @@ import BddUtil
 import Resource
 import RefineUtil
 
-import CuddReorder
-import CuddExplicitDeref
+import Cudd.Reorder
+import Cudd.Imperative
 
 --Theory solving
 data TheorySolver s u sp lp lv = TheorySolver {

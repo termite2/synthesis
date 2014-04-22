@@ -14,10 +14,10 @@ module BddRecord (
 import Control.Monad.ST
 import Control.Monad
 
-import qualified CuddExplicitDeref as C
-import qualified CuddReorder as C
-import CuddExplicitDeref (DDNode, STDdManager, SatBit)
-import qualified MTR as C
+import Cudd.Imperative (DDNode, STDdManager, SatBit)
+import qualified Cudd.Imperative as C
+import qualified Cudd.Reorder as C
+import qualified Cudd.MTR as C
 
 data Ops s u = Ops {
     band, bor, bxor, bxnor, bimp, bnand, bnor :: DDNode s u -> DDNode s u -> ST s (DDNode s u),

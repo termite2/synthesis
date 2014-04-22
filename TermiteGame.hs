@@ -44,7 +44,7 @@ import BddUtil
 import BddInterp
 import Interface
 import RefineCommon hiding (doEnVars)
-import MTR
+import Cudd.MTR
 
 import Resource
 

@@ -23,7 +23,7 @@ import Control.Arrow
 import Control.Monad.ST.Unsafe (unsafeIOToST)
 
 import BddRecord
-import qualified CuddExplicitDeref as C
+import qualified Cudd.Imperative as C
 
 conj :: Ops s u -> [DDNode s u] -> ST s (DDNode s u)
 conj Ops{..} nodes = do

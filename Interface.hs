@@ -15,7 +15,7 @@ import Data.Tuple.All
 
 import Control.Lens
 
-import MTR
+import Cudd.MTR
 
 import BddRecord
 import RefineUtil
