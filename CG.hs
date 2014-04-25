@@ -265,7 +265,7 @@ applyLabel :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u 
 applyLabel ops@Ops{..} sd@SynthData{..} stateSet label = do
     $rp ref btrue
     afterControllableAction    <- applyTrel ops sd transitions btrue stateSet
-    $rp ref afterControllableAction
     afterUncontrollableActions <- applyUncontrollableTC ops sd afterControllableAction
+    $d deref afterControllableAction
     return afterUncontrollableActions
 
