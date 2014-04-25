@@ -111,13 +111,17 @@ availableLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy s
     yVars            <- $r $ conj ops [_trackedCube, _untrackedCube, _nextCube]
     avlWinningLabels <- $r3 andAbstract yVars strategy stateSet
     rel              <- $r $ conj ops (map snd transitions ++ [stateSet, avlWinningLabels])
+    $d deref avlWinningLabels
     res              <- enumerate ops _labelCube yVars rel
+    $d deref yVars
+    $d deref rel
     iMapM func res
-    where func (label, nextState) = do
-            $d deref nextState
-            avlStates <- $r2 (andAbstract _labelCube) strategy label 
-            cond      <- $r2 liCompact avlStates stateSet
-            return (label, cond)
+    where 
+    func (label, nextState) = do
+        $d deref nextState
+        avlStates <- $r2 (andAbstract _labelCube) strategy label 
+        cond      <- $r2 liCompact avlStates stateSet
+        return (label, cond)
 
 --Pick any winning label 
 --The returned label is part of the strategy for every state and consistent substate in the stateSet argument
