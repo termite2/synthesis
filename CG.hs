@@ -57,12 +57,17 @@ genPair ops@Ops{..} x y rel = case rel == bfalse of
     False -> do
         xOnly         <- $r1 (bexists y) rel
         xMinterm      <- $r1 (largePrime ops) xOnly
+        $d deref xOnly
 
         concXSupport  <- $r1 support xMinterm
         remainingVars <- $r $ bexists concXSupport x
+        $d deref concXSupport
         concX         <- $r2 band remainingVars xMinterm
+        $d deref xMinterm
+        $d deref remainingVars
 
         img           <- $r2 (andAbstract x) rel concX
+        $d deref concX
         genX          <- faXnor ops y rel img
         return $ Just (genX, img)
 
