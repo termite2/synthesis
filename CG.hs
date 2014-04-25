@@ -73,12 +73,17 @@ genPair ops@Ops{..} x y rel = case rel == bfalse of
 
 enumerate :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (IteratorM (t (ST s)) (DDNode s u, DDNode s u))
 enumerate ops@Ops{..} x y rel = do
-    pair <- genPair ops x y rel 
-    case pair of
-        Nothing               -> return Empty
-        Just (pair@(genX, _)) -> do
-            restricted <- $r2 band rel (bnot genX)
-            return $ Item pair (enumerate ops x y restricted)
+    $rp ref rel
+    enumerate' rel
+    where 
+    enumerate' rel = do
+        pair <- genPair ops x y rel 
+        case pair of
+            Nothing               -> $d deref rel >> return Empty
+            Just (pair@(genX, _)) -> do
+                restricted <- $r2 band rel (bnot genX)
+                $d deref rel
+                return $ Item pair (enumerate' restricted)
 
 data SynthData s u = SynthData {
     sections     :: SectionInfo s u,
