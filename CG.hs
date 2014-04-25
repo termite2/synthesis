@@ -132,6 +132,9 @@ pickLabel Ops{..} SynthData{rd = RefineDynamic{..}, ..} strategy stateSet = do
     x    <- $r2 bor (bnot stateSet) strategy
     cons <- $r1 (bexists _labelCube) consistentPlusCULCont
     act  <- liftM bnot $ $r3 andAbstract cube cons (bnot x)
+    $d deref cube
+    $d deref x
+    $d deref cons
     case act == bfalse of
         True  -> return Nothing
         False -> return $ Just act
