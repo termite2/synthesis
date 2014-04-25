@@ -210,16 +210,18 @@ ifCondition ops@Ops{..} sd@SynthData{sections = SectionInfo{..}, ..} strategy st
     case labelIterator of
         Empty                -> return Nothing
         Item (label, cond) r -> do
+            $d deref label
             s <- lift $ dagSize cond
             r <- r
             res <- iFoldM func (cond, s) r
             return $ Just $ fst res
     where
     func accum@(bestCond, bestSize) (label, cond) = do
+        $d deref label
         res <- lift $ dagSize cond
         case res < bestSize of 
-            True  -> return (cond, res)
-            False -> return accum
+            True  -> $d deref bestCond >> return (cond, res)
+            False -> $d deref cond     >> return accum
 
 fixedPoint :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> (DDNode s u -> t (ST s) (DDNode s u)) -> t (ST s) (DDNode s u)
 fixedPoint ops@Ops{..} start func = do
