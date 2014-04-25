@@ -32,6 +32,15 @@ faXnor Ops{..} cube x y = liftM bnot $ $r2 (xorExistAbstract cube) x y
 faImp :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
 faImp Ops{..} cube x y = liftM bnot $ $r2 (andAbstract cube) x (bnot y)
 
+{-
+- We use an iterator for functions that return many BDDs. This allows us to:
+- * Not generate the next BDD until it is needed in the calling code. This
+-   prevents BDDs from being generated that arent actually needed and
+-   minimizes live BDDs
+- * Move the BDD deallocation code to this file, where the BDDs are
+-   created. This is not actually implemented.
+-}
+
 data IteratorM m a = 
       Empty
     | Item  a (m (IteratorM m a))
