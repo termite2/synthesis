@@ -98,6 +98,8 @@ enumerateEquivalentLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} 
     rel   <- $r $ conj ops (map snd transitions ++ [stateSet, label])
     yVars <- $r $ conj ops [_trackedCube, _untrackedCube, _nextCube]
     res   <- enumerate ops _labelCube yVars rel
+    $d deref rel
+    $d deref yVars
     iMapM func res
     where func (label, nextState) = do
             $d deref nextState
