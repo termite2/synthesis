@@ -257,6 +257,7 @@ applyUncontrollableTC ops@Ops{..} sd@SynthData{..} stateSet = do
     fixedPoint ops stateSet $ \set -> do
         res      <- applyTrel ops sd transitions (bnot cont) set
         combined <- $r2 bor res stateSet
+        $d deref res
         return combined
 
 --Given a label and a state, apply the label and then the transitive closure of uncontrollable transitions to compute the set of possible next states
