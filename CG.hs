@@ -254,11 +254,12 @@ applyTrel Ops{..} SynthData{..} trel constraint stateSet = do
     sul  <- $r1 (band _labelCube) sul'
     $d deref sul'
 
-    res <- $r2 bexists sul combconsistent
+    res' <- $r2 bexists sul combconsistent
     $d deref combconsistent
     $d deref sul
 
-    res <- $r1 mapVars res
+    res <- $r1 mapVars res'
+    $d deref res'
 
     return res
 
