@@ -172,6 +172,7 @@ pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
     --Assumes hasOutgoings is btrue
     $rp ref btrue
     stateLabelsNotBackwards' <- cpreCont' ops sections rd lp cont btrue furthestSet
+    $d deref btrue
     stateLabelsNotBackwards  <- $r2 band (consistentMinusCULCont rd) stateLabelsNotBackwards'
     $d deref stateLabelsNotBackwards'
     labelsNotBackwards      <- faImp ops stateUntrackedCube consistentStateUntracked stateLabelsNotBackwards
