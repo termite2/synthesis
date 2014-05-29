@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module BddUtil (
+module Synthesis.BddUtil (
     conj,
     disj,
     allMinterms,
@@ -22,7 +22,7 @@ import Control.Monad
 import Control.Arrow
 import Control.Monad.ST.Unsafe (unsafeIOToST)
 
-import BddRecord
+import Synthesis.BddRecord
 import qualified Cudd.Imperative as C
 
 conj :: Ops s u -> [DDNode s u] -> ST s (DDNode s u)

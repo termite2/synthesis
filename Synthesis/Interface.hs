@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards, PolymorphicComponents, GADTs, TemplateHaskell #-}
 
-module Interface where
+module Synthesis.Interface where
 
 import Control.Monad.ST
 import qualified Data.Map as Map
@@ -17,8 +17,8 @@ import Control.Lens
 
 import Cudd.MTR
 
-import BddRecord
-import RefineUtil
+import Synthesis.BddRecord
+import Synthesis.RefineUtil
 
 --types that appear in the backend syntax tree
 data BAVar sp lp where

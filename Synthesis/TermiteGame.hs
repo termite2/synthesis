@@ -1,5 +1,5 @@
 {-# LANGUAGE PolymorphicComponents, RecordWildCards, ScopedTypeVariables, TemplateHaskell, FlexibleContexts, NoMonomorphismRestriction #-}
-module TermiteGame (
+module Synthesis.TermiteGame (
     Abstractor(..),
     absRefineLoop,
     RefineStatic(..),
@@ -13,6 +13,7 @@ module TermiteGame (
     ) where
 
 import Control.Monad.ST
+import Control.Monad.ST.Unsafe
 import Data.STRef.Lazy
 import qualified Data.Map as Map
 import Data.Map (Map)
@@ -38,15 +39,15 @@ import Data.Graph
 import Data.Tree
 
 import Util
-import RefineUtil
-import BddRecord
-import BddUtil
-import BddInterp
-import Interface
-import RefineCommon hiding (doEnVars)
+import Synthesis.RefineUtil
+import Synthesis.BddRecord
+import Synthesis.BddUtil
+import Synthesis.BddInterp
+import Synthesis.Interface
+import Synthesis.RefineCommon hiding (doEnVars)
 import Cudd.MTR
 
-import Resource
+import Synthesis.Resource
 
 traceMsg :: String -> ST s ()
 traceMsg m = unsafeIOToST $ do
@@ -420,73 +421,73 @@ refine cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStati
     --TODO try mixing this with synthesis. ie. only refine buchi after
     --solving a safety game at the top level.
     let buchiRefine = do
-        res <- refineFuncGFP buchiWinning buchiWinning rd
-        case res of 
-            Nothing -> return ()
-            Just _  -> liftST $ traceST "Refined at buchi level"
-        return res 
+            res <- refineFuncGFP buchiWinning buchiWinning rd
+            case res of 
+                Nothing -> return ()
+                Just _  -> liftST $ traceST "Refined at buchi level"
+            return res 
 
     let fairRefine  = mSumMaybe $ flip map goal $ \goal -> do
-        tgt'       <- liftBDD $ $r2 band goal buchiWinning
-        reachUnder <- liftBDD $ solveReach cpreUnder ops rs buchiWinning tgt' lastLFP
-        tgt''      <- liftBDD $ $r2 bor tgt' reachUnder
-        liftBDD $ $d deref tgt'
+            tgt'       <- liftBDD $ $r2 band goal buchiWinning
+            reachUnder <- liftBDD $ solveReach cpreUnder ops rs buchiWinning tgt' lastLFP
+            tgt''      <- liftBDD $ $r2 bor tgt' reachUnder
+            liftBDD $ $d deref tgt'
 
-        let refineReach = do
-            res <- refineFuncLFP reachUnder tgt'' rd
-            case res of 
-                Nothing -> return ()
-                Just _  -> liftST $ traceST "Refined at reachability level"
-            return res 
+            let refineReach = do
+                    res <- refineFuncLFP reachUnder tgt'' rd
+                    case res of 
+                        Nothing -> return ()
+                        Just _  -> liftST $ traceST "Refined at reachability level"
+                    return res 
 
-        let fairRefine = mSumMaybe $ flip map fair $ \fair -> do
-                (tgt, res) <- liftBDD $ do
-                    res     <- solveFair cpreOver ops rs buchiWinning tgt'' fair
-                    tgt'''  <- $r2 band res fair
-                    tgt     <- $r2 bor tgt'' tgt'''
-                    $d deref tgt'''
-                    return (tgt, res)
+            let fairRefine = mSumMaybe $ flip map fair $ \fair -> do
+                    (tgt, res) <- liftBDD $ do
+                        res     <- solveFair cpreOver ops rs buchiWinning tgt'' fair
+                        tgt'''  <- $r2 band res fair
+                        tgt     <- $r2 bor tgt'' tgt'''
+                        $d deref tgt'''
+                        return (tgt, res)
 
-                res' <- refineFuncGFP tgt res rd
-                liftBDD $ $d deref tgt
-                liftBDD $ $d deref res
+                    res' <- refineFuncGFP tgt res rd
+                    liftBDD $ $d deref tgt
+                    liftBDD $ $d deref res
 
-                case res' of 
-                    Nothing -> return ()
-                    Just _  -> liftST $ traceST "Refined at fair level"
-                return res'
+                    case res' of 
+                        Nothing -> return ()
+                        Just _  -> liftST $ traceST "Refined at fair level"
+                    return res'
 
-        res <- mSumMaybe [refineReach, fairRefine]
-        liftBDD $ $d deref reachUnder
-        liftBDD $ $d deref tgt''
-        return res
+            res <- mSumMaybe [refineReach, fairRefine]
+            liftBDD $ $d deref reachUnder
+            liftBDD $ $d deref tgt''
+            return res
 
     let fairRefine2  = mSumMaybe $ flip map goal $ \goal -> do
-        let refineReach = do
-            res <- refineFuncLFP lastLFP lastLFP rd
-            case res of 
-                Nothing -> return ()
-                Just _  -> liftST $ traceST "Refined at reachability level heuristic"
-            return res 
+            let refineReach = do
+                    res <- refineFuncLFP lastLFP lastLFP rd
+                    case res of 
+                        Nothing -> return ()
+                        Just _  -> liftST $ traceST "Refined at reachability level heuristic"
+                    return res 
 
-        let fairRefine = mSumMaybe $ flip map fair $ \fair -> do
-                (tgt, res) <- liftBDD $ do
-                    res     <- solveFair cpreOver ops rs buchiWinning lastLFP fair
-                    tgt'''  <- $r2 band res fair
-                    tgt     <- $r2 bor lastLFP tgt'''
-                    $d deref tgt'''
-                    return (tgt, res)
+            let fairRefine = mSumMaybe $ flip map fair $ \fair -> do
+                    (tgt, res) <- liftBDD $ do
+                        res     <- solveFair cpreOver ops rs buchiWinning lastLFP fair
+                        tgt'''  <- $r2 band res fair
+                        tgt     <- $r2 bor lastLFP tgt'''
+                        $d deref tgt'''
+                        return (tgt, res)
 
-                res' <- refineFuncGFP tgt res rd
-                liftBDD $ $d deref tgt
-                liftBDD $ $d deref res
+                    res' <- refineFuncGFP tgt res rd
+                    liftBDD $ $d deref tgt
+                    liftBDD $ $d deref res
 
-                case res' of 
-                    Nothing -> return ()
-                    Just _  -> liftST $ traceST "Refined at fair level heuristic"
-                return res'
-        res <- mSumMaybe [refineReach, fairRefine]
-        return res
+                    case res' of 
+                        Nothing -> return ()
+                        Just _  -> liftST $ traceST "Refined at fair level heuristic"
+                    return res'
+            res <- mSumMaybe [refineReach, fairRefine]
+            return res
 
     mSumMaybe [buchiRefine, fairRefine]
 
@@ -1227,9 +1228,11 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
         lift2 $ $rp ref bfalse
         flip runContT return $ refineLoop ops rs rd btrue bfalse
     lift $ traceST $ "Preds: \n" ++ intercalate "\n" (map show $ extractStatePreds $ _symbolTable db)
+    {-
     dc <- lift $ debugCheck
     ck <- lift $ checkKeys
     lift $ when (dc /= 0 || ck /= 0) (traceST "########################################################## Cudd inconsistent")
+    -}
 
     {-
     derefStatic ops rs

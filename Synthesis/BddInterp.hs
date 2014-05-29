@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module BddInterp (
+module Synthesis.BddInterp (
     listPrimeImplicants,
     interp,
     formatPrimeImplicants,
@@ -13,8 +13,8 @@ import Data.List
 
 import Util
 
-import BddRecord
-import BddUtil
+import Synthesis.BddRecord
+import Synthesis.BddUtil
 
 listPrimeImplicants :: Ops s u -> [[(String, [Int])]] -> DDNode s u -> ST s [[[(String, [Int])]]]
 listPrimeImplicants ops@Ops{..} varss trans = do

@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards, TemplateHaskell, FlexibleContexts, DeriveFunctor #-}
 
-module CG (
+module Synthesis.CG (
     IteratorM(..),
     SynthData(..),
     availableLabels,
@@ -20,11 +20,11 @@ import Data.Tuple.All
 import qualified Data.Map as Map
 
 import Util
-import Resource
-import BddRecord
-import Interface
-import BddUtil
-import TermiteGame
+import Synthesis.Resource
+import Synthesis.BddRecord
+import Synthesis.Interface
+import Synthesis.BddUtil
+import Synthesis.TermiteGame
 
 faXnor :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
 faXnor Ops{..} cube x y = liftM bnot $ $r2 (xorExistAbstract cube) x y

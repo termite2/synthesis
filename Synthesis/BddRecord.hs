@@ -1,6 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 
-module BddRecord (
+module Synthesis.BddRecord (
     Ops(..),
     constructOps,
     DDNode,

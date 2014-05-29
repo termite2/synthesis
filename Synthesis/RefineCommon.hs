@@ -1,5 +1,5 @@
 {-# LANGUAGE PolymorphicComponents, RecordWildCards, ScopedTypeVariables, TemplateHaskell, FlexibleContexts #-}
-module RefineCommon (
+module Synthesis.RefineCommon (
     TheorySolver(..),
     fixedPoint,
     doEnVars,
@@ -30,11 +30,11 @@ import Data.Function
 
 import Safe
 
-import Interface
-import BddRecord
-import BddUtil
-import Resource
-import RefineUtil
+import Synthesis.Interface
+import Synthesis.BddRecord
+import Synthesis.BddUtil
+import Synthesis.Resource
+import Synthesis.RefineUtil
 
 import Cudd.Reorder
 import Cudd.Imperative

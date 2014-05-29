@@ -1,5 +1,5 @@
 {-# LANGUAGE NoMonomorphismRestriction, GeneralizedNewtypeDeriving, TemplateHaskell, MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances, UndecidableInstances #-}
-module Resource where
+module Synthesis.Resource where
 
 import Control.Monad.State.Strict
 import qualified Data.Map.Strict as Map
@@ -143,7 +143,7 @@ instance (Ord r, Monad m) => MonadResource r m (ResourceT r) where
 
     getInUse = ResourceT $ get
 
-instance (Monad m) => MonadResource r m IdentityT where
+instance (Monad m) => MonadResource () m IdentityT where
     checkResource _ _ = return ()
     refResource   _ _ = return ()
     derefResource _ _ = return ()

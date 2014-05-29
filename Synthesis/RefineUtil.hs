@@ -1,4 +1,4 @@
-module RefineUtil (
+module Synthesis.RefineUtil (
     singleton,
     findM,
     pairToList,
