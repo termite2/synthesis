@@ -11,7 +11,7 @@ import Control.Monad.Trans.Identity
 import Language.Haskell.TH
 
 --Resource monad class definition
-class (MonadTrans t, Monad m, Monad (t m)) => MonadResource r m t | t -> r where
+class (MonadTrans t, Monad m, Monad (t m)) => MonadResource r m t where
     checkResource :: String -> r -> t m ()
     refResource   :: String -> r -> t m ()
     derefResource :: String -> r -> t m ()
@@ -143,7 +143,7 @@ instance (Ord r, Monad m) => MonadResource r m (ResourceT r) where
 
     getInUse = ResourceT $ get
 
-instance (Monad m) => MonadResource () m IdentityT where
+instance (Monad m) => MonadResource r m IdentityT where
     checkResource _ _ = return ()
     refResource   _ _ = return ()
     derefResource _ _ = return ()
