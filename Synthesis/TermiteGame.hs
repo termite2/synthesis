@@ -104,7 +104,6 @@ data RefineDynamic s u = RefineDynamic {
     consistentMinusCULUCont :: DDNode s u,
     consistentPlusCULUCont  :: DDNode s u,
     inconsistentInit        :: DDNode s u,
-    consistentNoRefine      :: DDNode s u,
     numConsRef              :: Int,
     numStateRef             :: Int
 }
@@ -118,7 +117,6 @@ derefDynamic Ops{..} RefineDynamic{..} = do
     $d deref consistentMinusCULUCont
     $d deref consistentPlusCULUCont
     $d deref inconsistentInit
-    $d deref consistentNoRefine
 
 type Lab s u = [([DDNode s u], DDNode s u)]
 
