@@ -246,13 +246,12 @@ cpre'' :: (MonadResource (DDNode s u) (ST s) t) =>
           SectionInfo s u -> 
           RefineStatic s u -> 
           RefineDynamic s u -> 
-          DDNode s u -> 
           Lab s u -> 
           DDNode s u -> 
           DDNode s u -> 
           DDNode s u -> 
           t (ST s) (DDNode s u)
-cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds cc cu target = do
+cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds cc cu target = do
     stratCont    <- cpreCont' ops si rd labelPreds cont target
     winCont      <- $r2 (andAbstract _labelCube) cc stratCont
     $d deref stratCont
@@ -266,12 +265,12 @@ cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} h
     return win
 
 --Returns the set of <state, untracked> pairs that are winning 
-cpreOver' :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> t (ST s) (DDNode s u)
-cpreOver' ops si rs rd@RefineDynamic{..} hasOutgoingsCont labelPreds = cpre'' ops si rs rd hasOutgoingsCont labelPreds consistentPlusCULCont consistentMinusCULUCont 
+cpreOver' :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> t (ST s) (DDNode s u)
+cpreOver' ops si rs rd@RefineDynamic{..} labelPreds = cpre'' ops si rs rd labelPreds consistentPlusCULCont consistentMinusCULUCont 
     
 --Returns the set of <state, untracked> pairs that are winning 
-cpreUnder' :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> t (ST s) (DDNode s u)
-cpreUnder' ops si rs rd@RefineDynamic{..} hasOutgoingsCont labelPreds = cpre'' ops si rs rd hasOutgoingsCont labelPreds consistentMinusCULCont consistentPlusCULUCont
+cpreUnder' :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> t (ST s) (DDNode s u)
+cpreUnder' ops si rs rd@RefineDynamic{..} labelPreds = cpre'' ops si rs rd labelPreds consistentMinusCULCont consistentPlusCULUCont
 
 faqf, eqf :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
 faqf Ops{..} cube constraint x = do
@@ -288,8 +287,8 @@ eqf  Ops{..} cube constraint x = do
     $d deref x'
     return res
 
-cPreHelper cpreFunc quantFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds target = do
-    su  <- cpreFunc ops si rs rd hasOutgoingsCont labelPreds target
+cPreHelper cpreFunc quantFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds target = do
+    su  <- cpreFunc ops si rs rd labelPreds target
 
     eqc <- $r1 (bexists _labelCube) consistentPlusCULCont
     equ <- $r1 (bexists _labelCube) consistentPlusCULUCont
@@ -299,10 +298,10 @@ cPreHelper cpreFunc quantFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..}
     res <- quantFunc ops _untrackedCube (bnot c) su
     return res
 
-cPreOver :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> t (ST s) (DDNode s u)
+cPreOver :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> t (ST s) (DDNode s u)
 cPreOver ops@Ops{..} = cPreHelper cpreOver' eqf ops  
 
-cPreUnder :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> DDNode s u -> Lab s u -> DDNode s u -> t (ST s) (DDNode s u)
+cPreUnder :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> t (ST s) (DDNode s u)
 cPreUnder ops@Ops{..} = cPreHelper cpreUnder' faqf ops
 
 fixedPointR :: (MonadResource (DDNode s u) (ST s) t) => 
@@ -883,7 +882,7 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
             (res, strats') <- forAccumLM bfalse fair $ \accum fair -> do
                 --Fairness greatest fixedpoint
                 --TODO optimise: dont use btrue below
-                winFair <- solveFair (cPreUnder ops si rs rd hasOutgoings labelPreds) ops rs btrue soFarOrWinAndGoal fair
+                winFair <- solveFair (cPreUnder ops si rs rd labelPreds) ops rs btrue soFarOrWinAndGoal fair
                 thing <- $r2 band winFair fair
                 thing2 <- $r2 bor thing soFarOrWinAndGoal
                 $d deref thing
@@ -992,7 +991,7 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
         res <- forAccumLM bfalse strat $ \tot (goal, strats) -> do
             tgt               <- $r2 bor (bnot goal) x
             --TODO optimise: dont use btrue below
-            winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs btrue (bnot tgt) bfalse
+            winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd labelPreds) ops rs btrue (bnot tgt) bfalse
             (winStrat, strat) <- stratReach si rs rd hasOutgoings strats x winBuchi tgt
             when (winStrat /= winBuchi) (lift $ traceST "Warning: counterexample winning regions are not equal")
             lift $ traceST "CHECK"
@@ -1085,7 +1084,7 @@ counterExampleLiberalEnv ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@R
         res <- forAccumLM bfalse strat $ \tot (goal, strats) -> do
             tgt               <- $r2 bor (bnot goal) x
             --TODO optimise: dont use btrue below
-            winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd hasOutgoings labelPreds) ops rs btrue (bnot tgt) bfalse
+            winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd labelPreds) ops rs btrue (bnot tgt) bfalse
             (winStrat, strat) <- stratReach si rs rd hasOutgoings strats x winBuchi tgt
             when (winStrat /= winBuchi) (lift $ traceST "Warning: counterexample winning regions are not equal")
             $d deref winStrat
@@ -1288,7 +1287,7 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                 hasOutgoings <- lift3 $ doHasOutgoings ops trans
 
                 (rd, winRegion) <- flip (if' (act == RepeatAll || act == RepeatGFP)) (return (rd, lastWin)) $ do
-                    winRegion <- lift3 $ solveBuchi (cPreOver ops si rs rd hasOutgoings lp) ops rs lastWin lastUnder
+                    winRegion <- lift3 $ solveBuchi (cPreOver ops si rs rd lp) ops rs lastWin lastUnder
 
                     l <- lift4 $ leqUnless winRegion lastWin (bnot c)
                     when (not l) (error "Sanity check 1")
@@ -1308,7 +1307,7 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                 --TODO: would it be faster to use winRegion, lastUnder, or
                 --their conjunction?
                 (rd, winRegionUnder) <- flip (if' (act == RepeatAll || act == RepeatLFP)) (return (rd, lastUnder)) $ do
-                    winRegionUnder <- lift3 $ solveBuchi (cPreUnder ops si rs rd hasOutgoings lp) ops rs winRegion lastUnder
+                    winRegionUnder <- lift3 $ solveBuchi (cPreUnder ops si rs rd lp) ops rs winRegion lastUnder
 
                     l <- lift4 $ leqUnless lastUnder winRegionUnder (bnot c)
                     when (not l) (error "Sanity check 2")
@@ -1331,10 +1330,10 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                 --Alive: winRegion, rd, rs, hasOutgoings, winRegionUnder
                 --TODO: is it correct to use the same type of consistency
                 --refinement for GFP and LFP?
-                let cpu  = cPreUnder  ops si rs rd hasOutgoings lp
-                    cpo  = cPreOver   ops si rs rd hasOutgoings lp
-                    cpo' = cpreOver'  ops si rs rd hasOutgoings lp
-                    cpu' = cpreUnder' ops si rs rd hasOutgoings lp
+                let cpu  = cPreUnder  ops si rs rd lp
+                    cpo  = cPreOver   ops si rs rd lp
+                    cpo' = cpreOver'  ops si rs rd lp
+                    cpu' = cpreUnder' ops si rs rd lp
                     rfG  = refineGFP  ops spec ts rs si lp hasOutgoings cpo'
                     rfL  = refineLFP  ops spec ts rs si lp hasOutgoings cpu'
 
