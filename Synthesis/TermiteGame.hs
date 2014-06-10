@@ -970,7 +970,6 @@ counterExample :: forall t s u. (MonadResource (DDNode s u) (ST s) t) =>
                   t (ST s) [[DDNode s u]]
 counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds winGame = do
     lift $ traceST "* Computing counterexample"
-    hasOutgoings <- doHasOutgoings ops trans 
     lift $ sequence $ replicate (length goal * length fair) (ref bfalse)
     sequence $ replicate (length goal * length fair + 1) ($r $ return bfalse)
     lift $ ref bfalse
@@ -980,7 +979,7 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
             tgt               <- $r2 bor (bnot goal) x
             --TODO optimise: dont use btrue below
             winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd labelPreds) ops rs btrue (bnot tgt) bfalse
-            (winStrat, strat) <- stratReach si rs rd hasOutgoings strats x winBuchi tgt
+            (winStrat, strat) <- stratReach si rs rd strats x winBuchi tgt
             when (winStrat /= winBuchi) (lift $ traceST "Warning: counterexample winning regions are not equal")
             lift $ traceST "CHECK"
             $d deref winStrat
@@ -991,7 +990,6 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
         return res
     when (winGame /= bnot win') (error "the counterexample winning region is not the complement of the game winning region")
     lift $ traceST $ bddSynopsis ops winGame
-    $d deref hasOutgoings
     return $ map (map snd . snd) strat
 
     where
@@ -1005,13 +1003,13 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
         return c
 
     --Below effectively skipps the middle fixed point
-    stratReach si rs rd hasOutgoings stratSoFar x y nGoalOrX = do
+    stratReach si rs rd stratSoFar x y nGoalOrX = do
         $rp ref x
         fixedPoint2R ops x stratSoFar $ \z strat -> do
             $rp ref btrue
             res <- forAccumLM btrue strat $ \winAccum (fair, strat) -> do
                 tgt            <- target fair nGoalOrX y z
-                (win', strat') <- strategy si rs rd hasOutgoings tgt
+                (win', strat') <- strategy si rs rd tgt
                 $d deref tgt
                 strat''        <- $r2 band strat' (bnot z)
                 $d deref strat'
@@ -1032,18 +1030,10 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
                 return (winAccum', (fair, strat'''))
             return res
 
-    strategy si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoings target = do
+    strategy si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} target = do
         stratCont     <- cpreCont' ops si rd labelPreds cont (bnot target)
-        winCont'      <- $r2 (andAbstract _labelCube) consistentPlusCULCont stratCont
+        winCont       <- $r2 (andAbstract _labelCube) consistentPlusCULCont stratCont
         $d deref stratCont
-        hasOutgoingsC <- $r2 band hasOutgoings cont
-        en'           <- $r2 band hasOutgoingsC consistentPlusCULCont
-        $d deref hasOutgoingsC
-        en            <- $r1 (bexists _labelCube) en'
-        $d deref en'
-        winCont       <- liftM bnot $ $r2 bimp btrue winCont'
-        $d deref winCont'
-        $d deref en
         
         stratUCont'   <- cpreUCont' ops si rd labelPreds cont (bnot target)
         stratUCont    <- $r2 band consistentMinusCULUCont stratUCont'
