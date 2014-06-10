@@ -209,18 +209,13 @@ cpreCont' :: (MonadResource (DDNode s u) (ST s) t) =>
              Lab s u -> 
              DDNode s u -> 
              DDNode s u -> 
-             DDNode s u -> 
              t (ST s) (DDNode s u)
-cpreCont' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} labelPreds cont hasOutgoings target = do
+cpreCont' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} labelPreds cont target = do
     nextWin' <- $r1 mapVars target
     nextWin  <- $r2 bor nextWin' (bnot cont)
     $d deref nextWin'
-    strat'   <- partitionedThing ops trans nextWin
+    strat    <- partitionedThing ops trans nextWin
     $d deref nextWin
-    hasOutgoingsC <- $r2 band hasOutgoings cont
-    strat    <- $r2 band hasOutgoingsC strat'
-    $d deref hasOutgoingsC
-    $d deref strat'
     stratEn <- doEnCont ops strat labelPreds
     $d deref strat
     return stratEn
@@ -256,7 +251,7 @@ cpre'' :: (MonadResource (DDNode s u) (ST s) t) =>
           DDNode s u -> 
           t (ST s) (DDNode s u)
 cpre'' ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoingsCont labelPreds cc cu target = do
-    stratCont    <- cpreCont' ops si rd labelPreds cont hasOutgoingsCont target
+    stratCont    <- cpreCont' ops si rd labelPreds cont target
     winCont      <- $r2 (andAbstract _labelCube) cc stratCont
     $d deref stratCont
 
@@ -337,7 +332,7 @@ data RefineAction =
     deriving (Show, Eq)
 
 refineConsistency2 ops ts rd@RefineDynamic{..} rs@RefineStatic{..} si labelPreds hasOutgoings tgt = do
-    winNoConstraint <- lift $ cpreCont' ops si rd labelPreds cont hasOutgoings tgt
+    winNoConstraint <- lift $ cpreCont' ops si rd labelPreds cont tgt
     res             <- doConsistency ops ts consistentPlusCULCont consistentMinusCULCont winNoConstraint
     case res of
         Just (act, (consistentPlusCULCont', consistentMinusCULCont')) -> do
@@ -921,7 +916,7 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         $d deref oldC
         return c'
     cpre hasOutgoings target = do
-        strat        <- cpreCont' ops si rd labelPreds cont hasOutgoings target
+        strat        <- cpreCont' ops si rd labelPreds cont target
         stratUCont   <- cpreUCont' ops si rd labelPreds cont target
 
         stratCont    <- $r2 band consistentMinusCULCont strat
@@ -1049,7 +1044,7 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
             return res
 
     strategy si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoings target = do
-        stratCont     <- cpreCont' ops si rd labelPreds cont hasOutgoings (bnot target)
+        stratCont     <- cpreCont' ops si rd labelPreds cont (bnot target)
         winCont'      <- $r2 (andAbstract _labelCube) consistentPlusCULCont stratCont
         $d deref stratCont
         hasOutgoingsC <- $r2 band hasOutgoings cont
@@ -1135,7 +1130,7 @@ counterExampleLiberalEnv ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@R
             return res
 
     strategy si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} hasOutgoings target = do
-        stratCont <- cpreCont' ops si rd labelPreds cont hasOutgoings (bnot target)
+        stratCont <- cpreCont' ops si rd labelPreds cont (bnot target)
         stratUCont' <- cpreUCont' ops si rd labelPreds cont (bnot target)
         winCont'     <- $r2 (andAbstract _labelCube) consistentMinusCULCont stratCont
         hasOutgoingsC <- $r2 band hasOutgoings cont

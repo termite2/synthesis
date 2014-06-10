@@ -171,7 +171,7 @@ pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
     --This includes all states at smaller distances as well. Compute the labels that take us into that set.
     --Assumes hasOutgoings is btrue
     $rp ref btrue
-    stateLabelsNotBackwards' <- cpreCont' ops sections rd lp cont btrue furthestSet
+    stateLabelsNotBackwards' <- cpreCont' ops sections rd lp cont furthestSet
     $d deref btrue
     stateLabelsNotBackwards  <- $r2 band (consistentMinusCULCont rd) stateLabelsNotBackwards'
     $d deref stateLabelsNotBackwards'
