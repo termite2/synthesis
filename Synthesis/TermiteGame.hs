@@ -214,8 +214,10 @@ cpreCont' ops@Ops{..} si@SectionInfo{..} rd@RefineDynamic{..} labelPreds cont ta
     nextWin' <- $r1 mapVars target
     nextWin  <- $r2 bor nextWin' (bnot cont)
     $d deref nextWin'
-    strat    <- partitionedThing ops trans nextWin
+    strat'   <- partitionedThing ops trans nextWin
     $d deref nextWin
+    strat    <- $r2 band cont strat'
+    $d deref strat'
     stratEn <- doEnCont ops strat labelPreds
     $d deref strat
     return stratEn
