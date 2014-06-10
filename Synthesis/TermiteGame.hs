@@ -1178,6 +1178,8 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                 lift4 $ setVarMap _trackedNodes _nextNodes
                 hasOutgoings <- lift3 $ doHasOutgoings ops trans
 
+                when (hasOutgoings /= btrue) (error "hasOutGoings not true")
+
                 (rd, winRegion) <- flip (if' (act == RepeatAll || act == RepeatGFP)) (return (rd, lastWin)) $ do
                     winRegion <- lift3 $ solveBuchi (cPreOver ops si rs rd lp) ops rs lastWin lastUnder
 
