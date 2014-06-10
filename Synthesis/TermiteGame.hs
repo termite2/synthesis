@@ -332,7 +332,7 @@ data RefineAction =
     | RepeatGFP
     deriving (Show, Eq)
 
-refineConsistency2 ops ts rd@RefineDynamic{..} rs@RefineStatic{..} si labelPreds hasOutgoings tgt = do
+refineConsistency2 ops ts rd@RefineDynamic{..} rs@RefineStatic{..} si labelPreds tgt = do
     winNoConstraint <- lift $ cpreCont' ops si rd labelPreds cont tgt
     res             <- doConsistency ops ts consistentPlusCULCont consistentMinusCULCont winNoConstraint
     case res of
@@ -358,11 +358,10 @@ refineGFP, refineLFP :: (Show lp, Show sp, Ord lv, Ord lp, Ord sp, MonadResource
              RefineStatic s u -> 
              SectionInfo s u -> 
              Lab s u -> 
-             DDNode s u -> 
              CPreFunc t s u -> 
              RefineFunc t s u sp lp st
-refineGFP ops@Ops{..} spec ts rs si labelPreds hasOutgoingsCont cpreOver tgt mayWin rd = do
-    res <- liftIST $ refineConsistency2 ops ts rd rs si labelPreds hasOutgoingsCont tgt
+refineGFP ops@Ops{..} spec ts rs si labelPreds cpreOver tgt mayWin rd = do
+    res <- liftIST $ refineConsistency2 ops ts rd rs si labelPreds tgt
     case res of 
         Just rd' -> do
             return $ Just rd'
@@ -380,8 +379,8 @@ refineGFP ops@Ops{..} spec ts rs si labelPreds hasOutgoingsCont cpreOver tgt may
                     rd'' <- promoteUntracked ops spec ts rd vars
                     return $ Just (RepeatAll, rd'')
 
-refineLFP ops@Ops{..} spec ts rs si labelPreds hasOutgoingsCont cpreUnder tgt mustWin rd = do
-    res <- liftIST $ refineConsistency2 ops ts rd rs si labelPreds hasOutgoingsCont tgt
+refineLFP ops@Ops{..} spec ts rs si labelPreds cpreUnder tgt mustWin rd = do
+    res <- liftIST $ refineConsistency2 ops ts rd rs si labelPreds tgt
     case res of 
         Just rd' -> do
             return $ Just rd'
@@ -1334,8 +1333,8 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                     cpo  = cPreOver   ops si rs rd lp
                     cpo' = cpreOver'  ops si rs rd lp
                     cpu' = cpreUnder' ops si rs rd lp
-                    rfG  = refineGFP  ops spec ts rs si lp hasOutgoings cpo'
-                    rfL  = refineLFP  ops spec ts rs si lp hasOutgoings cpu'
+                    rfG  = refineGFP  ops spec ts rs si lp cpo'
+                    rfL  = refineLFP  ops spec ts rs si lp cpu'
 
                 res <- lift $ refine cpo cpu rfG rfL ops rs winRegion winRegionUnder rd
                 lift3 $ $d deref hasOutgoings   
