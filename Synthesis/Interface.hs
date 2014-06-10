@@ -66,9 +66,6 @@ data SymbolInfo s u sp lp = SymbolInfo {
 makeLenses ''SymbolInfo
 initialSymbolTable = SymbolInfo Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty 
 
-extractStatePreds :: SymbolInfo s u sp lp -> [sp]
-extractStatePreds SymbolInfo{..} = Map.keys _stateVars
-
 --Sections
 data SectionInfo s u = SectionInfo {
     _trackedCube   :: DDNode s u,
@@ -110,6 +107,14 @@ initialDB ops@Ops{..} = do
     ref _outcomeCube
     ref _nextCube
     return res
+
+extractStatePreds :: DB s u sp lp -> [sp]
+extractStatePreds db = map sel1 $ filter (filt . snd) $ Map.toList (_stateVars $ _symbolTable db)
+    where filt vars = not $ null $ sel2 vars `intersect` _trackedInds (_sections db)
+
+extractUntrackedPreds :: DB s u sp lp -> [sp]
+extractUntrackedPreds db = map sel1 $ filter (filt . snd) $ Map.toList (_stateVars $ _symbolTable db)
+    where filt vars = not $ null $ sel2 vars `intersect` _untrackedInds (_sections db)
 
 --Below two functions are only used for temporary variables
 allocIdx :: StateT (DB s u sp lp) (ST s) Int
