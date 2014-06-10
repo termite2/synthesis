@@ -867,7 +867,6 @@ strategy :: forall s u t. (MonadResource (DDNode s u) (ST s) t) =>
             t (ST s) ([[DDNode s u]], [[DDNode s u]])
 strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
     lift $ traceST "* Computing strategy"
-    hasOutgoings <- doHasOutgoings ops trans
     --For each goal
     res <- forM goal $ \goal -> do 
         winAndGoal <- $r2 band goal win
@@ -885,7 +884,7 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
                 thing <- $r2 band winFair fair
                 thing2 <- $r2 bor thing soFarOrWinAndGoal
                 $d deref thing
-                (win', strats) <- cpre hasOutgoings thing2
+                (win', strats) <- cpre thing2
                 $d deref winFair
                 $d deref thing2
                 win <- $r2 bor win' accum 
@@ -899,7 +898,6 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
             return (res, (strats, res : regions))
         $d deref winAndGoal
         return res
-    $d deref hasOutgoings
     let (wins, strats') = unzip res
         (strats, regions) = unzip strats'
     win' <- $r $ conj ops wins
@@ -915,23 +913,14 @@ strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..}
         c' <- $r2 bor c oldC
         $d deref oldC
         return c'
-    cpre hasOutgoings target = do
+    cpre target = do
         strat        <- cpreCont' ops si rd labelPreds cont target
         stratUCont   <- cpreUCont' ops si rd labelPreds cont target
 
         stratCont    <- $r2 band consistentMinusCULCont strat
         $d deref strat
-        winCont'      <- $r1 (bexists _labelCube) stratCont
+        winCont       <- $r1 (bexists _labelCube) stratCont
 
-        hasOutgoingsC <- $r2 band hasOutgoings cont
-        en'          <- $r2 band hasOutgoingsC consistentMinusCULCont
-        en           <- $r1 (bexists _labelCube) en'
-        $d deref en'
-        $d deref hasOutgoingsC
-        
-        winCont      <- $r2 bimp en winCont'
-        $d deref winCont'
-        $d deref en
         winUCont     <- liftM bnot $ $r2 (andAbstract _labelCube) consistentPlusCULUCont stratUCont
         mapM ($d deref) [stratUCont]
         win'         <- $r2 band winCont winUCont
