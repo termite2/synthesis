@@ -454,33 +454,6 @@ refine cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStati
             liftBDD $ $d deref tgt''
             return res
 
-    let fairRefine2  = mSumMaybe $ flip map goal $ \goal -> do
-            let refineReach = do
-                    res <- refineFuncLFP lastLFP lastLFP rd
-                    case res of 
-                        Nothing -> return ()
-                        Just _  -> liftST $ traceST "Refined at reachability level heuristic"
-                    return res 
-
-            let fairRefine = mSumMaybe $ flip map fair $ \fair -> do
-                    (tgt, res) <- liftBDD $ do
-                        res     <- solveFair cpreOver ops rs buchiWinning lastLFP fair
-                        tgt'''  <- $r2 band res fair
-                        tgt     <- $r2 bor lastLFP tgt'''
-                        $d deref tgt'''
-                        return (tgt, res)
-
-                    res' <- refineFuncGFP tgt res rd
-                    liftBDD $ $d deref tgt
-                    liftBDD $ $d deref res
-
-                    case res' of 
-                        Nothing -> return ()
-                        Just _  -> liftST $ traceST "Refined at fair level heuristic"
-                    return res'
-            res <- mSumMaybe [refineReach, fairRefine]
-            return res
-
     mSumMaybe [buchiRefine, fairRefine]
 
 --TODO try using a cache 
