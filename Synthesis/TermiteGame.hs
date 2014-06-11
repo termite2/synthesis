@@ -1087,7 +1087,8 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
         lift2 $ $rp ref bfalse
         flip runContT return $ refineLoop ops rs rd btrue bfalse
     lift $ traceST $ "State preds: \n"     ++ intercalate "\n" (map (("* " ++) . show) $ extractStatePreds db)
-    lift $ traceST $ "Untracked preds: \n" ++ intercalate "\n" (map ((" *" ++) . show) $ extractUntrackedPreds db)
+    lift $ traceST $ "Untracked preds: \n" ++ intercalate "\n" (map (("* " ++) . show) $ extractUntrackedPreds db)
+    lift $ traceST $ "Label preds: \n"     ++ intercalate "\n" (map (("* " ++) . show) $ Map.keys (_labelVars $ _symbolTable db))
     {-
     dc <- lift $ debugCheck
     ck <- lift $ checkKeys
