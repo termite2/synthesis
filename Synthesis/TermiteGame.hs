@@ -295,6 +295,7 @@ cPreHelper cpreFunc quantFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..}
     mapM ($d deref) [eqc, equ]
 
     res <- quantFunc ops _untrackedCube (bnot c) su
+    $d deref c
     return res
 
 cPreOver :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s u -> RefineStatic s u -> RefineDynamic s u -> Lab s u -> DDNode s u -> t (ST s) (DDNode s u)
