@@ -29,9 +29,6 @@ import Synthesis.TermiteGame
 faXnor :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
 faXnor Ops{..} cube x y = liftM bnot $ $r2 (xorExistAbstract cube) x y
 
-faImp :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
-faImp Ops{..} cube x y = liftM bnot $ $r2 (andAbstract cube) x (bnot y)
-
 {-
 - We use an iterator for functions that return many BDDs. This allows us to:
 - * Not generate the next BDD until it is needed in the calling code. This
@@ -175,7 +172,7 @@ pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
     $d deref btrue
     stateLabelsNotBackwards  <- $r2 band (consistentMinusCULCont rd) stateLabelsNotBackwards'
     $d deref stateLabelsNotBackwards'
-    labelsNotBackwards      <- faImp ops stateUntrackedCube consistentStateUntracked stateLabelsNotBackwards
+    labelsNotBackwards      <- $r2 (faImp ops stateUntrackedCube) consistentStateUntracked stateLabelsNotBackwards
     $d deref consistentStateUntracked
     $d deref stateUntrackedCube
     $d deref stateLabelsNotBackwards
@@ -184,7 +181,7 @@ pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
     --TODO: Maybe this could be made more liberal by considering labels from some untracked partition (not all)
     atMaxDist         <- $r2 band stateSet (bnot nextFurthestSet)
     stratAndState     <- $r2 band atMaxDist strategy
-    labelsSomewhere'  <- faImp ops (_untrackedCube sections) consCU stratAndState
+    labelsSomewhere'  <- $r2 (faImp ops (_untrackedCube sections)) consCU stratAndState
     $d deref consCU
     labelsSomewhere'' <- $r2 band labelsSomewhere' consC
     $d deref consC

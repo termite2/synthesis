@@ -272,18 +272,14 @@ cpreUnder' :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo s 
 cpreUnder' ops si rs rd@RefineDynamic{..} labelPreds = cpre'' ops si rs rd labelPreds consistentMinusCULCont consistentPlusCULUCont
 
 faqf, eqf :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
-faqf Ops{..} cube constraint x = do
-    x' <- $r2 bor (bnot constraint) x
+faqf ops@Ops{..} cube constraint x = do
+    res <- $r2 (faImp ops cube) constraint x
     $d deref x
-    res <- $r1 (bforall cube) x'
-    $d deref x'
     return res
     
-eqf  Ops{..} cube constraint x = do
-    x' <- $r2 band constraint x
+eqf Ops{..} cube constraint x = do
+    res <- $r2 (andAbstract cube) constraint x
     $d deref x
-    res <- $r1 (bexists cube) x'
-    $d deref x'
     return res
 
 cPreHelper cpreFunc quantFunc ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds target = do

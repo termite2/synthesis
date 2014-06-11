@@ -15,7 +15,8 @@ module Synthesis.BddUtil (
     orDeref,
     subtractBdd,
     addBdd,
-    checkManagerConsistency
+    checkManagerConsistency,
+    faImp
     ) where
 
 import Control.Monad
@@ -140,4 +141,7 @@ addBdd Ops{..} thing toAdd = do
 
 checkManagerConsistency :: String -> Ops s u -> ST s ()
 checkManagerConsistency msg ops = void $ unsafeIOToST (putStrLn ("checking bdd consistency" ++ msg ++ "\n")) >> debugCheck ops >> checkKeys ops
+
+faImp :: Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> ST s (DDNode s u)
+faImp Ops{..} cube x y = liftM bnot $ andAbstract cube x (bnot y)
 
