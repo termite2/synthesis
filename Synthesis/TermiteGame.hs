@@ -50,7 +50,7 @@ import Cudd.MTR
 import Synthesis.Resource
 
 traceMsg :: String -> ST s ()
-traceMsg m = unsafeIOToST $ do
+traceMsg m = Control.Monad.ST.Unsafe.unsafeIOToST $ do
     putStr m
     hFlush stdout
 
