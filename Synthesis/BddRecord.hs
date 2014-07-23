@@ -35,7 +35,7 @@ data Ops s u = Ops {
     supportIndices                            :: DDNode s u -> ST s [Int],
     ithVar                                    :: Int -> ST s (DDNode s u),
     varAtLevel                                :: Int -> ST s (DDNode s u),
-    shift                                     :: [DDNode s u] -> [DDNode s u] -> DDNode s u -> ST s (DDNode s u),
+    swapVariables                             :: [DDNode s u] -> [DDNode s u] -> DDNode s u -> ST s (DDNode s u),
     ref                                       :: DDNode s u -> ST s (),
     deref                                     :: DDNode s u -> ST s (),
     indicesToCube                             :: [Int] -> ST s (DDNode s u),
@@ -86,11 +86,11 @@ constructOps m = Ops {..}
     xorExistAbstract c f g = C.xorExistAbstract m f g c
     support                = C.support          m
     supportIndices         = C.supportIndices   m
-    ithVar                 = C.bvar             m
+    ithVar                 = C.ithVar           m
     varAtLevel             = C.newVarAtLevel    m
     leq                    = C.leq              m
     leqUnless              = C.leqUnless        m
-    shift                  = C.shift            m
+    swapVariables          = C.swapVariables    m
     ref                    = C.ref               
     deref                  = C.deref            m
     makePrime              = C.makePrime        m
@@ -98,9 +98,9 @@ constructOps m = Ops {..}
     indicesToCube          = C.indicesToCube    m
     computeCube            = C.computeCube      m
     nodesToCube            = C.nodesToCube      m
-    satCube                = C.satCube          m
+    satCube                = C.bddToCubeArray   m
     setVarMap              = C.setVarMap        m
-    mapVars                = C.mapVars          m
+    mapVars                = C.varMap           m
     debugCheck             = C.debugCheck       m
     checkKeys              = C.checkKeys        m
     pickOneMinterm         = C.pickOneMinterm   m
