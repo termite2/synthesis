@@ -585,7 +585,7 @@ mkInitConsistency :: (MonadResource (DDNode s u) (ST s) t, Ord lv, Ord lp, Show 
                      t (ST s) (DDNode s u)
 mkInitConsistency Ops{..} getVars mp mp2 labs initCons = do
     forAccumM initCons labs $ \accum (lp, en) -> do
-        let theOperlappingPreds = concatMap (fromJustNote "mkInitConsistency" . flip Map.lookup mp) (getVars lp)
+        let theOperlappingPreds = nub $ concatMap (fromJustNote "mkInitConsistency" . flip Map.lookup mp) (getVars lp)
             theEns              = map (fromJustNote "mkInitConsistency2" . flip Map.lookup mp2) theOperlappingPreds
         lift $ traceST $ show lp ++ " clashes with " ++ show theOperlappingPreds
         forAccumM accum (delete en theEns) $ \accum theEn -> do
