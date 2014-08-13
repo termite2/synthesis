@@ -811,7 +811,7 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
                         let scc = map fst scc_val
                         lift $ lift $ traceST $ "CC: " ++ show scc
                         --All predicates are the predicates in the game that share a label variable with one of the predicates in the scc
-                        let allPreds = concatMap (fromJustNote "doConsistency" . flip Map.lookup theMap) $ nub $ concatMap getVarsLabel scc
+                        let allPreds = nub $ concatMap (fromJustNote "doConsistency" . flip Map.lookup theMap) $ nub $ concatMap getVarsLabel scc
                         lift $ lift $ traceST $ "All preds: " ++ show allPreds
                         --Fringe predicates are the ones that share a label variable with a predicate in the scc but are not in the scc
                         let fringePreds = allPreds \\ scc
