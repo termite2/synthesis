@@ -1032,7 +1032,7 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
 
     strategy si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} target = do
         stratCont     <- cpreCont' ops si rd labelPreds cont (bnot target)
-        winCont       <- $r2 (andAbstract _labelCube) consistentPlusCULCont stratCont
+        winCont       <- liftM bnot $ $r2 (andAbstract _labelCube) consistentPlusCULCont stratCont
         $d deref stratCont
         
         stratUCont'   <- cpreUCont' ops si rd labelPreds cont (bnot target)
