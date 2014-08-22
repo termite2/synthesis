@@ -1,5 +1,6 @@
 {-# LANGUAGE PolymorphicComponents, RecordWildCards, ScopedTypeVariables, TemplateHaskell, FlexibleContexts, NoMonomorphismRestriction #-}
 module Synthesis.TermiteGame (
+    Config(..),
     Abstractor(..),
     absRefineLoop,
     RefineStatic(..),
@@ -47,6 +48,16 @@ import Synthesis.RefineCommon hiding (doEnVars)
 import Cudd.MTR
 
 import Synthesis.Resource
+
+data Config = Config {
+    printSolvingProgress :: Bool,
+    printTransSynopsis   :: Bool,
+    printRefinements     :: Bool,
+    printPromotions      :: Bool,
+    printSatisfiability  :: Bool,
+    printBenchmarking    :: Bool, 
+    printInit            :: Bool
+}
 
 traceMsg :: String -> ST s ()
 traceMsg m = Control.Monad.ST.Unsafe.unsafeIOToST $ do
@@ -328,16 +339,16 @@ data RefineAction =
     | RepeatGFP
     deriving (Show, Eq)
 
-refineConsistency2 ops ts rd@RefineDynamic{..} rs@RefineStatic{..} si labelPreds tgt = do
+refineConsistency2 config ops ts rd@RefineDynamic{..} rs@RefineStatic{..} si labelPreds tgt = do
     winNoConstraint <- lift $ cpreCont' ops si rd labelPreds cont tgt
-    res             <- doConsistency ops ts consistentPlusCULCont consistentMinusCULCont winNoConstraint
+    res             <- doConsistency config ops ts consistentPlusCULCont consistentMinusCULCont winNoConstraint
     case res of
         Just (act, (consistentPlusCULCont', consistentMinusCULCont')) -> do
             let rd' = rd {consistentPlusCULCont = consistentPlusCULCont', consistentMinusCULCont = consistentMinusCULCont', numConsRef = numConsRef + 1}
             return $ Just (forCont act, rd')
         Nothing -> do
             winNoConstraint <- lift $ cpreUCont' ops si rd labelPreds cont tgt
-            res             <- doConsistency ops ts consistentPlusCULUCont consistentMinusCULUCont winNoConstraint
+            res             <- doConsistency config ops ts consistentPlusCULUCont consistentMinusCULUCont winNoConstraint
             case res of
                 Just (act, (consistentPlusCULUCont', consistentMinusCULUCont')) -> do
                     let rd' = rd {consistentPlusCULUCont = consistentPlusCULUCont', consistentMinusCULUCont = consistentMinusCULUCont', numConsRef = numConsRef + 1}
@@ -348,6 +359,7 @@ type CPreFunc   t s u           = DDNode s u -> t (ST s) (DDNode s u)
 type RefineFunc t s u sp lp st  = DDNode s u -> DDNode s u -> RefineDynamic s u -> StateT st (StateT (DB s u sp lp) (t (ST s))) (Maybe (RefineAction, RefineDynamic s u))
 
 refineGFP, refineLFP :: (Show lp, Show sp, Ord lv, Ord lp, Ord sp, MonadResource (DDNode s u) (ST s) t) => 
+             Config -> 
              Ops s u -> 
              Abstractor s u sp lp st -> 
              TheorySolver s u sp lp lv -> 
@@ -356,8 +368,8 @@ refineGFP, refineLFP :: (Show lp, Show sp, Ord lv, Ord lp, Ord sp, MonadResource
              Lab s u -> 
              CPreFunc t s u -> 
              RefineFunc t s u sp lp st
-refineGFP ops@Ops{..} spec ts rs si labelPreds cpreOver tgt mayWin rd = do
-    res <- liftIST $ refineConsistency2 ops ts rd rs si labelPreds tgt
+refineGFP config ops@Ops{..} spec ts rs si labelPreds cpreOver tgt mayWin rd = do
+    res <- liftIST $ refineConsistency2 config ops ts rd rs si labelPreds tgt
     case res of 
         Just rd' -> do
             return $ Just rd'
@@ -372,11 +384,11 @@ refineGFP ops@Ops{..} spec ts rs si labelPreds cpreOver tgt mayWin rd = do
             case res of 
                 Nothing -> return Nothing
                 Just vars -> do
-                    rd'' <- promoteUntracked ops spec ts rd vars
+                    rd'' <- promoteUntracked config ops spec ts rd vars
                     return $ Just (RepeatAll, rd'')
 
-refineLFP ops@Ops{..} spec ts rs si labelPreds cpreUnder tgt mustWin rd = do
-    res <- liftIST $ refineConsistency2 ops ts rd rs si labelPreds tgt
+refineLFP config ops@Ops{..} spec ts rs si labelPreds cpreUnder tgt mustWin rd = do
+    res <- liftIST $ refineConsistency2 config ops ts rd rs si labelPreds tgt
     case res of 
         Just rd' -> do
             return $ Just rd'
@@ -391,11 +403,12 @@ refineLFP ops@Ops{..} spec ts rs si labelPreds cpreUnder tgt mustWin rd = do
             case res of 
                 Nothing -> return Nothing
                 Just vars -> do
-                    rd'' <- promoteUntracked ops spec ts rd vars
+                    rd'' <- promoteUntracked config ops spec ts rd vars
                     return $ Just (RepeatAll, rd'')
 
 --TODO: makes more sense to do all consistency refinements then all variable promotions
 refine :: (MonadResource (DDNode s u) (ST s) t) => 
+              Config -> 
               CPreFunc t s u -> 
               CPreFunc t s u -> 
               RefineFunc t s u sp lp st -> 
@@ -406,19 +419,19 @@ refine :: (MonadResource (DDNode s u) (ST s) t) =>
               DDNode s u -> 
               RefineDynamic s u -> 
               StateT st (StateT (DB s u sp lp) (t (ST s))) (Maybe (RefineAction, RefineDynamic s u))
-refine cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStatic{..} buchiWinning lastLFP rd = do
+refine config@Config{..} cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStatic{..} buchiWinning lastLFP rd = do
     --TODO try mixing this with synthesis. ie. only refine buchi after
     --solving a safety game at the top level.
     let buchiRefine = do
             res <- refineFuncGFP buchiWinning buchiWinning rd
             case res of 
                 Nothing -> return ()
-                Just _  -> liftST $ traceST "Refined at buchi level"
+                Just _  -> when printRefinements $ liftST $ traceST "Refined at buchi level"
             return res 
 
     let fairRefine  = mSumMaybe $ flip map goal $ \goal -> do
             tgt'       <- liftBDD $ $r2 band goal buchiWinning
-            reachUnder <- liftBDD $ solveReach cpreUnder ops rs buchiWinning tgt' lastLFP
+            reachUnder <- liftBDD $ solveReach config cpreUnder ops rs buchiWinning tgt' lastLFP
             tgt''      <- liftBDD $ $r2 bor tgt' reachUnder
             liftBDD $ $d deref tgt'
 
@@ -426,7 +439,7 @@ refine cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStati
                     res <- refineFuncLFP reachUnder tgt'' rd
                     case res of 
                         Nothing -> return ()
-                        Just _  -> liftST $ traceST "Refined at reachability level"
+                        Just _  -> when printRefinements $ liftST $ traceST "Refined at reachability level"
                     return res 
 
             let fairRefine = mSumMaybe $ flip map fair $ \fair -> do
@@ -443,7 +456,7 @@ refine cpreOver cpreUnder refineFuncGFP refineFuncLFP ops@Ops{..} rs@RefineStati
 
                     case res' of 
                         Nothing -> return ()
-                        Just _  -> liftST $ traceST "Refined at fair level"
+                        Just _  -> when printRefinements $ liftST $ traceST "Refined at fair level"
                     return res'
 
             res <- mSumMaybe [refineReach, fairRefine]
@@ -475,6 +488,7 @@ solveFair cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt winning fairr = do
         return res
 
 solveReach :: (MonadResource (DDNode s u) (ST s) t) => 
+              Config -> 
               (DDNode s u -> t (ST s) (DDNode s u)) -> 
               Ops s u -> 
               RefineStatic s u -> 
@@ -482,13 +496,13 @@ solveReach :: (MonadResource (DDNode s u) (ST s) t) =>
               DDNode s u -> 
               DDNode s u -> 
               t (ST s) (DDNode s u)
-solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt goall startingLFP = do
+solveReach Config{..} cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt goall startingLFP = do
     $rp ref startingLFP
     fixedPointR ops func startingLFP
     where
     func target = do
         sz <- lift $ dagSize target
-        lift $ traceMsg $ "r(" ++ show sz ++ ")"
+        when printSolvingProgress $ lift $ traceMsg $ "r(" ++ show sz ++ ")"
         t1 <- $r2 bor target goall
         $rp ref bfalse
         res <- forAccumM bfalse fair $ \accum val -> do
@@ -502,24 +516,25 @@ solveReach cpreFunc ops@Ops{..} rs@RefineStatic{..} startPt goall startingLFP = 
 
 --TODO check if this consumes the initial state on each iteration
 solveBuchi :: (MonadResource (DDNode s u) (ST s) t) => 
+              Config -> 
               (DDNode s u -> t (ST s) (DDNode s u)) -> 
               Ops s u -> 
               RefineStatic s u -> 
               DDNode s u -> 
               DDNode s u -> 
               t (ST s) (DDNode s u)
-solveBuchi cpreFunc ops@Ops{..} rs@RefineStatic{..} startingPoint startingLFP = do
+solveBuchi config@Config{..} cpreFunc ops@Ops{..} rs@RefineStatic{..} startingPoint startingLFP = do
     $rp ref startingPoint
     fixedPointR ops func startingPoint
     where
     func reachN = do
-        lift $ traceMsg "b"
+        when printSolvingProgress $ lift $ traceMsg "b"
         $rp ref btrue
         res <- forAccumM btrue goal $ \accum val -> do
-            lift $ traceMsg "g"
+            when printSolvingProgress $ lift $ traceMsg "g"
             t1 <- $r2 band reachN val
             --TODO terminate when t1s are equal
-            res' <- solveReach cpreFunc ops rs reachN t1 startingLFP
+            res' <- solveReach config cpreFunc ops rs reachN t1 startingLFP
             $d deref t1
             res <- $r2 band res' accum
             $d deref res'
@@ -540,6 +555,7 @@ mkVarsMap args = foldl f Map.empty args
             Nothing -> Map.insert b [a] mp
 
 mkInitConsistency :: (MonadResource (DDNode s u) (ST s) t, Ord lv, Ord lp, Show lp) => 
+                     Config -> 
                      Ops s u -> 
                      (lp -> [lv]) -> 
                      Map lv [lp] -> 
@@ -547,11 +563,11 @@ mkInitConsistency :: (MonadResource (DDNode s u) (ST s) t, Ord lv, Ord lp, Show 
                      [(lp, DDNode s u)] -> 
                      DDNode s u -> 
                      t (ST s) (DDNode s u)
-mkInitConsistency Ops{..} getVars mp mp2 labs initCons = do
+mkInitConsistency Config{..} Ops{..} getVars mp mp2 labs initCons = do
     forAccumM initCons labs $ \accum (lp, en) -> do
         let theOperlappingPreds = nub $ concatMap (fromJustNote "mkInitConsistency" . flip Map.lookup mp) (getVars lp)
             theEns              = map (fromJustNote "mkInitConsistency2" . flip Map.lookup mp2) theOperlappingPreds
-        lift $ traceST $ show lp ++ " clashes with " ++ show theOperlappingPreds
+        when printSatisfiability $ lift $ traceST $ show lp ++ " clashes with " ++ show theOperlappingPreds
         forAccumM accum (delete en theEns) $ \accum theEn -> do
             constr <- $r $ bnot en .| bnot theEn
             res <- $r2 band accum constr
@@ -566,11 +582,12 @@ liftAS   = lift . hoist lift
 
 --Create an initial abstraction and set up the data structures
 initialAbstraction :: (Show sp, Show lp, Show lv, Ord sp, Ord lp, Ord lv, MonadResource (DDNode s u) (ST s) t) => 
+                      Config -> 
                       Ops s u -> 
                       Abstractor s u sp lp st -> 
                       TheorySolver s u sp lp lv -> 
                       StateT st (StateT (DB s u sp lp) (t (ST s))) (RefineDynamic s u, RefineStatic s u)
-initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
+initialAbstraction config@Config{..} ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     liftST  $ check "InitialAbstraction start" ops
     --abstract init
     initExpr <- hoistAbs $ initAbs (initOps ops)
@@ -593,16 +610,15 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
 
     --get the abstract update functions for the goal predicates and variables
     let toUpdate = nub $ _allocatedStateVars newVarsGoals ++ _allocatedStateVars newVarsFairs ++ _allocatedStateVars newVarsCont ++ zip (map sel1 initialVars) ivs
-    liftST  $ traceST $ "Initial transition relation state vars: \n" ++ (intercalate "\n" $ map (('\t' :) . show . fst) $ toUpdate)
+    when printInit $ liftST  $ traceST $ "Initial transition relation state vars: \n" ++ (intercalate "\n" $ map (('\t' :) . show . fst) $ toUpdate)
     (updateExprs', inconsistent) <- hoistAbs $ doUpdate ops (updateAbs toUpdate)
     liftBDD $ mapM ($r . return) updateExprs'
     outcomeCube <- lift $ gets $ _outcomeCube . _sections
     updateExprs <- liftBDD $ mapM ($r . bexists outcomeCube) updateExprs'
     liftBDD $ mapM ($d deref) updateExprs'
-    liftAS $ zipWithM (transSynopsys ops) (map fst toUpdate) updateExprs
+    when printTransSynopsis $ liftAS $ zipWithM_ (transSynopsys ops) (map fst toUpdate) updateExprs
     cubes  <- liftBDD $ mapM ($r . nodesToCube . snd) toUpdate
     groups <- liftBDD $ groupTrels ops $ zip cubes updateExprs
-    liftST $ traceST $ "Number of transition partitions: " ++ show (length groups)
 
     --create the consistency constraints
     --TODO: should I also conjunct bnot inconsistent with consistentMinus?
@@ -616,9 +632,8 @@ initialAbstraction ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     --compute the initial consistentMinus being as liberal as possible
     labelPreds <- liftIST $ gets $ _labelVars . _symbolTable
     let theMap = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys labelPreds
-    liftST  $ traceST $ show theMap
     liftBDD $ $rp ref btrue
-    consistentMinusCULCont' <- liftBDD $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList labelPreds) btrue
+    consistentMinusCULCont' <- liftBDD $ mkInitConsistency config ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList labelPreds) btrue
     consistentMinusCULCont <- liftBDD $ $r2 band consistentMinusCULCont' consistentPlusCULCont
     liftBDD $ $d deref consistentMinusCULCont'
     let consistentMinusCULUCont = consistentMinusCULCont
@@ -643,17 +658,18 @@ refineStrategy = refineFirstPrime
 
 --Promote untracked state variables to full state variables so that we can make progress towards the goal. Does not refine the consistency relations.
 promoteUntracked :: (Ord lp, Ord sp, Ord lv, Show sp, Show lp, MonadResource (DDNode s u) (ST s) t) => 
+                    Config -> 
                     Ops s u -> 
                     Abstractor s u sp lp st -> 
                     TheorySolver s u sp lp lv -> 
                     RefineDynamic s u -> 
                     [Int] -> 
                     StateT st (StateT (DB s u sp lp) (t (ST s))) (RefineDynamic s u)
-promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..} indices = do
+promoteUntracked config@Config{..} ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..} indices = do
     --look up the predicates to promote
     stateRev             <- liftIST $ gets $ _stateRev . _symbolTable
     let refineVars       =  nub $ map (fromJustNote "promoteUntracked: untracked indices not in stateRev" . flip Map.lookup stateRev) indices
-    liftST $ traceST $ "* Promoting: \n" ++ (intercalate "\n" $ map (('\t' :) . show) $ refineVars)
+    when printPromotions $ liftST $ traceST $ "* Promoting: \n" ++ (intercalate "\n" $ map (('\t' :) . show) $ refineVars)
 
     NewVars{..}          <- lift $ hoist lift $ promoteUntrackedVars ops refineVars
     labelPredsPreUpdate  <- liftIST $ gets $ _labelVars . _symbolTable
@@ -665,20 +681,19 @@ promoteUntracked ops@Ops{..} Abstractor{..} TheorySolver{..} rd@RefineDynamic{..
     outcomeCube <- liftIST $ gets $ _outcomeCube . _sections
     updateExprs  <- liftBDD $ mapM ($r . bexists outcomeCube) updateExprs'
     liftBDD $ mapM ($d deref) updateExprs'
-    liftAS $ zipWithM (transSynopsys ops) (map fst _allocatedStateVars) updateExprs
+    when printTransSynopsis $ liftAS $ void $ zipWithM (transSynopsys ops) (map fst _allocatedStateVars) updateExprs
     cubes <- liftBDD $ mapM ($r . nodesToCube . snd) _allocatedStateVars
     groups <- liftBDD $ groupTrels' ops (last trans) $ zip cubes updateExprs
-    liftST $ traceST $ "Number of transition partitions: " ++ show (length groups)
 
     labelPreds              <- liftIST $ gets $ _labelVars . _symbolTable
     let newLabelPreds       = labelPreds Map.\\ labelPredsPreUpdate
     let theMap              = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys labelPreds
     --TODO does old consistency relation need to be derefed
-    consistentMinusCULCont'' <- liftBDD $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList newLabelPreds) consistentMinusCULCont
+    consistentMinusCULCont'' <- liftBDD $ mkInitConsistency config ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList newLabelPreds) consistentMinusCULCont
     consistentMinusCULCont' <- liftBDD $ $r2 band consistentMinusCULCont'' (bnot inconsistent)
     liftBDD $ $d deref consistentMinusCULCont''
 
-    consistentMinusCULUCont'' <- liftBDD $ mkInitConsistency ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList newLabelPreds) consistentMinusCULUCont
+    consistentMinusCULUCont'' <- liftBDD $ mkInitConsistency config ops getVarsLabel theMap (Map.map sel3 labelPreds) (map (id *** sel3) $ Map.toList newLabelPreds) consistentMinusCULUCont
     consistentMinusCULUCont' <- liftBDD $ $r2 band consistentMinusCULUCont'' (bnot inconsistent)
     liftBDD $ $d deref consistentMinusCULUCont''
     
@@ -715,13 +730,14 @@ sccs SymbolInfo{..} TheorySolver{..} labelCube = fmap (flatten . fmap (sel1 . fu
 
 --TODO is it correct to use this for gfp and lfp refinements?
 doConsistency :: (Ord sp, Ord lp, Ord lv, Show sp, Show lp, MonadResource (DDNode s u) (ST s) t) => 
+                 Config -> 
                  Ops s u -> 
                  TheorySolver s u sp lp lv -> 
                  DDNode s u -> 
                  DDNode s u -> 
                  DDNode s u -> 
                  StateT (DB s u sp lp) (t (ST s)) (Maybe (RefineType, (DDNode s u, DDNode s u)))
-doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
+doConsistency Config{..} ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
     syi@SymbolInfo{..} <- gets _symbolTable 
     si@SectionInfo{..} <- gets _sections
     winActOver         <- lift $ $r2 band winNoConstraint cPlus
@@ -746,12 +762,12 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
             let groupedState = groupForUnsatCore (sel2 . fromJustNote "doConsistency" . flip Map.lookup _stateVars) cStatePreds
                 groupedLabel = groupForUnsatCore (sel2 . fromJustNote "doConsistency" . flip Map.lookup _labelVars) cLabelPreds
             let fmt (name, enc) = show name ++ ":" ++ map (alt 'T' 'F') enc
-            lift $ lift $ traceMsg $ "* Refining Consistency: " ++ intercalate ", " (map fmt groupedState) ++ " -- " ++ intercalate ", " (map fmt groupedLabel) ++ " ..."
+            when printSatisfiability $ lift $ lift $ traceMsg $ "* Refining Consistency: " ++ intercalate ", " (map fmt groupedState) ++ " -- " ++ intercalate ", " (map fmt groupedLabel) ++ " ..."
             case unsatCoreStateLabel groupedState groupedLabel of
                 Just (statePairs, labelPairs) -> do
                     --statePairs, labelPairs is inconsistent so subtract this from consistentPlusCUL
-                    lift $ lift $ traceST $ "UNSAT"
-                    lift $ lift $ traceST $ "Core is" ++ show statePairs ++ " " ++ show labelPairs
+                    when printSatisfiability $ lift $ lift $ traceST $ "UNSAT"
+                    when printSatisfiability $ lift $ lift $ traceST $ "Core is" ++ show statePairs ++ " " ++ show labelPairs
                     inconsistent       <- lift $ stateLabelInconsistent ops syi statePairs labelPairs
                     consistentPlusCUL' <- lift $ $r2 band cPlus (bnot inconsistent)
                     lift $ $d deref cPlus
@@ -762,7 +778,7 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
                 Nothing -> do
                     --the (s, u, l) tuple is consistent so add this to consistentMinusCUL
                     lift $ $d deref winNoConstraint
-                    lift $ lift $ traceST "SAT"
+                    when printSatisfiability $ lift $ lift $ traceST "SAT"
 
                     --groupedLabel :: [label predicate, [encoding]]
                     --return  a list of sub label cubes such that disjoint cubes dont share a label variable
@@ -773,14 +789,14 @@ doConsistency ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConstraint = do
                     let theMap = mkVarsMap $ map (id &&& getVarsLabel) $ Map.keys labelPreds
                     cMinus' <- forAccumM cMinus scs $ \cons scc_val -> do
                         let scc = map fst scc_val
-                        lift $ lift $ traceST $ "CC: " ++ show scc
+                        when printSatisfiability $ lift $ lift $ traceST $ "CC: " ++ show scc
                         --All predicates are the predicates in the game that share a label variable with one of the predicates in the scc
                         let allPreds = nub $ concatMap (fromJustNote "doConsistency" . flip Map.lookup theMap) $ nub $ concatMap getVarsLabel scc
-                        lift $ lift $ traceST $ "All preds: " ++ show allPreds
+                        when printSatisfiability $ lift $ lift $ traceST $ "All preds: " ++ show allPreds
                         --Fringe predicates are the ones that share a label variable with a predicate in the scc but are not in the scc
                         let fringePreds = allPreds \\ scc
-                        lift $ lift $ traceST $ "Fringe Preds: " ++ show fringePreds
-                        lift $ lift $ traceST ""
+                        when printSatisfiability $ lift $ lift $ traceST $ "Fringe Preds: " ++ show fringePreds
+                        when printSatisfiability $ lift $ lift $ traceST ""
                         let labelPreds' = map (first $ fromJustNote "refineConsistency" . flip Map.lookup _labelVars) scc_val
                         let func (l, pol) = [(sel1 l, pol), ([sel3 l], [True])]
                         let allEns = map (sel3 . fromJustNote "refineConsistency" . flip Map.lookup _labelVars) allPreds
@@ -827,6 +843,7 @@ fixedPoint2 ops@Ops{..} start thing func = do
         False -> fixedPoint2 ops res thing' func
 
 strategy :: forall s u t. (MonadResource (DDNode s u) (ST s) t) => 
+            Config -> 
             Ops s u -> 
             SectionInfo s u -> 
             RefineStatic s u -> 
@@ -834,7 +851,7 @@ strategy :: forall s u t. (MonadResource (DDNode s u) (ST s) t) =>
             Lab s u -> 
             DDNode s u -> 
             t (ST s) ([[DDNode s u]], [[DDNode s u]])
-strategy ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
+strategy config ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds win = do
     lift $ traceST "* Computing strategy"
     --For each goal
     res <- forM goal $ \goal -> do 
@@ -930,6 +947,7 @@ Outer fixpoint is: as above but (never getting in goal, getting in goal once, ge
 -}
 
 counterExample :: forall t s u. (MonadResource (DDNode s u) (ST s) t) => 
+                  Config -> 
                   Ops s u -> 
                   SectionInfo s u -> 
                   RefineStatic s u -> 
@@ -937,7 +955,7 @@ counterExample :: forall t s u. (MonadResource (DDNode s u) (ST s) t) =>
                   Lab s u -> 
                   DDNode s u -> 
                   t (ST s) [[DDNode s u]]
-counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds winGame = do
+counterExample config ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynamic{..} labelPreds winGame = do
     lift $ traceST "* Computing counterexample"
     lift $ sequence $ replicate (length goal * length fair) (ref bfalse)
     sequence $ replicate (length goal * length fair + 1) ($r $ return bfalse)
@@ -947,10 +965,9 @@ counterExample ops@Ops{..} si@SectionInfo{..} rs@RefineStatic{..} rd@RefineDynam
         res <- forAccumLM bfalse strat $ \tot (goal, strats) -> do
             tgt               <- $r2 bor (bnot goal) x
             --TODO optimise: dont use btrue below
-            winBuchi          <- liftM bnot $ solveReach (cPreOver ops si rs rd labelPreds) ops rs btrue (bnot tgt) bfalse
+            winBuchi          <- liftM bnot $ solveReach config (cPreOver ops si rs rd labelPreds) ops rs btrue (bnot tgt) bfalse
             (winStrat, strat) <- stratReach si rs rd strats x winBuchi tgt
             when (winStrat /= winBuchi) (lift $ traceST "Warning: counterexample winning regions are not equal")
-            lift $ traceST "CHECK"
             $d deref winStrat
             $d deref tgt
             tot' <- $r2 bor tot winBuchi
@@ -1025,6 +1042,7 @@ data RefineInfo s u sp lp st = RefineInfo {
 }
 
 refineInit :: (Ord sp, Show sp, MonadResource (DDNode s u) (ST s) t) => 
+              Config -> 
               Ops s u -> 
               TheorySolver s u sp lp lv -> 
               RefineStatic s u -> 
@@ -1032,7 +1050,7 @@ refineInit :: (Ord sp, Show sp, MonadResource (DDNode s u) (ST s) t) =>
               SymbolInfo s u sp lp -> 
               DDNode s u -> 
               t (ST s) (RefineDynamic s u, Bool)
-refineInit ops@Ops{..} ts@TheorySolver{..} rs@RefineStatic{..} rd@RefineDynamic{..} syi@SymbolInfo{..} winRegion = do
+refineInit config@Config{..} ops@Ops{..} ts@TheorySolver{..} rs@RefineStatic{..} rd@RefineDynamic{..} syi@SymbolInfo{..} winRegion = do
     winning <- lift $ leqUnless (bnot winRegion) (bnot init) inconsistentInit
     case winning of 
         False -> do
@@ -1044,15 +1062,15 @@ refineInit ops@Ops{..} ts@TheorySolver{..} rs@RefineStatic{..} rd@RefineDynamic{
             let groupedState = groupForUnsatCore (sel2 . fromJustNote "refineInit1" . flip Map.lookup (_stateVars `Map.union` _initVars)) $ indicesToStatePreds syi c
             case unsatCoreState groupedState of
                 Nothing -> do
-                    lift $ traceST $ "* Found consistent losing state: " ++ show groupedState
+                    when printSatisfiability $ lift $ traceST $ "* Found consistent losing state: " ++ show groupedState
                     return (rd, False)
                 Just uc -> do
-                    lift $ traceST "* Found inconsistent initial state. Refining..."
+                    when printSatisfiability $ lift $ traceST "* Found inconsistent initial state. Refining..."
                     unsat <- makeCubeInt ops $ map (first (sel1 . fromJustNote "refineInit2" . flip Map.lookup (_stateVars `Map.union` _initVars))) uc
                     inconsistentInit' <- $r2 bor inconsistentInit unsat
                     $d deref inconsistentInit 
                     $d deref unsat
-                    refineInit ops ts rs (rd {inconsistentInit = inconsistentInit'}) syi winRegion
+                    refineInit config ops ts rs (rd {inconsistentInit = inconsistentInit'}) syi winRegion
         True  -> return (rd, True)
 
 showResources :: Ops s u -> InUse (DDNode s u) -> ST s String
@@ -1071,21 +1089,22 @@ lift2 = lift . lift
 
 --The abstraction-refinement loop
 absRefineLoop :: forall s u o sp lp lv st t. (Ord sp, Ord lp, Show sp, Show lp, Show lv, Ord lv, MonadResource (DDNode s u) (ST s) t) => 
+                 Config -> 
                  STDdManager s u -> 
                  Abstractor s u sp lp st -> 
                  TheorySolver s u sp lp lv -> 
                  Maybe Int -> 
                  t (ST s) (Maybe Bool, RefineInfo s u sp lp st)
-absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
+absRefineLoop config@Config{..} m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
     idb <- lift $ initialDB ops
     (((winning, (si, rs, rd, lp, wo, wu)), st), db) <- flip runStateT idb $ flip runStateT (initialState spec) $ do
-        (rd, rs) <- initialAbstraction ops spec ts
+        (rd, rs) <- initialAbstraction config ops spec ts
         lift2 $ $rp ref btrue
         lift2 $ $rp ref bfalse
         flip runContT return $ refineLoop ops rs rd btrue bfalse
-    lift $ traceST $ "State preds: \n"     ++ intercalate "\n" (map (("* " ++) . show) $ extractStatePreds db)
-    lift $ traceST $ "Untracked preds: \n" ++ intercalate "\n" (map (("* " ++) . show) $ extractUntrackedPreds db)
-    lift $ traceST $ "Label preds: \n"     ++ intercalate "\n" (map (("* " ++) . show) $ Map.keys (_labelVars $ _symbolTable db))
+    --lift $ traceST $ "State preds: \n"     ++ intercalate "\n" (map (("* " ++) . show) $ extractStatePreds db)
+    --lift $ traceST $ "Untracked preds: \n" ++ intercalate "\n" (map (("* " ++) . show) $ extractUntrackedPreds db)
+    --lift $ traceST $ "Label preds: \n"     ++ intercalate "\n" (map (("* " ++) . show) $ Map.keys (_labelVars $ _symbolTable db))
     {-
     dc <- lift $ debugCheck
     ck <- lift $ checkKeys
@@ -1102,7 +1121,7 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
     lift $ traceST str
     -}
 
-    lift $ do
+    when printBenchmarking $ lift $ do
         let isState x = or $ map (`elem` _trackedInds (_sections db)) (sel2 x)
         traceST "Begin benchmarking stats"
         traceST $ "# state preds: "     ++ show (Map.size $ Map.filter isState $ _stateVars $ _symbolTable db)
@@ -1152,14 +1171,14 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                 when (hasOutgoings /= btrue) (error "hasOutGoings not true")
 
                 (rd, winRegion) <- flip (if' (act == RepeatAll || act == RepeatGFP)) (return (rd, lastWin)) $ do
-                    winRegion <- lift3 $ solveBuchi (cPreOver ops si rs rd lp) ops rs lastWin lastUnder
+                    winRegion <- lift3 $ solveBuchi config (cPreOver ops si rs rd lp) ops rs lastWin lastUnder
 
                     l <- lift4 $ leqUnless winRegion lastWin (bnot c)
                     when (not l) (error "Sanity check 1")
 
                     lift3 $ $d deref lastWin
                     lift4 $ traceST ""
-                    (rd, winning) <- lift3 $ refineInit ops ts rs rd syi winRegion
+                    (rd, winning) <- lift3 $ refineInit config ops ts rs rd syi winRegion
                     case winning of
                         False -> do
                             lift4 $ traceST "Losing"
@@ -1172,14 +1191,14 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                 --TODO: would it be faster to use winRegion, lastUnder, or
                 --their conjunction?
                 (rd, winRegionUnder) <- flip (if' (act == RepeatAll || act == RepeatLFP)) (return (rd, lastUnder)) $ do
-                    winRegionUnder <- lift3 $ solveBuchi (cPreUnder ops si rs rd lp) ops rs winRegion lastUnder
+                    winRegionUnder <- lift3 $ solveBuchi config (cPreUnder ops si rs rd lp) ops rs winRegion lastUnder
 
                     l <- lift4 $ leqUnless lastUnder winRegionUnder (bnot c)
                     when (not l) (error "Sanity check 2")
 
                     lift3 $ $d deref lastUnder
                     lift4 $ traceST ""
-                    (rd, winning) <- lift3 $ refineInit ops ts rs rd syi winRegionUnder
+                    (rd, winning) <- lift3 $ refineInit config ops ts rs rd syi winRegionUnder
                     case winning of
                         True -> do
                             lift4 $ traceST "Winning: Early termination"
@@ -1199,23 +1218,23 @@ absRefineLoop m spec ts maxIterations = let ops@Ops{..} = constructOps m in do
                     cpo  = cPreOver   ops si rs rd lp
                     cpo' = cpreOver'  ops si rs rd lp
                     cpu' = cpreUnder' ops si rs rd lp
-                    rfG  = refineGFP  ops spec ts rs si lp cpo'
-                    rfL  = refineLFP  ops spec ts rs si lp cpu'
+                    rfG  = refineGFP  config ops spec ts rs si lp cpo'
+                    rfL  = refineLFP  config ops spec ts rs si lp cpu'
 
-                res <- lift $ refine cpo cpu rfG rfL ops rs winRegion winRegionUnder rd
+                res <- lift $ refine config cpo cpu rfG rfL ops rs winRegion winRegionUnder rd
                 lift3 $ $d deref hasOutgoings   
                 case res of 
                     Nothing -> do 
                         lift4 $ traceST "No refinements to make. Warning: this should never happen. It is a bug. Please tell Adam"
                         return (Just True, (si, rs, rd, lp, winRegion, winRegionUnder))
                     Just (act, rd) -> do
-                        lift4 $ traceST $ show act
+                        --lift4 $ traceST $ show act
                         refineLoop' (itr+1) act rd winRegion winRegionUnder
 
 --An initial state that wasnt may winning was discovered. We therefore must provide a spoiling strategy from any not may winning (== must losing) state.
-cex :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp st -> t (ST s) [[DDNode s u]]
-cex RefineInfo{..} = counterExample op si rs rd lp wo
+cex :: (MonadResource (DDNode s u) (ST s) t) => Config -> RefineInfo s u sp lp st -> t (ST s) [[DDNode s u]]
+cex config RefineInfo{..} = counterExample config op si rs rd lp wo
 
-strat :: (MonadResource (DDNode s u) (ST s) t) => RefineInfo s u sp lp st -> t (ST s) ([[DDNode s u]], [[DDNode s u]])
-strat RefineInfo{..} = strategy op si rs rd lp wu
+strat :: (MonadResource (DDNode s u) (ST s) t) => Config -> RefineInfo s u sp lp st -> t (ST s) ([[DDNode s u]], [[DDNode s u]])
+strat config RefineInfo{..} = strategy config op si rs rd lp wu
 
