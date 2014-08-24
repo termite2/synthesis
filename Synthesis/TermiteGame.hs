@@ -1177,7 +1177,6 @@ absRefineLoop config@Config{..} m spec ts maxIterations = let ops@Ops{..} = cons
                     when (not l) (error "Sanity check 1")
 
                     lift3 $ $d deref lastWin
-                    lift4 $ traceST ""
                     (rd, winning) <- lift3 $ refineInit config ops ts rs rd syi winRegion
                     case winning of
                         False -> do
@@ -1197,7 +1196,6 @@ absRefineLoop config@Config{..} m spec ts maxIterations = let ops@Ops{..} = cons
                     when (not l) (error "Sanity check 2")
 
                     lift3 $ $d deref lastUnder
-                    lift4 $ traceST ""
                     (rd, winning) <- lift3 $ refineInit config ops ts rs rd syi winRegionUnder
                     case winning of
                         True -> do
