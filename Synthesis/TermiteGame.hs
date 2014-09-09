@@ -567,7 +567,8 @@ mkInitConsistency Config{..} Ops{..} getVars mp mp2 labs initCons = do
     forAccumM initCons labs $ \accum (lp, en) -> do
         let theOperlappingPreds = nub $ concatMap (fromJustNote "mkInitConsistency" . flip Map.lookup mp) (getVars lp)
             theEns              = map (fromJustNote "mkInitConsistency2" . flip Map.lookup mp2) theOperlappingPreds
-        when printSatisfiability $ lift $ traceST $ show lp ++ " clashes with " ++ show theOperlappingPreds
+        when printSatisfiability $ lift $ traceST $ show $ renderPretty 0.8 100 $ 
+            text (T.pack $ show lp ++ " clashes with ") <$$> indent 4 (list $ map (text . T.pack . show) theOperlappingPreds)
         forAccumM accum (delete en theEns) $ \accum theEn -> do
             constr <- $r $ bnot en .| bnot theEn
             res <- $r2 band accum constr
