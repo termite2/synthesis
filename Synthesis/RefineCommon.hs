@@ -73,7 +73,7 @@ doEnVars Ops{..} trans enVars = do
         deref e1
         return res
 
-refineAny :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SectionInfo  s u -> DDNode s u -> t (ST s) (Maybe [Int])
+refineAny :: (Monad (t (ST s)), MonadResource (DDNode s u) t) => Ops s u -> SectionInfo  s u -> DDNode s u -> t (ST s) (Maybe [Int])
 refineAny Ops{..} SectionInfo{..} newSU = do
     si <- lift $ supportIndices newSU
     let ui = si `intersect` _untrackedInds
@@ -159,10 +159,10 @@ partitionStateLabelPreds si syi x = (statePairs, labelPairs)
     labelPairs = indicesToLabelPreds syi labelIndices
     (stateIndices, labelIndices) = partitionStateLabel si x
 
-makeCubeInt :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> [([DDNode s u], [Bool])] -> t (ST s) (DDNode s u)
+makeCubeInt :: (Monad (t (ST s)), MonadResource (DDNode s u) t) => Ops s u -> [([DDNode s u], [Bool])] -> t (ST s) (DDNode s u)
 makeCubeInt ops@Ops{..} x = $r $ makeCube ops $ concatMap (uncurry zip ) x
 
-stateLabelInconsistent :: (Ord sp, Ord lp, MonadResource (DDNode s u) (ST s) t) => Ops s u -> SymbolInfo s u sp lp -> [(sp, [Bool])] -> [(lp, [Bool])] -> t (ST s) (DDNode s u)
+stateLabelInconsistent :: (Ord sp, Ord lp, Monad (t (ST s)), MonadResource (DDNode s u) t) => Ops s u -> SymbolInfo s u sp lp -> [(sp, [Bool])] -> [(lp, [Bool])] -> t (ST s) (DDNode s u)
 stateLabelInconsistent ops@Ops{..} SymbolInfo{..} statePairs labelPairs = do
     inconsistentState <- makeCubeInt ops $ map (first getStates) statePairs
     inconsistentLabel <- makeCubeInt ops $ map (first getLabels) labelPairs
@@ -174,7 +174,7 @@ stateLabelInconsistent ops@Ops{..} SymbolInfo{..} statePairs labelPairs = do
     getStates = sel1 . fromJustNote "refineConsistency" . flip Map.lookup _stateVars
     getLabels = sel1 . fromJustNote "refineConsistency" . flip Map.lookup _labelVars
 
-stateLabelConsistent :: (Ord sp, Ord lp, MonadResource (DDNode s u) (ST s) t) => Ops s u -> SymbolInfo s u sp lp -> [(lp, [Bool])] -> t (ST s) (DDNode s u) 
+stateLabelConsistent :: (Ord sp, Ord lp, Monad (t (ST s)), MonadResource (DDNode s u) t) => Ops s u -> SymbolInfo s u sp lp -> [(lp, [Bool])] -> t (ST s) (DDNode s u) 
 stateLabelConsistent ops@Ops{..} SymbolInfo{..} cLabelPreds = do
     labelCube <- makeCubeInt ops $ concatMap func labelPreds'
     otherCube <- $r $ makeCube ops    $ zip otherEnabling (repeat False)

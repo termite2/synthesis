@@ -11,21 +11,21 @@ import Control.Monad.Trans.Identity
 import Language.Haskell.TH
 
 --Resource monad class definition
-class (MonadTrans t, Monad m, Monad (t m)) => MonadResource r m t where
-    checkResource :: String -> r -> t m ()
-    refResource   :: String -> r -> t m ()
-    derefResource :: String -> r -> t m ()
-    getInUse      :: t m (InUse r)
+class (MonadTrans t) => MonadResource r t where
+    checkResource :: Monad m => String -> r -> t m ()
+    refResource   :: Monad m => String -> r -> t m ()
+    derefResource :: Monad m => String -> r -> t m ()
+    getInUse      :: Monad m => t m (InUse r)
 
 --Helper functions for use in this monad
-rf1 :: (MonadResource a m t, Ord a) => (a -> a) -> String -> (a -> m a) -> a -> t m a
+rf1 :: (Monad (t m), Monad m, MonadResource a t, Ord a) => (a -> a) -> String -> (a -> m a) -> a -> t m a
 rf1 reg loc f arg = do
     checkResource loc (reg arg)
     x <- lift $ f arg
     refResource loc (reg x)
     return x
 
-rf2 :: (MonadResource a m t) => (a -> a) -> String -> (a -> a -> m a) -> a -> a -> t m a
+rf2 :: (Monad (t m), Monad m, MonadResource a t) => (a -> a) -> String -> (a -> a -> m a) -> a -> a -> t m a
 rf2 reg loc f arg1 arg2 = do
     checkResource (loc ++ " 1") (reg arg1)
     checkResource (loc ++ " 2") (reg arg2)
@@ -33,7 +33,7 @@ rf2 reg loc f arg1 arg2 = do
     refResource loc (reg x)
     return x
 
-rf3 :: (MonadResource a m t) => (a -> a) -> String -> (a -> a -> a -> m a) -> a -> a -> a -> t m a
+rf3 :: (Monad (t m), Monad m, MonadResource a t) => (a -> a) -> String -> (a -> a -> a -> m a) -> a -> a -> a -> t m a
 rf3 reg loc f arg1 arg2 arg3 = do
     checkResource (loc ++ " 1") (reg arg1)
     checkResource (loc ++ " 2") (reg arg2)
@@ -42,25 +42,25 @@ rf3 reg loc f arg1 arg2 arg3 = do
     refResource loc (reg x)
     return x
 
-rf :: (MonadResource a m t) => (a -> a) -> String -> m a -> t m a
+rf :: (Monad (t m), Monad m, MonadResource a t) => (a -> a) -> String -> m a -> t m a
 rf reg loc m = do
     x <- lift $ m
     refResource loc (reg x)
     return x
 
-rrf :: (MonadResource a m t) => (a -> a) -> String -> t m a -> t m a
+rrf :: (Monad (t m), Monad m, MonadResource a t) => (a -> a) -> String -> t m a -> t m a
 rrf reg loc m = do
     x <- m
     refResource loc (reg x)
     return x
 
-de :: (MonadResource a m t) => (a -> a) -> String -> (a -> m ()) -> a -> t m ()
+de :: (Monad (t m), Monad m, MonadResource a t) => (a -> a) -> String -> (a -> m ()) -> a -> t m ()
 de reg loc f x = do
     derefResource loc (reg x)
     lift $ f x
     return ()
 
-rp' :: (MonadResource a m t) => (a -> a) -> String -> (a -> m ()) -> a -> t m ()
+rp' :: (Monad (t m), Monad m, MonadResource a t) => (a -> a) -> String -> (a -> m ()) -> a -> t m ()
 rp' reg loc f x = do
     refResource loc (reg x)
     lift $ f x
@@ -131,7 +131,7 @@ checkRef loc mp x = case Map.lookup x mp of
     Nothing -> error $ "Argument is not in map: " ++ loc
     Just _  -> return $ ()
 
-instance (Ord r, Monad m) => MonadResource r m (ResourceT r) where
+instance (Ord r) => MonadResource r (ResourceT r) where
 
     checkResource loc x = ResourceT $ do
         mp <- get
@@ -143,7 +143,7 @@ instance (Ord r, Monad m) => MonadResource r m (ResourceT r) where
 
     getInUse = ResourceT $ get
 
-instance (Monad m) => MonadResource r m IdentityT where
+instance MonadResource r IdentityT where
     checkResource _ _ = return ()
     refResource   _ _ = return ()
     derefResource _ _ = return ()
@@ -154,5 +154,5 @@ runIdentityTAsResource inuse f = do
     res <- runIdentityT f
     return (res, inuse)
 
---runResource = runResourceT
-runResource = runIdentityTAsResource
+runResource = runResourceT
+--runResource = runIdentityTAsResource
