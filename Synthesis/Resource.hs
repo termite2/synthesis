@@ -1,4 +1,4 @@
-{-# LANGUAGE NoMonomorphismRestriction, GeneralizedNewtypeDeriving, TemplateHaskell, MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances, UndecidableInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving, TemplateHaskell, MultiParamTypeClasses, FlexibleInstances #-}
 module Synthesis.Resource where
 
 import Control.Monad.State.Strict

@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards, TemplateHaskell, FlexibleContexts, DeriveFunctor #-}
+{-# LANGUAGE RecordWildCards, TemplateHaskell, FlexibleContexts, DeriveFunctor, ConstraintKinds #-}
 
 module Synthesis.CG (
     IteratorM(..),
@@ -25,8 +25,9 @@ import Synthesis.BddRecord
 import Synthesis.Interface
 import Synthesis.BddUtil
 import Synthesis.TermiteGame
+import Synthesis.RefineCommon hiding (fixedPoint)
 
-faXnor :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
+faXnor :: (RM s u t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
 faXnor Ops{..} cube x y = liftM bnot $ $r2 (xorExistAbstract cube) x y
 
 {-
@@ -57,7 +58,7 @@ iFoldM func accum (Item x r) = do
     r <- r
     iFoldM func accum' r
 
-genPair :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (Maybe (DDNode s u, DDNode s u))
+genPair :: (RM s u t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (Maybe (DDNode s u, DDNode s u))
 genPair ops@Ops{..} x y rel = case rel == bfalse of
     True  -> return Nothing
     False -> do
@@ -77,7 +78,7 @@ genPair ops@Ops{..} x y rel = case rel == bfalse of
         genX          <- faXnor ops y rel img
         return $ Just (genX, img)
 
-enumerate :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (IteratorM (t (ST s)) (DDNode s u, DDNode s u))
+enumerate :: (RM s u t) => Ops s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (IteratorM (t (ST s)) (DDNode s u, DDNode s u))
 enumerate ops@Ops{..} x y rel = do
     $rp ref rel
     enumerate' rel
@@ -99,7 +100,7 @@ data SynthData s u = SynthData {
     lp           :: Lab s u
 }
 
-enumerateEquivalentLabels :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (IteratorM (t (ST s)) (DDNode s u))
+enumerateEquivalentLabels :: (RM s u t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (IteratorM (t (ST s)) (DDNode s u))
 enumerateEquivalentLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} stateSet label = do
     rel   <- $r $ conj ops (map snd transitions ++ [stateSet, label])
     yVars <- $r $ conj ops [_trackedCube, _untrackedCube, _nextCube]
@@ -112,7 +113,7 @@ enumerateEquivalentLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} 
             return label
 
 --Given a state and a strategy, create an iterator that lists pairs of (label, condition over state variables for this label to be available)
-availableLabels :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (IteratorM (t (ST s)) (DDNode s u, DDNode s u))
+availableLabels :: (RM s u t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (IteratorM (t (ST s)) (DDNode s u, DDNode s u))
 availableLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy stateSet = do
     yVars            <- $r $ conj ops [_trackedCube, _untrackedCube, _nextCube]
     avlWinningLabels <- $r3 andAbstract yVars strategy stateSet
@@ -131,7 +132,7 @@ availableLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy s
 
 --Pick any winning label 
 --The returned label is part of the strategy for every state and consistent substate in the stateSet argument
-pickLabel :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (Maybe (DDNode s u))
+pickLabel :: (RM s u t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (Maybe (DDNode s u))
 pickLabel Ops{..} SynthData{rd = RefineDynamic{..}, ..} strategy stateSet = do
     let SectionInfo{..} = sections
     cube <- $r $ band _trackedCube _untrackedCube
@@ -150,7 +151,7 @@ foldMF init list func = foldM func init list
 --The list of DDNodes is the set of winning regions at each distance from the goal. They are inclusive.
 --The head of the list is the furthest from the goal. The sets monotonically shrink.
 --assumes stateSet is not entirely contained within the goal
-pickLabel2 :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (Maybe (DDNode s u, DDNode s u))
+pickLabel2 :: (RM s u t) => Ops s u -> SynthData s u -> [DDNode s u] -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (Maybe (DDNode s u, DDNode s u))
 pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
     let findSets (x:y:rest) = do
             res <- lift $ stateSet `leq` y
@@ -202,7 +203,7 @@ pickLabel2 ops@Ops{..} SynthData{..} regions goal strategy stateSet = do
         False -> return $ Just (result, outerRegion)
 
 --Generate a bdd X over state variables such that (state & X) has some label available from all of it
-ifCondition :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (Maybe (DDNode s u))
+ifCondition :: (RM s u t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (Maybe (DDNode s u))
 ifCondition ops@Ops{..} sd@SynthData{sections = SectionInfo{..}, ..} strategy stateSet = do
     labelIterator <- availableLabels ops sd strategy stateSet
     case labelIterator of
@@ -221,7 +222,7 @@ ifCondition ops@Ops{..} sd@SynthData{sections = SectionInfo{..}, ..} strategy st
             True  -> $d deref bestCond >> return (cond, res)
             False -> $d deref cond     >> return accum
 
-fixedPoint :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> DDNode s u -> (DDNode s u -> t (ST s) (DDNode s u)) -> t (ST s) (DDNode s u)
+fixedPoint :: (RM s u t) => Ops s u -> DDNode s u -> (DDNode s u -> t (ST s) (DDNode s u)) -> t (ST s) (DDNode s u)
 fixedPoint ops@Ops{..} start func = do
     res <- func start
     $d deref start
@@ -231,7 +232,7 @@ fixedPoint ops@Ops{..} start func = do
 
 forLoop start list func  = foldM func start list
 
-applyTrel :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> [(DDNode s u, DDNode s u)] -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
+applyTrel :: (RM s u t) => Ops s u -> SynthData s u -> [(DDNode s u, DDNode s u)] -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
 applyTrel Ops{..} SynthData{..} trel constraint stateSet = do
     let SectionInfo{..} = sections
 
@@ -261,7 +262,7 @@ applyTrel Ops{..} SynthData{..} trel constraint stateSet = do
 
     return res
 
-applyUncontrollableTC :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> DDNode s u -> t (ST s) (DDNode s u)
+applyUncontrollableTC :: (RM s u t) => Ops s u -> SynthData s u -> DDNode s u -> t (ST s) (DDNode s u)
 applyUncontrollableTC ops@Ops{..} sd@SynthData{..} stateSet = do
     $rp ref stateSet
     fixedPoint ops stateSet $ \set -> do
@@ -271,7 +272,7 @@ applyUncontrollableTC ops@Ops{..} sd@SynthData{..} stateSet = do
         return combined
 
 --Given a label and a state, apply the label and then the transitive closure of uncontrollable transitions to compute the set of possible next states
-applyLabel :: (MonadResource (DDNode s u) (ST s) t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
+applyLabel :: (RM s u t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
 applyLabel ops@Ops{..} sd@SynthData{..} stateSet label = do
     $rp ref btrue
     afterControllableAction    <- applyTrel ops sd transitions btrue stateSet
