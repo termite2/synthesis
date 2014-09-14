@@ -378,7 +378,7 @@ refineGFP config ops@Ops{..} spec ts rs si labelPreds cpreOver tgt mayWin rd = d
                 su      <- cpreOver tgt
                 toDrop  <- $r2 band (bnot su) mayWin
                 $d deref su
-                res     <- lift $ refineStrategy ops si toDrop
+                res     <- refineStrategy ops si toDrop
                 $d deref toDrop
                 return res
             case res of 
@@ -397,7 +397,7 @@ refineLFP config ops@Ops{..} spec ts rs si labelPreds cpreUnder tgt mustWin rd =
                 su      <- cpreUnder tgt
                 toCheck <- $r2 band su (bnot mustWin)
                 $d deref su
-                res     <- lift $ refineStrategy ops si toCheck
+                res     <- refineStrategy ops si toCheck
                 $d deref toCheck
                 return res
             case res of 

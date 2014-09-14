@@ -58,16 +58,16 @@ refineAny Ops{..} SectionInfo{..} newSU = do
         []  -> Nothing
         x:_ -> Just [x]
 
-refineFirstPrime :: Ops s u -> SectionInfo s u -> DDNode s u -> ST s (Maybe [Int])
+refineFirstPrime :: RM s u t => Ops s u -> SectionInfo s u -> DDNode s u -> t (ST s) (Maybe [Int])
 refineFirstPrime Ops{..} SectionInfo{..} newSU = do
     if newSU == bfalse then
         return Nothing
     else do
-        (lc, sz) <- largestCube newSU
-        prime    <- makePrime lc newSU
-        deref lc
-        si       <- supportIndices prime
-        deref prime
+        lc       <- $r1 (liftM fst . largestCube) newSU
+        prime    <- $r2 makePrime lc newSU
+        $d deref lc
+        si       <- lift $ supportIndices prime
+        $d deref prime
         let ui = si `intersect` _untrackedInds
         case ui of
             [] -> error "refineFirstPrime"
