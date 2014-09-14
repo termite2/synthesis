@@ -10,6 +10,11 @@ import Data.Maybe
 import Control.Monad.Trans.Identity
 import Language.Haskell.TH
 
+class Regular r where
+    reg :: r -> r
+
+type InUse k = Map k (Set String, Int)
+
 --Resource monad class definition
 class (MonadTrans t) => MonadResource r t where
     checkResource :: Monad m => String -> r -> t m ()
@@ -18,51 +23,51 @@ class (MonadTrans t) => MonadResource r t where
     getInUse      :: Monad m => t m (InUse r)
 
 --Helper functions for use in this monad
-rf1 :: (Monad (t m), Monad m, MonadResource a t, Ord a) => (a -> a) -> String -> (a -> m a) -> a -> t m a
-rf1 reg loc f arg = do
-    checkResource loc (reg arg)
+rf1 :: (Monad (t m), Monad m, MonadResource a t, Ord a) => String -> (a -> m a) -> a -> t m a
+rf1 loc f arg = do
+    checkResource loc arg
     x <- lift $ f arg
-    refResource loc (reg x)
+    refResource loc x
     return x
 
-rf2 :: (Monad (t m), Monad m, MonadResource a t) => (a -> a) -> String -> (a -> a -> m a) -> a -> a -> t m a
-rf2 reg loc f arg1 arg2 = do
-    checkResource (loc ++ " 1") (reg arg1)
-    checkResource (loc ++ " 2") (reg arg2)
+rf2 :: (Monad (t m), Monad m, MonadResource a t) => String -> (a -> a -> m a) -> a -> a -> t m a
+rf2 loc f arg1 arg2 = do
+    checkResource (loc ++ ": arg 1") arg1
+    checkResource (loc ++ ": arg 2") arg2
     x <- lift $ f arg1 arg2
-    refResource loc (reg x)
+    refResource loc x
     return x
 
-rf3 :: (Monad (t m), Monad m, MonadResource a t) => (a -> a) -> String -> (a -> a -> a -> m a) -> a -> a -> a -> t m a
-rf3 reg loc f arg1 arg2 arg3 = do
-    checkResource (loc ++ " 1") (reg arg1)
-    checkResource (loc ++ " 2") (reg arg2)
-    checkResource (loc ++ " 3") (reg arg3)
+rf3 :: (Monad (t m), Monad m, MonadResource a t) => String -> (a -> a -> a -> m a) -> a -> a -> a -> t m a
+rf3 loc f arg1 arg2 arg3 = do
+    checkResource (loc ++ ": arg 1") arg1
+    checkResource (loc ++ ": arg 2") arg2
+    checkResource (loc ++ ": arg 3") arg3
     x <- lift $ f arg1 arg2 arg3
-    refResource loc (reg x)
+    refResource loc x
     return x
 
-rf :: (Monad (t m), Monad m, MonadResource a t) => (a -> a) -> String -> m a -> t m a
-rf reg loc m = do
+rf :: (Monad (t m), Monad m, MonadResource a t) => String -> m a -> t m a
+rf loc m = do
     x <- lift $ m
-    refResource loc (reg x)
+    refResource loc x
     return x
 
-rrf :: (Monad (t m), Monad m, MonadResource a t) => (a -> a) -> String -> t m a -> t m a
-rrf reg loc m = do
+rrf :: (Monad (t m), Monad m, MonadResource a t) => String -> t m a -> t m a
+rrf loc m = do
     x <- m
-    refResource loc (reg x)
+    refResource loc x
     return x
 
-de :: (Monad (t m), Monad m, MonadResource a t) => (a -> a) -> String -> (a -> m ()) -> a -> t m ()
-de reg loc f x = do
-    derefResource loc (reg x)
+de :: (Monad (t m), Monad m, MonadResource a t) => String -> (a -> m ()) -> a -> t m ()
+de loc f x = do
+    derefResource loc x
     lift $ f x
     return ()
 
-rp' :: (Monad (t m), Monad m, MonadResource a t) => (a -> a) -> String -> (a -> m ()) -> a -> t m ()
-rp' reg loc f x = do
-    refResource loc (reg x)
+rp' :: (Monad (t m), Monad m, MonadResource a t) => String -> (a -> m ()) -> a -> t m ()
+rp' loc f x = do
+    refResource loc x
     lift $ f x
 
 --Template haskell
@@ -79,36 +84,32 @@ formatLoc loc = let file = loc_module loc
                     (line, col) = loc_start loc
                 in concat [file, ":", show line, ":", show col]
 
-appToReg :: Q Exp -> Q Exp
-appToReg f = appE f $ liftM (VarE . fromJust) $ lookupValueName "regular"
-
 --Template haskell to increment the reference counter of a resource
 rp :: Q Exp
-rp = withLocatedError $ appToReg [| rp' |]
+rp = withLocatedError [| rp' |]
 
 r :: Q Exp
-r = withLocatedError $ appToReg [| rf |]
+r = withLocatedError [| rf |]
 
 r1 :: Q Exp
-r1 = withLocatedError $ appToReg [| rf1 |]
+r1 = withLocatedError [| rf1 |]
 
 r2 :: Q Exp
-r2 = withLocatedError $ appToReg [| rf2 |]
+r2 = withLocatedError [| rf2 |]
 
 r3 :: Q Exp
-r3 = withLocatedError $ appToReg [| rf3 |]
+r3 = withLocatedError [| rf3 |]
 
 --Template haskell to increment the reference counter of a resource that is already in the monad
 rr :: Q Exp
-rr = withLocatedError $ appToReg [| rrf |]
+rr = withLocatedError [| rrf |]
 
 --Template haskell to decrement the reference counter of a resource
 d :: Q Exp
-d = withLocatedError $ appToReg [| de |]
+d = withLocatedError [| de |]
 
 --A concrete type implementing the Resource class
-type InUse k = Map k (Set String, Int)
-newtype ResourceT t m a = ResourceT {unResourceT :: StateT (InUse t) m a} deriving (Monad)
+newtype ResourceT r m a = ResourceT {unResourceT :: StateT (InUse r) m a} deriving (Monad)
 
 runResourceT  inUse = flip runStateT  inUse . unResourceT
 evalResourceT inUse = flip evalStateT inUse . unResourceT
@@ -131,15 +132,15 @@ checkRef loc mp x = case Map.lookup x mp of
     Nothing -> error $ "Argument is not in map: " ++ loc
     Just _  -> return $ ()
 
-instance (Ord r) => MonadResource r (ResourceT r) where
+instance (Ord r, Regular r) => MonadResource r (ResourceT r) where
 
     checkResource loc x = ResourceT $ do
         mp <- get
-        checkRef loc mp x
+        checkRef loc mp (reg x)
 
-    refResource   loc x = ResourceT $ modify $ incRef loc x
+    refResource   loc x = ResourceT $ modify $ incRef loc (reg x)
 
-    derefResource loc x = ResourceT $ modify $ decRef loc x
+    derefResource loc x = ResourceT $ modify $ decRef loc (reg x)
 
     getInUse = ResourceT $ get
 

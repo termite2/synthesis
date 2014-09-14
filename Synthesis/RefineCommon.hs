@@ -37,10 +37,13 @@ import Synthesis.BddUtil
 import Synthesis.Resource
 import Synthesis.RefineUtil
 
-import Cudd.Reorder
-import Cudd.Imperative
+import Cudd.Reorder as C
+import Cudd.Imperative as C
 
 type RM s u t = (Monad (t (ST s)), MonadResource (DDNode s u) t)
+
+instance Regular (DDNode s u) where
+    reg = C.regular
 
 --Theory solving
 data TheorySolver s u sp lp lv = TheorySolver {
