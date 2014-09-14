@@ -1,8 +1,6 @@
 {-# LANGUAGE PolymorphicComponents, RecordWildCards, ScopedTypeVariables, TemplateHaskell, FlexibleContexts, ConstraintKinds #-}
 module Synthesis.RefineCommon (
     TheorySolver(..),
-    fixedPoint,
-    doEnVars,
     refineAny,
     refineFirstPrime,
     refineLeastPreds,
@@ -13,7 +11,6 @@ module Synthesis.RefineCommon (
     partitionStateLabelPreds,
     stateLabelInconsistent,
     stateLabelConsistent,
-    updateWrapper,
     groupForUnsatCore,
     setupManager,
     makeCubeInt,
@@ -52,32 +49,6 @@ data TheorySolver s u sp lp lv = TheorySolver {
     eQuant              :: forall pdb. [(lp, [Bool])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
     getVarsLabel        :: lp -> [lv]
 }
-
-fixedPoint :: Ops s u -> (DDNode s u -> ST s (DDNode s u)) -> DDNode s u -> ST s (DDNode s u)
-fixedPoint ops@Ops{..} func start = do
-    res <- func start
-    deref start 
-    case (res==start) of --this is safe 
-        True -> return start
-        False -> fixedPoint ops func res
-        
-doEnVars :: Ops s u -> DDNode s u -> [([DDNode s u], DDNode s u)] -> ST s (DDNode s u)
-doEnVars Ops{..} trans enVars = do
-        ref trans
-        foldM func trans enVars
-    where
-    func soFar (var, en) = do
-        varCube <- nodesToCube var
-        e <- bexists varCube soFar
-        deref varCube
-        e1 <- e .& bnot en
-        deref e
-        c <- en .& soFar
-        deref soFar
-        res <- e1 .| c
-        deref c
-        deref e1
-        return res
 
 refineAny :: RM s u t => Ops s u -> SectionInfo  s u -> DDNode s u -> t (ST s) (Maybe [Int])
 refineAny Ops{..} SectionInfo{..} newSU = do
@@ -192,16 +163,6 @@ stateLabelConsistent ops@Ops{..} SymbolInfo{..} cLabelPreds = do
     otherEnabling = map (sel3 . snd) $ filter (\(p, _) -> not $ p `elem` map fst cLabelPreds) $ Map.toList _labelVars
     labelPreds' = map (first $ fromJustNote "refineConsistency" . flip Map.lookup _labelVars) cLabelPreds
     func (l, pol) = [(sel1 l, pol), ([sel3 l], [True])]
-
-updateWrapper :: Ops s u -> DDNode s u -> StateT (DB s u dp lp) (ST s) (DDNode s u)
-updateWrapper ops@Ops{..} updateExprConj'' = do
-    outcomeCube <- gets $ _outcomeCube . _sections
-    updateExprConj' <- lift $ bexists outcomeCube updateExprConj''
-    lift $ deref updateExprConj''
-    labelPreds <- gets $ _labelVars . _symbolTable
-    updateExprConj  <- lift $ doEnVars ops updateExprConj' $ map (sel1 &&& sel3) $ Map.elems labelPreds
-    lift $ deref updateExprConj'
-    return updateExprConj
 
 groupForUnsatCore :: (Ord sp) => (sp -> [Int]) -> [((Int, sp), Bool)] -> [(sp, [Bool])]
 groupForUnsatCore func svs = map (uncurry reconstruct) $ aggregate svs
