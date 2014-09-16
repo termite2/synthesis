@@ -592,19 +592,15 @@ initialAbstraction config@Config{..} ops@Ops{..} Abstractor{..} TheorySolver{..}
     liftST  $ check "InitialAbstraction start" ops
     --abstract init
     initExpr <- hoistAbs $ initAbs (initOps ops)
-    liftBDD $ $r $ return initExpr
     liftST  $ check "After compiling init" ops
     --abstract the goal
     (goalExprs, newVarsGoals) <- hoistAbs $ doGoal ops goalAbs
-    liftBDD $ mapM ($r . return) goalExprs
     liftST  $ check "After compiling goal" ops
     --abstract the fair region
     (fairExprs, newVarsFairs) <- hoistAbs $ doStateLabel ops fairAbs
-    liftBDD $ mapM ($r . return) fairExprs
     liftST  $ check "After compiling fair" ops
     --abstract the controllable condition
     (contExpr, newVarsCont) <- hoistAbs $ doStateLabel ops contAbs
-    liftBDD $ $r $ return contExpr
     liftST  $ check "After compiling controllable" ops
 
     ivs <- liftAS $ sequence $ map (uncurryN $ getStaticVar ops) initialVars
@@ -613,7 +609,6 @@ initialAbstraction config@Config{..} ops@Ops{..} Abstractor{..} TheorySolver{..}
     let toUpdate = nub $ _allocatedStateVars newVarsGoals ++ _allocatedStateVars newVarsFairs ++ _allocatedStateVars newVarsCont ++ zip (map sel1 initialVars) ivs
     when printInit $ liftST  $ traceST $ "Initial transition relation state vars: \n" ++ (intercalate "\n" $ map (('\t' :) . show . fst) $ toUpdate)
     (updateExprs', inconsistent) <- hoistAbs $ doUpdate ops (updateAbs toUpdate)
-    liftBDD $ mapM ($r . return) updateExprs'
     outcomeCube <- lift $ gets $ _outcomeCube . _sections
     updateExprs <- liftBDD $ mapM ($r . bexists outcomeCube) updateExprs'
     liftBDD $ mapM ($d deref) updateExprs'
@@ -804,7 +799,6 @@ doConsistency Config{..} ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConst
                         thisLabelCube <- lift $ $r $ nodesToCube $ map (sel3 . sel1) labelPreds'
                         thisLabel <- lift $ makeCubeInt ops $ concatMap func labelPreds'
                         eQuantExpr <- doUpdate ops (eQuant scc_val)
-                        lift $ $r $ return eQuantExpr
                         allCubeFalse <- lift $ $r $ makeCube ops $ zip allEns (repeat False)
                         cons1 <- lift $ $r2 band cons allCubeFalse
                         lift $ $d deref allCubeFalse
