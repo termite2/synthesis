@@ -79,15 +79,15 @@ transSynopsys Ops{..} name trans = do
         traceST $ show $ renderPretty 0.8 100 doc
 
 --Input to the refinement algorithm. Represents the spec.
-data Abstractor s u sp lp st = Abstractor {
+data Abstractor s u sp lp mr st = Abstractor {
     initialState            :: st,
-    goalAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) [DDNode s u],
-    fairAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) [DDNode s u],
-    initAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) (DDNode s u),
-    contAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) (DDNode s u),
+    goalAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (mr (ST s))) [DDNode s u],
+    fairAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (mr (ST s))) [DDNode s u],
+    initAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (mr (ST s))) (DDNode s u),
+    contAbs                 :: forall pdb. VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (mr (ST s))) (DDNode s u),
     initialVars             :: [(sp, Int, Maybe String)],
     --Return type is: (variable updates, initial inconsistency relation, next state inconsistency relation that will not be refined)
-    updateAbs               :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (ST s)) ([DDNode s u], DDNode s u)
+    updateAbs               :: forall pdb. [(sp, [DDNode s u])] -> VarOps pdb (BAVar sp lp) s u -> StateT st (StateT pdb (mr (ST s))) ([DDNode s u], DDNode s u)
 }
 
 -- ===Data structures for keeping track of abstraction state===
@@ -361,7 +361,7 @@ type RefineFunc t s u sp lp st  = DDNode s u -> DDNode s u -> RefineDynamic s u 
 refineGFP, refineLFP :: (Show lp, Show sp, Ord lv, Ord lp, Ord sp, RM s u t) => 
              Config -> 
              Ops s u -> 
-             Abstractor s u sp lp st -> 
+             Abstractor s u sp lp t st -> 
              TheorySolver s u sp lp lv -> 
              RefineStatic s u -> 
              SectionInfo s u -> 
@@ -578,14 +578,14 @@ mkInitConsistency Config{..} Ops{..} getVars mp mp2 labs initCons = do
 liftST   = lift . lift . lift
 liftBDD  = lift . lift
 liftIST  = lift
-hoistAbs = hoist (hoist lift)
+hoistAbs = id --hoist (hoist lift)
 liftAS   = lift . hoist lift
 
 --Create an initial abstraction and set up the data structures
 initialAbstraction :: (Show sp, Show lp, Show lv, Ord sp, Ord lp, Ord lv, RM s u t) => 
                       Config -> 
                       Ops s u -> 
-                      Abstractor s u sp lp st -> 
+                      Abstractor s u sp lp t st -> 
                       TheorySolver s u sp lp lv -> 
                       StateT st (StateT (DB s u sp lp) (t (ST s))) (RefineDynamic s u, RefineStatic s u)
 initialAbstraction config@Config{..} ops@Ops{..} Abstractor{..} TheorySolver{..} = do
@@ -661,7 +661,7 @@ refineStrategy = refineFirstPrime
 promoteUntracked :: (Ord lp, Ord sp, Ord lv, Show sp, Show lp, RM s u t) => 
                     Config -> 
                     Ops s u -> 
-                    Abstractor s u sp lp st -> 
+                    Abstractor s u sp lp t st -> 
                     TheorySolver s u sp lp lv -> 
                     RefineDynamic s u -> 
                     [Int] -> 
@@ -1092,7 +1092,7 @@ lift2 = lift . lift
 absRefineLoop :: forall s u o sp lp lv st t. (Ord sp, Ord lp, Show sp, Show lp, Show lv, Ord lv, RM s u t) => 
                  Config -> 
                  STDdManager s u -> 
-                 Abstractor s u sp lp st -> 
+                 Abstractor s u sp lp t st -> 
                  TheorySolver s u sp lp lv -> 
                  Maybe Int -> 
                  t (ST s) (Maybe Bool, RefineInfo s u sp lp st)

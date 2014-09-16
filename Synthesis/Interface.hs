@@ -342,7 +342,10 @@ goalOps ops = VarOps {withTmp = withTmpGoal' ops, allVars = liftToGoalState allV
         findWithDefaultM sel1 var _stateVars $ findWithDefaultProcessM sel1 var _initVars (allocStateVar ops var size group) (uncurryN $ addVarToState ops var)
     getVar  _ _ = error "Requested non-state variable when compiling goal section"
 
-doGoal :: Ord sp => Ops s u -> (VarOps (GoalState s u sp lp) (BAVar sp lp) s u -> StateT st (StateT (GoalState s u sp lp) (ST s)) a) -> StateT st (StateT (DB s u sp lp) (ST s)) (a, NewVars s u sp)
+doGoal :: (Ord sp, Monad (rm (ST s)))
+       => Ops s u 
+       -> (VarOps (GoalState s u sp lp) (BAVar sp lp) s u -> StateT st (StateT (GoalState s u sp lp) (rm (ST s))) a) 
+       -> StateT st (StateT (DB s u sp lp) (rm (ST s))) (a, NewVars s u sp)
 doGoal ops complFunc = StateT $ \st1 -> StateT $ \st -> do
     ((res, st1'), GoalState{..}) <- runStateT (runStateT (complFunc $ goalOps ops) st1) (GoalState (NewVars []) st)
     return (((res, _nv), st1'), _db)
@@ -358,7 +361,10 @@ stateLabelOps ops = VarOps {withTmp = withTmpGoal' ops, allVars = liftToGoalStat
         liftToGoalState $ findWithDefaultM sel1 var _labelVars $ allocLabelVar ops var size group
     getVar  _ _ = error "Requested non-state variable when compiling goal section"
 
-doStateLabel :: (Ord sp, Ord lp) => Ops s u -> (VarOps (GoalState s u sp lp) (BAVar sp lp) s u -> StateT st (StateT (GoalState s u sp lp) (ST s)) a) -> StateT st (StateT (DB s u sp lp) (ST s)) (a, NewVars s u sp)
+doStateLabel :: (Ord sp, Ord lp, Monad (rm (ST s))) 
+             => Ops s u 
+             -> (VarOps (GoalState s u sp lp) (BAVar sp lp) s u -> StateT st (StateT (GoalState s u sp lp) (rm (ST s))) a) 
+             -> StateT st (StateT (DB s u sp lp) (rm (ST s))) (a, NewVars s u sp)
 doStateLabel ops complFunc = StateT $ \st1 -> StateT $ \st -> do
     ((res, st1'), GoalState{..}) <- runStateT (runStateT (complFunc $ stateLabelOps ops) st1) (GoalState (NewVars []) st)
     return (((res, _nv), st1'), _db)
