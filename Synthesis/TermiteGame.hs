@@ -362,7 +362,7 @@ refineGFP, refineLFP :: (Show lp, Show sp, Ord lv, Ord lp, Ord sp, RM s u t) =>
              Config -> 
              Ops s u -> 
              Abstractor s u sp lp t st -> 
-             TheorySolver s u sp lp lv -> 
+             TheorySolver s u sp lp lv t -> 
              RefineStatic s u -> 
              SectionInfo s u -> 
              Lab s u -> 
@@ -586,7 +586,7 @@ initialAbstraction :: (Show sp, Show lp, Show lv, Ord sp, Ord lp, Ord lv, RM s u
                       Config -> 
                       Ops s u -> 
                       Abstractor s u sp lp t st -> 
-                      TheorySolver s u sp lp lv -> 
+                      TheorySolver s u sp lp lv t -> 
                       StateT st (StateT (DB s u sp lp) (t (ST s))) (RefineDynamic s u, RefineStatic s u)
 initialAbstraction config@Config{..} ops@Ops{..} Abstractor{..} TheorySolver{..} = do
     liftST  $ check "InitialAbstraction start" ops
@@ -662,7 +662,7 @@ promoteUntracked :: (Ord lp, Ord sp, Ord lv, Show sp, Show lp, RM s u t) =>
                     Config -> 
                     Ops s u -> 
                     Abstractor s u sp lp t st -> 
-                    TheorySolver s u sp lp lv -> 
+                    TheorySolver s u sp lp lv t -> 
                     RefineDynamic s u -> 
                     [Int] -> 
                     StateT st (StateT (DB s u sp lp) (t (ST s))) (RefineDynamic s u)
@@ -719,7 +719,7 @@ promoteUntracked config@Config{..} ops@Ops{..} Abstractor{..} TheorySolver{..} r
 --Graph nodes: (label pred, encoding) pair
 --Graph node keys: label pred
 --Graph edges: label predicate (a) -> label predicates that share a label variable with label predicate (a) and are in the labelCube argument
-sccs :: (Ord lv, Ord lp, Show lp) => SymbolInfo s u sp lp -> TheorySolver s u sp lp lv -> [(lp, a)] -> [[(lp, a)]]
+sccs :: (Ord lv, Ord lp, Show lp) => SymbolInfo s u sp lp -> TheorySolver s u sp lp lv t -> [(lp, a)] -> [[(lp, a)]]
 sccs SymbolInfo{..} TheorySolver{..} labelCube = fmap (flatten . fmap (sel1 . func)) $ components theGraph
     where
     list             = map func labelCube
@@ -733,7 +733,7 @@ sccs SymbolInfo{..} TheorySolver{..} labelCube = fmap (flatten . fmap (sel1 . fu
 doConsistency :: (Ord sp, Ord lp, Ord lv, Show sp, Show lp, RM s u t) => 
                  Config -> 
                  Ops s u -> 
-                 TheorySolver s u sp lp lv -> 
+                 TheorySolver s u sp lp lv t -> 
                  DDNode s u -> 
                  DDNode s u -> 
                  DDNode s u -> 
@@ -803,7 +803,7 @@ doConsistency Config{..} ops@Ops{..} ts@TheorySolver{..} cPlus cMinus winNoConst
                         let allEns = map (sel3 . fromJustNote "refineConsistency" . flip Map.lookup _labelVars) allPreds
                         thisLabelCube <- lift $ $r $ nodesToCube $ map (sel3 . sel1) labelPreds'
                         thisLabel <- lift $ makeCubeInt ops $ concatMap func labelPreds'
-                        eQuantExpr <- hoist lift $ doUpdate ops (eQuant scc_val)
+                        eQuantExpr <- doUpdate ops (eQuant scc_val)
                         lift $ $r $ return eQuantExpr
                         allCubeFalse <- lift $ $r $ makeCube ops $ zip allEns (repeat False)
                         cons1 <- lift $ $r2 band cons allCubeFalse
@@ -1045,7 +1045,7 @@ data RefineInfo s u sp lp st = RefineInfo {
 refineInit :: (Ord sp, Show sp, RM s u t) => 
               Config -> 
               Ops s u -> 
-              TheorySolver s u sp lp lv -> 
+              TheorySolver s u sp lp lv t -> 
               RefineStatic s u -> 
               RefineDynamic s u -> 
               SymbolInfo s u sp lp -> 
@@ -1093,7 +1093,7 @@ absRefineLoop :: forall s u o sp lp lv st t. (Ord sp, Ord lp, Show sp, Show lp, 
                  Config -> 
                  STDdManager s u -> 
                  Abstractor s u sp lp t st -> 
-                 TheorySolver s u sp lp lv -> 
+                 TheorySolver s u sp lp lv t -> 
                  Maybe Int -> 
                  t (ST s) (Maybe Bool, RefineInfo s u sp lp st)
 absRefineLoop config@Config{..} m spec ts maxIterations = let ops@Ops{..} = constructOps m in do

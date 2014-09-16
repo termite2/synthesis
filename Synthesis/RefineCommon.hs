@@ -43,10 +43,10 @@ instance Regular (DDNode s u) where
     reg = C.regular
 
 --Theory solving
-data TheorySolver s u sp lp lv = TheorySolver {
+data TheorySolver s u sp lp lv rm = TheorySolver {
     unsatCoreState      :: [(sp, [Bool])] -> Maybe [(sp, [Bool])],
     unsatCoreStateLabel :: [(sp, [Bool])] -> [(lp, [Bool])] -> Maybe ([(sp, [Bool])], [(lp, [Bool])]),
-    eQuant              :: forall pdb. [(lp, [Bool])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (ST s) (DDNode s u),
+    eQuant              :: forall pdb. [(lp, [Bool])] -> VarOps pdb (BAVar sp lp) s u -> StateT pdb (rm (ST s)) (DDNode s u),
     getVarsLabel        :: lp -> [lv]
 }
 
