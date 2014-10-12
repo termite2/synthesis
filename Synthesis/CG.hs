@@ -113,7 +113,7 @@ enumerateEquivalentLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} 
             return label
 
 --Given a state and a strategy, create an iterator that lists pairs of (label, condition over state variables for this label to be available)
-availableLabels :: (RM s u t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (IteratorM (t (ST s)) (DDNode s u, DDNode s u))
+availableLabels :: (RM s u t) => Ops s u -> SynthData s u -> DDNode s u -> DDNode s u -> t (ST s) (IteratorM (t (ST s)) (DDNode s u))
 availableLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy stateSet = do
     yVars            <- $r $ conj ops [_trackedCube, _untrackedCube, _nextCube]
     avlWinningLabels <- $r3 andAbstract yVars strategy stateSet
@@ -126,9 +126,34 @@ availableLabels ops@Ops{..} SynthData{sections = SectionInfo{..}, ..} strategy s
     where 
     func (label, nextState) = do
         $d deref nextState
-        avlStates <- $r2 (andAbstract _labelCube) strategy label 
-        cond      <- $r2 liCompact avlStates stateSet
-        return (label, cond)
+        return label
+
+condFunc :: (RM s u t) => Ops s u -> SectionInfo s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (DDNode s u)
+condFunc Ops{..} SectionInfo{..} stateSet strategy label = do
+    avlStates <- $r2 (andAbstract _labelCube) strategy label
+    cond      <- $r2 liCompact avlStates stateSet
+    return cond
+
+condFuncRemove :: (RM s u t) => Ops s u -> SectionInfo s u -> DDNode s u -> DDNode s u -> DDNode s u -> DDNode s u -> t (ST s) (Maybe (DDNode s u))
+condFuncRemove Ops{..} SectionInfo{..} strategy stateSet label remove = do
+
+    --Figure out for which states the label is part of the strategy. This may include states not in stateSet
+    avlStates  <- $r2 (andAbstract _labelCube) strategy label
+
+    --Combine this with the state set to get the subset of 'stateSet' from which we may play this label
+    avlAndSet  <- $r2 band avlStates stateSet
+    
+    --Remove the variables we dont want. This will possibly grow the set.
+    noUnwanted <- $r1 (bexists remove) avlAndSet
+
+    --Compute a small condition to ensure we are in this set when we are in stateSet
+    cond       <- $r2 liCompact noUnwanted stateSet
+
+    --Check that this still gives us the set we want
+    condAndSet <- $r2 band cond stateSet
+    if condAndSet == avlAndSet 
+        then return $ Just cond
+        else return Nothing
 
 --Pick any winning label 
 --The returned label is part of the strategy for every state and consistent substate in the stateSet argument
