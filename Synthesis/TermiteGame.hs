@@ -1085,7 +1085,7 @@ lift2 = lift . lift
 --The abstraction-refinement loop
 absRefineLoop :: forall s u o sp lp lv st t. (Ord sp, Ord lp, Show sp, Show lp, Show lv, Ord lv, RM s u t) => 
                  Config -> 
-                 STDdManager s u -> 
+                 DDManager s u -> 
                  Abstractor s u sp lp t st -> 
                  TheorySolver s u sp lp lv t -> 
                  Maybe Int -> 

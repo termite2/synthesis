@@ -176,7 +176,7 @@ groupForUnsatCore func svs = map (uncurry reconstruct) $ aggregate svs
         where
         funcy idx = maybe False snd $ find ((==idx) . fst) list 
 
-setupManager :: STDdManager s u -> ST s ()
+setupManager :: DDManager s u -> ST s ()
 setupManager m = void $ do
     cuddAutodynEnable m CuddReorderGroupSift
     regStdPreReordHook m

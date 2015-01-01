@@ -4,7 +4,7 @@ module Synthesis.BddRecord (
     Ops(..),
     constructOps,
     DDNode,
-    STDdManager,
+    DDManager,
     ST,
     C.CuddReorderingType(..),
     SatBit(..),
@@ -14,7 +14,7 @@ module Synthesis.BddRecord (
 import Control.Monad.ST
 import Control.Monad
 
-import Cudd.Imperative (DDNode, STDdManager, SatBit)
+import Cudd.Imperative (DDNode, DDManager, SatBit)
 import qualified Cudd.Imperative as C
 import qualified Cudd.Reorder as C
 import qualified Cudd.MTR as C
@@ -63,7 +63,7 @@ data Ops s u = Ops {
     liCompact                                 :: DDNode s u -> DDNode s u -> ST s (DDNode s u)
 }
 
-constructOps :: STDdManager s u -> Ops s u
+constructOps :: DDManager s u -> Ops s u
 constructOps m = Ops {..}
     where
     band                   = C.bAnd             m
